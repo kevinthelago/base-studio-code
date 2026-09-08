@@ -1,0 +1,11 @@
+{
+  "id": "data--transport--join-url.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "join_url",
+  "src": "crates/data/src/transport/join_url.rs",
+  "folder": "crates/data/src/transport",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Join a request path onto a base URL — an already-absolute path passes through, an empty path maps\n/// to the base root. MIRRORS `data_scan.rs::build_url`.\npub(crate) fn join_url(base: &str, path: &str) -> String {\n    if path.starts_with(\"http://\") || path.starts_with(\"https://\") {\n        path.to_string()\n    } else if path.is_empty() {\n        format!(\"{}/\", base.trim_end_matches('/'))\n    } else {\n        format!(\"{}/{}\", base.trim_end_matches('/'), path.trim_start_matches('/'))\n    }\n}\n"
+}

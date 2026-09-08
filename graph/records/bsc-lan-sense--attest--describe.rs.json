@@ -1,0 +1,11 @@
+{
+  "id": "bsc-lan-sense--attest--describe.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "describe",
+  "src": "crates/bsc-lan-sense/src/attest/describe.rs",
+  "folder": "crates/bsc-lan-sense/src/attest",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn describe(s: &Socket) -> ExposedSocket {\n    ExposedSocket {\n        transport: match s.transport {\n            Protocol::Tcp => \"tcp\".to_string(),\n            Protocol::Udp => \"udp\".to_string(),\n        },\n        addr: s.local_addr.clone(),\n        port: s.local_port,\n    }\n}\n"
+}

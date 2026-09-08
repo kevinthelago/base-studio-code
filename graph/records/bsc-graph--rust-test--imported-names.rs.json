@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--rust-test--imported-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "imported_names",
+  "composes": [],
+  "code": "use super::*;\n\n/// Names a body already imports, including the braced form `use std::collections::{HashMap, HashSet};`.\npub fn imported_names(code: &str) -> HashSet<String> {\n    let mut names = HashSet::new();\n    for line in code.lines() {\n        let t = line.trim();\n        let Some(rest) = t.strip_prefix(\"use \") else { continue };\n        let Some(path) = rest.split(';').next() else { continue };\n        match (path.find('{'), path.rfind('}')) {\n            (Some(a), Some(b)) if b > a => {\n                for part in path[a + 1..b].split(',') {\n                    if let Some(leaf) = part.trim().rsplit(\"::\").next() {\n                        if !leaf.is_empty() {\n                            names.insert(leaf.to_string());\n                        }\n                    }\n                }\n            }\n            _ => {\n                if let Some(leaf) = path.trim().rsplit(\"::\").next() {\n                    if !leaf.is_empty() {\n                        names.insert(leaf.to_string());\n                    }\n                }\n            }\n        }\n    }\n    names\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/rust_test",
+  "src": "crates/bsc-graph/src/rust_test/imported_names.rs",
+  "moduleVis": "private"
+}

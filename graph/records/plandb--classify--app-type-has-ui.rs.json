@@ -1,0 +1,14 @@
+{
+  "id": "plandb--classify--app-type-has-ui.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "app_type_has_ui",
+  "composes": [
+    "plandb--classify--app-type-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Does this project have screens to design? An UNCLASSIFIED project reads as `application` and so\n/// as TRUE, which is what stops this hiding a `ui` stage that showed before the planner classified.\npub fn app_type_has_ui(cfg: Option<&ClassifyConfig>) -> bool {\n    UI_BEARING.contains(&app_type_of(cfg))\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/classify",
+  "src": "crates/plandb/src/classify/app_type_has_ui.rs",
+  "moduleVis": "private"
+}

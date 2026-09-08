@@ -1,0 +1,12 @@
+{
+  "id": "bsc-sound--release--assemble-artifact.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "assemble_artifact",
+  "code": "use serde_json::Value;\n\n/// Canonicalize a live sound kit into release-artifact bytes (the `--from-store` one-shot). Unlike the\n/// UI twin — where a kit is assembled from a kit record PLUS N separate component records — a sound\n/// kit is ALREADY self-contained (`{ id, name, primitives, voices, cues }` in one record), so the\n/// artifact is the kit itself. Re-serialized pretty with a trailing newline — the canonical byte form\n/// — so the hash depends on the kit's CONTENT, not on however the authoring session happened to\n/// format its `bsc sound set` payload. The emptiness/shape floor is [`validate_artifact`], which the\n/// `add` verb runs on this result, so a cue-less kit is refused there rather than silently stored.\npub fn assemble_artifact(kit: &Value) -> String {\n    let mut s = serde_json::to_string_pretty(kit).unwrap_or_else(|_| \"{}\".to_string());\n    s.push('\\n');\n    s\n}\n",
+  "domain": "bsc-sound",
+  "folder": "crates/bsc-sound/src/release",
+  "src": "crates/bsc-sound/src/release/assemble_artifact.rs",
+  "moduleVis": "private",
+  "composes": []
+}

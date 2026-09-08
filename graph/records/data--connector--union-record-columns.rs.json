@@ -1,0 +1,11 @@
+{
+  "id": "data--connector--union-record-columns.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "union_record_columns",
+  "src": "crates/data/src/connector/union_record_columns.rs",
+  "folder": "crates/data/src/connector",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Columns derived from a *set* of records: the sorted **union** of every record's top-level field\n/// names, keeping only keys that pass `keep` (e.g. `|k| !k.starts_with('@')` drops OData's\n/// `@odata.*` control annotations; `|_| true` keeps everything).\n///\n/// Standardized across the read paths of the API connectors (#1620): unlike first-record\n/// derivation, the union never silently drops a column that only appears on a later record —\n/// heterogeneous sources (sparse JSON, optional fields omitted when empty) are the common case.\n/// The final `sort` keeps the column order deterministic regardless of record order.\npub fn union_record_columns<'a>(\n    records: impl IntoIterator<Item = &'a Value>,\n    keep: impl Fn(&str) -> bool,\n) -> Vec<String> {\n    let mut cols: Vec<String> = Vec::new();\n    for rec in records {\n        if let Some(map) = rec.as_object() {\n            for k in map.keys() {\n                if keep(k.as_str()) && !cols.iter().any(|c| c == k) {\n                    cols.push(k.clone());\n                }\n            }\n        }\n    }\n    cols.sort();\n    cols\n}\n"
+}

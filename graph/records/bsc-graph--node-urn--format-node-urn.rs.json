@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--node-urn--format-node-urn.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "format_node_urn",
+  "code": "use super::*;\n\n/// Build a URN, or `None` when any part is missing or the graph is unknown.\npub fn format_node_urn(graph: NodeGraph, kit: &str, id: &str) -> Option<String> {\n    if kit.is_empty() || id.is_empty() {\n        return None;\n    }\n    Some(format!(\"{}:{}/{}\", graph.as_str(), kit, id))\n}\n",
+  "folder": "crates/bsc-graph/src/node_urn",
+  "src": "crates/bsc-graph/src/node_urn/format_node_urn.rs",
+  "moduleVis": "private",
+  "composes": []
+}

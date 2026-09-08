@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--divergence--cell.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cell",
+  "code": "/// Flatten values into one TSV cell.\n///\n/// A value is an arbitrary command string or glob, so it can contain a tab or a newline and split the\n/// row. Both are collapsed to a space rather than escaped: this cell is read by a human chasing a\n/// disagreement, and a mangled value that is still legible beats a correctly-escaped one that needs\n/// unescaping to read. `∅` marks the empty side explicitly, so a reader never has to decide whether\n/// an empty cell meant \"none\" or \"the writer forgot\".\npub(crate) fn cell(values: &[String]) -> String {\n    if values.is_empty() {\n        return \"∅\".to_string();\n    }\n    values.iter().map(|v| v.replace(['\\t', '\\n', '\\r'], \" \")).collect::<Vec<_>>().join(\",\")\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/divergence",
+  "src": "crates/bsc-util/src/divergence/cell.rs",
+  "moduleVis": "private",
+  "composes": []
+}

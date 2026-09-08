@@ -1,0 +1,13 @@
+{
+  "id": "logs--wakes--plan-wakes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_wakes",
+  "src": "crates/logs/src/wakes/plan_wakes.rs",
+  "folder": "crates/logs/src/wakes",
+  "moduleVis": "private",
+  "composes": [
+    "logs--wakes--wake-prompt-for.rs"
+  ],
+  "code": "use super::*;\n\n/// Map newly-woken waiters to their wake actions.\npub fn plan_wakes(woken: &[Waiter], s: &CoordState) -> Vec<WakeAction> {\n    woken\n        .iter()\n        .map(|w| WakeAction { session: w.session.clone(), deps: w.deps.clone(), prompt: wake_prompt_for(w, s) })\n        .collect()\n}\n"
+}

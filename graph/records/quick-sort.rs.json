@@ -1,0 +1,13 @@
+{
+  "code": "/// Quick sort — partition around the first element, recurse each side.\npub fn quick_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let pivot = xs[0].clone();\n    let left: Vec<T> = xs[1..].iter().filter(|x| **x < pivot).cloned().collect();\n    let right: Vec<T> = xs[1..].iter().filter(|x| **x >= pivot).cloned().collect();\n    let mut out = quick_sort(&left);\n    out.push(pivot);\n    out.extend(quick_sort(&right));\n    out\n}\n",
+  "composes": [],
+  "feature": "reference",
+  "folder": "core",
+  "id": "quick-sort.rs",
+  "kind": "sort",
+  "name": "quick_sort",
+  "role": "algorithm",
+  "summary": "Partition around a pivot and recurse each side.",
+  "tech": "rust",
+  "vizCode": "({ datatype: 'array', input: [5,3,8,1,9,2,7], run(a) { function qs(lo, hi) { if (lo >= hi) return; const pivotIdx = lo; a.mark(pivotIdx, 'pivot'); let store = lo + 1; for (let i = lo + 1; i <= hi; i++) { a.cursor('i', i); if (a.compare(i, pivotIdx) < 0) { a.swap(i, store); store++; } } a.swap(lo, store - 1); a.mark(store - 1, 'placed'); qs(lo, store - 2); qs(store, hi); } qs(0, a.length - 1); a.markSorted(); } })"
+}

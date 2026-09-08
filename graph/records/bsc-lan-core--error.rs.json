@@ -1,0 +1,12 @@
+{
+  "id": "bsc-lan-core--error.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "error",
+  "composes": [],
+  "code": "//! The two distinct error families: control paths fail closed, observation\n//! paths fail open. Using the wrong one for a given adapter method is a type\n//! error, not a code-review nit -- see `contracts/adapter-traits.md` rule 2.\n\nuse std::time::Duration;\n\n/// An error on a control (mutating) path. Every variant means \"this action\n/// did not verifiably succeed\" -- there is no partial-success case, because\n/// [`crate::evidence`]'s read-back-is-part-of-the-write rule means an\n/// adapter either confirms the change or reports failure, never \"probably\".\n#[derive(Debug, thiserror::Error)]\npub enum ControlError {\n    #[error(\"target is on the never-touch list: {0}\")]\n    NeverTouch(String),\n\n    #[error(\"read-back verification failed: expected {expected}, observed {observed}\")]\n    ReadBackMismatch { expected: String, observed: String },\n\n    #[error(\"operation timed out after {0:?}\")]\n    Timeout(Duration),\n\n    #[error(\"target unreachable: {0}\")]\n    Unreachable(String),\n\n    #[error(\"refused: {0}\")]\n    Refused(String),\n\n    #[error(\"result was ambiguous and cannot be reported as success: {0}\")]\n    Ambiguous(String),\n\n    #[error(\"a concurrent change was detected: {0}\")]\n    ConcurrentModification(String),\n\n    #[error(\"precondition failed: {0}\")]\n    PreconditionFailed(String),\n}\n\n/// An error on an observation (read) path. This family never claims total\n/// failure for a partial result -- a degraded source should be reported via\n/// [`crate::evidence::Observed::partial`], not this type. `ObservationError`\n/// is for the read that could not produce *any* usable answer at all.\n#[derive(Debug, thiserror::Error)]\npub enum ObservationError {\n    #[error(\"source unavailable: {source_name}\")]\n    SourceUnavailable { source_name: String },\n\n    #[error(\"outside the retention window: {0}\")]\n    OutsideWindow(String),\n\n    #[error(\"malformed data from {source_name}: {reason}\")]\n    Malformed { source_name: String, reason: String },\n\n    #[error(\"query rejected: {0}\")]\n    InvalidQuery(String),\n}\n",
+  "domain": "bsc-lan-core",
+  "src": "crates/bsc-lan-core/src/error.rs",
+  "folder": "crates/bsc-lan-core/src",
+  "moduleVis": "pub"
+}

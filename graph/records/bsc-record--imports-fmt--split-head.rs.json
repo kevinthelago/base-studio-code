@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--imports-fmt--split-head.rs",
+  "src": "crates/bsc-record/src/imports_fmt/split_head.rs",
+  "folder": "crates/bsc-record/src/imports_fmt",
+  "name": "split_head",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Split a module into its leading MODULE doc-comment and the rest.\n///\n/// A module doc-comment is the contiguous run of comment lines at the very top that is FOLLOWED BY A\n/// BLANK LINE — the blank is what marks the run as documenting the module rather than the first\n/// declaration. A comment run sitting directly on a declaration (no blank) is that declaration's OWN\n/// doc-comment: `head` comes back empty and the import block lands ABOVE it. That is the anti-swallow\n/// rule — the emitter never wedges imports between a doc-comment and the thing it documents. Any blank\n/// separator is consumed, so re-joining through [`crate::imports_fmt::layout`] restores exactly one blank instead of\n/// piling them up.\npub fn split_head(code: &str) -> (&str, &str) {\n    let mut comment_end = 0usize;\n    let mut saw_comment = false;\n    for line in code.split_inclusive('\\n') {\n        let t = line.trim_start();\n        if t.starts_with(\"//\") || t.starts_with(\"/*\") || t.starts_with('*') {\n            comment_end += line.len();\n            saw_comment = true;\n        } else {\n            break;\n        }\n    }\n    if !saw_comment {\n        return (\"\", code);\n    }\n    let rest = &code[comment_end..];\n    let body = rest.trim_start_matches(['\\n', '\\r']);\n    if body.len() == rest.len() {\n        // no blank separated the comment from what follows ⇒ it is a symbol doc-comment, not a\n        // module header. Leave the whole thing as body; the block goes above it.\n        (\"\", code)\n    } else {\n        (&code[..comment_end], body)\n    }\n}\n"
+}

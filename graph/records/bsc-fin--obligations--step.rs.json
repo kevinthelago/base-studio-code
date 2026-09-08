@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--obligations--step.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "step",
+  "code": "use super::*;\nuse crate::recurring::Cadence;\n\n/// The nth occurrence after an anchor, by the cadence's own unit.\npub(crate) fn step(anchor: &str, cadence: Cadence, n: i64) -> Option<String> {\n    match cadence {\n        Cadence::Weekly => Some(add_days(anchor, 7 * n)),\n        Cadence::Biweekly => Some(add_days(anchor, 14 * n)),\n        Cadence::Monthly => Some(add_calendar_months(anchor, n)),\n        Cadence::Quarterly => Some(add_calendar_months(anchor, 3 * n)),\n        Cadence::Annual => Some(add_calendar_months(anchor, 12 * n)),\n        // An irregular charge has no next date to predict. Inventing one would put a number on the\n        // calendar that nothing observed, which is worse than the charge being absent from it.\n        Cadence::Irregular => None,\n    }\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/obligations",
+  "src": "crates/bsc-fin/src/obligations/step.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--recurring.rs"
+  ]
+}

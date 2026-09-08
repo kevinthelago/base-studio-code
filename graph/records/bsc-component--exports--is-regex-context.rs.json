@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--exports--is-regex-context.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_regex_context",
+  "code": "/// Whether the `/` at `chars[slash_at]` opens a REGEX literal rather than dividing — decided the way any\n/// small JS scanner must, since the grammar is genuinely ambiguous without a real parser: look back past\n/// whitespace to the last significant character. A regex follows an operator/punctuator/opening bracket\n/// (or nothing at all — the start of the interpolation); division follows an operand (an identifier,\n/// digit, `)` or `]`).\npub(crate) fn is_regex_context(chars: &[char], slash_at: usize) -> bool {\n    let mut j = slash_at;\n    while j > 0 {\n        j -= 1;\n        if chars[j].is_whitespace() {\n            continue;\n        }\n        return !(chars[j].is_ascii_alphanumeric() || matches!(chars[j], '_' | '$' | ')' | ']'));\n    }\n    true\n}\n",
+  "folder": "crates/bsc-component/src/exports",
+  "src": "crates/bsc-component/src/exports/is_regex_context.rs",
+  "moduleVis": "private",
+  "composes": []
+}

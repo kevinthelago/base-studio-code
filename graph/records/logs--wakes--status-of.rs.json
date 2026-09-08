@@ -1,0 +1,11 @@
+{
+  "id": "logs--wakes--status-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "status_of",
+  "src": "crates/logs/src/wakes/status_of.rs",
+  "folder": "crates/logs/src/wakes",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A ref's latch status as a short label.\npub(crate) fn status_of(s: &CoordState, r: &CoordRef) -> &'static str {\n    match s.latches.get(&ref_key(r)) {\n        Some(LatchStatus::Satisfied { .. }) => \"satisfied\",\n        Some(LatchStatus::Failed { .. }) => \"failed\",\n        None => \"pending\",\n    }\n}\n"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--component-source.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "component_source",
+  "code": "//! `component_source` — The verbatim module source of a STORE component record for emit — its `source`, else its `srcText`, whichever is non-empty first.\n\nuse serde_json::Value;\n\n/// The verbatim module source of a STORE component record for emit — its `source`, else its `srcText`,\n/// whichever is non-empty first. `None` = a source-stripped builtin (#2794) or a spec-only record with\n/// nothing to vendor, so the overlay leaves the packaged source (if any) in place.\npub(crate) fn component_source(c: &Value) -> Option<String> {\n    for field in [\"source\", \"srcText\"] {\n        if let Some(s) = c.get(field).and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {\n            return Some(s.to_string());\n        }\n    }\n    None\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/component_source.rs",
+  "moduleVis": "private",
+  "composes": []
+}

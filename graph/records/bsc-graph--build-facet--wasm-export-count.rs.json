@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--build-facet--wasm-export-count.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "wasm_export_count",
+  "composes": [
+    "bsc-graph--build-facet--leb128.rs"
+  ],
+  "code": "use super::*;\n\n/// How many functions a wasm module EXPORTS — the difference between \"it compiled\" and \"it can be run\".\n///\n/// This exists because the first artifact this slice produced was **86 bytes**: a `cdylib` whose crate\n/// has no `#[no_mangle] extern \"C\"` function compiles to a valid, empty module. Recording that as\n/// `wasm32: pass` would be true and useless — a green verdict for something nothing can call, which is\n/// the precise shape of \"passes while meaning less than the reader assumes\" this repo keeps paying for.\n/// The measured 12,385-byte `quick-sort` artifact had a hand-written export wrapper; without one there\n/// is nothing to invoke.\n///\n/// Only **functions** are counted, and that distinction is the entire point. An export-less `cdylib`\n/// still exports `memory`, `__data_end` and `__heap_base` — measured: the 86-byte module reported 3\n/// until this filtered by kind. Counting those would have restored exactly the false reassurance this\n/// function was added to remove.\n///\n/// Returns `None` when the bytes are not a wasm module at all. The format: an 8-byte header, then\n/// sections of `(id: u8, size: LEB128, payload)`. Section **7** is exports: a LEB128 count, then each\n/// entry is `(name_len: LEB128, name, kind: u8, index: LEB128)` with kind **0** meaning a function.\npub fn wasm_export_count(bytes: &[u8]) -> Option<u32> {\n    if bytes.len() < 8 || &bytes[0..4] != b\"\\0asm\" {\n        return None;\n    }\n    let mut i = 8;\n    while i < bytes.len() {\n        let id = bytes[i];\n        i += 1;\n        let (size, used) = leb128(bytes, i)?;\n        i += used;\n        if id == 7 {\n            let (count, used) = leb128(bytes, i)?;\n            let mut at = i + used;\n            let mut funcs = 0u32;\n            for _ in 0..count {\n                let (name_len, used) = leb128(bytes, at)?;\n                at = at.checked_add(used)?.checked_add(name_len as usize)?;\n                let kind = *bytes.get(at)?;\n                at += 1;\n                let (_, used) = leb128(bytes, at)?;\n                at += used;\n                if kind == 0 {\n                    funcs += 1;\n                }\n            }\n            return Some(funcs);\n        }\n        i = i.checked_add(size as usize)?;\n    }\n    Some(0) // a well-formed module with no export section exports nothing\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/wasm_export_count.rs",
+  "moduleVis": "private"
+}

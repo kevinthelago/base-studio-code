@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--commons--slug.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "slug",
+  "src": "src-tauri/src/fleet/commons/slug.rs",
+  "folder": "src-tauri/src/fleet/commons",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Mirrors `laneIdFor`'s slug half in `commonsGate.ts`: lowercase, non-alnum runs collapsed to a\n/// single `-`, trimmed at both ends.\npub(crate) fn slug(repo: &str) -> String {\n    let mut out = String::with_capacity(repo.len());\n    let mut last_dash = false;\n    for c in repo.chars() {\n        if c.is_ascii_alphanumeric() {\n            out.push(c.to_ascii_lowercase());\n            last_dash = false;\n        } else if !last_dash {\n            out.push('-');\n            last_dash = true;\n        }\n    }\n    out.trim_matches('-').to_string()\n}\n"
+}

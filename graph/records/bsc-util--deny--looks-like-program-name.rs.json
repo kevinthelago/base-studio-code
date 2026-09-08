@@ -1,0 +1,11 @@
+{
+  "id": "bsc-util--deny--looks-like-program-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "looks_like_program_name",
+  "code": "/// Is this deny entry a bare program name (so it should match the program, not any substring)?\n/// Only `[A-Za-z0-9._/\\-]` qualifies — a space, pipe, brace or paren means the author wrote a\n/// PHRASE, whose substring semantics are load-bearing and must be preserved.\npub fn looks_like_program_name(p: &str) -> bool {\n    // A trailing `.` or `/` marks a deliberate PREFIX (`mkfs.` is written to catch `mkfs.ext4`), not a\n    // program — treating it as one would silently stop it matching, which is how a fix for the role\n    // list could quietly weaken a dangerous-floor-style entry a user had added.\n    !p.is_empty()\n        && !p.ends_with(['.', '/', '\\\\'])\n        && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | '\\\\'))\n}\n",
+  "folder": "crates/bsc-util/src/deny",
+  "src": "crates/bsc-util/src/deny/looks_like_program_name.rs",
+  "moduleVis": "private",
+  "composes": []
+}

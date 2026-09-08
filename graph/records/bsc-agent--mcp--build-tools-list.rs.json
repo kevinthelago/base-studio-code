@@ -1,0 +1,14 @@
+{
+  "id": "bsc-agent--mcp--build-tools-list.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_tools_list",
+  "composes": [
+    "bsc-agent--mcp--build-request.rs"
+  ],
+  "code": "use serde_json::json;\nuse serde_json::Value;\n\nuse super::build_request::build_request;\n\npub(crate) fn build_tools_list(id: i64) -> Value {\n    build_request(id, \"tools/list\", json!({}))\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/mcp",
+  "src": "crates/bsc-agent/src/mcp/build_tools_list.rs",
+  "moduleVis": "private"
+}

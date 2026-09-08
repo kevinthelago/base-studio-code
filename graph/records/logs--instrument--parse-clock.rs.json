@@ -1,0 +1,14 @@
+{
+  "id": "logs--instrument--parse-clock.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_clock",
+  "composes": [
+    "logs--instrument--between.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse `HH:MM:SS` from the head of a log line into seconds-of-day.\npub fn parse_clock(line: &str) -> Option<Clock> {\n    let b = line.as_bytes();\n    if b.len() < 8 || b[2] != b':' || b[5] != b':' {\n        return None;\n    }\n    let n = |i: usize| -> Option<u32> { line.get(i..i + 2)?.parse().ok() };\n    Some(n(0)? * 3600 + n(3)? * 60 + n(6)?)\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/parse_clock.rs",
+  "moduleVis": "private"
+}

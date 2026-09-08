@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--membership--sort-directors.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sort_directors",
+  "code": "use super::*;\n\n/// Order the tier for reading: projects whose director is NOT running first (they are the ones an\n/// architect must act on), then alphabetically inside each group so two runs agree.\npub fn sort_directors(rows: &mut [DirectorMember], state_of: impl Fn(&DirectorMember) -> State) {\n    rows.sort_by(|a, b| {\n        let rank = |r: &DirectorMember| match state_of(r) {\n            State::Running => 1,\n            _ => 0,\n        };\n        rank(a).cmp(&rank(b)).then_with(|| a.project_key.cmp(&b.project_key))\n    });\n}\n",
+  "folder": "crates/bsc-fleet/src/membership",
+  "src": "crates/bsc-fleet/src/membership/sort_directors.rs",
+  "moduleVis": "private",
+  "composes": []
+}

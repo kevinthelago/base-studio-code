@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--line-at.rs",
+  "src": "crates/bsc-record/src/record_source/line_at.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "line_at",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The line containing byte offset `index`.\npub(crate) fn line_at(src: &str, index: usize) -> &str {\n    let start = src[..index].rfind('\\n').map_or(0, |i| i + 1);\n    let end = src[index..].find('\\n').map_or(src.len(), |i| index + i);\n    &src[start..end]\n}\n"
+}

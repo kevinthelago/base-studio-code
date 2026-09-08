@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--agent--elide-middle.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "elide_middle",
+  "code": "/// Shorten to `budget`, dropping the MIDDLE rather than the tail.\n///\n/// THE DISTINGUISHING PART OF A SHELL COMMAND IS AT THE END. This used to keep the first 80\n/// characters, and a fleet worktree path is about ninety-five — so every `cd <path> && <verb>`\n/// rendered as the same truncated `cd /home/.../twitt`. Measured on the twitter-clone-test director:\n/// six DIFFERENT commands, with results of 180, 384, 151, 461, 109 and 109 bytes, all printed\n/// identically, while the model itself reported \"I've been running the same command repeatedly\".\n/// Keeping the head is exactly the wrong half.\n///\n/// The head still earns a quarter of the budget: it carries the verb (`cd`, `git`, `npm`), which\n/// orients the reader before the tail tells them which invocation it was.\npub fn elide_middle(s: &str, budget: usize) -> String {\n    let chars: Vec<char> = s.chars().collect();\n    if chars.len() <= budget {\n        return s.to_string();\n    }\n    // A budget too small to hold both ends plus the marker degrades to the TAIL, which is the half\n    // worth keeping.\n    let head = budget / 4;\n    let tail = budget.saturating_sub(head + 1);\n    let head_s: String = chars[..head.min(chars.len())].iter().collect();\n    let tail_s: String = chars[chars.len().saturating_sub(tail)..].iter().collect();\n    format!(\"{head_s}\\u{2026}{tail_s}\")\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/agent",
+  "src": "crates/bsc-agent/src/agent/elide_middle.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "plandb--lessons--lesson-id-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lesson_id_for",
+  "src": "crates/plandb/src/lessons/lesson_id_for.rs",
+  "folder": "crates/plandb/src/lessons",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// A short, deterministic id derived from a dedup key (stable across runs, unlike a random id) so the\n/// same lesson always maps to the same id even before it's stored.\npub fn lesson_id_for(dedup_key: &str) -> String {\n    use std::hash::{Hash, Hasher};\n    let mut h = std::collections::hash_map::DefaultHasher::new();\n    dedup_key.hash(&mut h);\n    format!(\"lesson-{:016x}\", h.finish())\n}\n"
+}

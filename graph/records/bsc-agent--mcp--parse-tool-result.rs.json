@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--mcp--parse-tool-result.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_tool_result",
+  "code": "use serde_json::Value;\n\n/// Concatenate the `type:\"text\"` parts of a `tools/call` result; `isError:true` ⇒ `Err(text)`.\npub(crate) fn parse_tool_result(resp: &Value) -> Result<String, String> {\n    let result = resp.get(\"result\").ok_or(\"tools/call: no result\")?;\n    let text = result\n        .get(\"content\")\n        .and_then(|c| c.as_array())\n        .map(|arr| {\n            arr.iter()\n                .filter(|p| p.get(\"type\").and_then(|t| t.as_str()) == Some(\"text\"))\n                .filter_map(|p| p.get(\"text\").and_then(|t| t.as_str()))\n                .collect::<Vec<_>>()\n                .join(\"\\n\")\n        })\n        .unwrap_or_default();\n    if result.get(\"isError\").and_then(|e| e.as_bool()) == Some(true) {\n        Err(text)\n    } else {\n        Ok(text)\n    }\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/mcp",
+  "src": "crates/bsc-agent/src/mcp/parse_tool_result.rs",
+  "moduleVis": "private",
+  "composes": []
+}

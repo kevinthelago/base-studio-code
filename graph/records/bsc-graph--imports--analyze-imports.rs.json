@@ -1,0 +1,15 @@
+{
+  "id": "bsc-graph--imports--analyze-imports.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "analyze_imports",
+  "composes": [
+    "bsc-graph--imports--import-statements.rs",
+    "bsc-graph--imports--parse-statement.rs"
+  ],
+  "code": "use super::*;\n\n/// Structure + classify every import statement in `code`. `provides` is the set of every record's\n/// `provides` specifier (the record universe); an import whose `from` is in it is record-internal.\npub fn analyze_imports(code: &str, provides: &HashSet<String>) -> AnalyzedImports {\n    let mut out = AnalyzedImports::default();\n    for stmt in import_statements(code) {\n        for spec in parse_statement(&stmt) {\n            // `@/…` that is NOT a record `provides` is a floor FILE — not derivable, stays in code.\n            if spec.from.starts_with(\"@/\") && !provides.contains(&spec.from) {\n                out.floor.push(spec);\n            } else {\n                out.derived.push(spec);\n            }\n        }\n    }\n    out\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/imports",
+  "src": "crates/bsc-graph/src/imports/analyze_imports.rs",
+  "moduleVis": "private"
+}

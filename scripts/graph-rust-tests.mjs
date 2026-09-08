@@ -31,6 +31,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { loadStore } from "./lib/recordStore.mjs";
 import { fileURLToPath } from "node:url";
 
 export const SHARED_TEST_ROOT = "../graph-materialize/test_root.rs";
@@ -161,7 +162,11 @@ export function drifted(edges, read) {
 
 /** @returns {{ ok: boolean, lines: string[], checked: number, migrated: number }} */
 export function audit(repo) {
-  const store = JSON.parse(readFileSync(join(repo, "graph/algorithms.json"), "utf8"));
+  // Through the MERGED loader: records live one-per-file under `graph/records/`
+  // (`epic-retire-json-ledgers-for-db-and-git-drivers`), so parsing the store file alone would hand
+  // this audit an `implementations` array missing every split-out record — and a test-edge audit that
+  // sees fewer records does not fail, it just covers less.
+  const store = loadStore(join(repo, "graph/algorithms.json"));
   const edges = rustTestEdges(store);
   const manifests = new Map();
   for (const d of readdirSync(join(repo, "crates"), { withFileTypes: true })) {

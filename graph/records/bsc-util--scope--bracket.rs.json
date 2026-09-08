@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--scope--bracket.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "bracket",
+  "code": "/// One bracket expression at `pat[p] == '['`. Returns `(matched, index past ']')`, or `None` when\n/// the expression is unterminated — in which case the caller treats `[` as a literal.\npub(crate) fn bracket(pat: &[char], p: usize, c: char) -> Option<(bool, usize)> {\n    let mut i = p + 1;\n    let negated = i < pat.len() && (pat[i] == '!' || pat[i] == '^');\n    if negated {\n        i += 1;\n    }\n    let mut matched = false;\n    let mut first = true;\n    while i < pat.len() {\n        if pat[i] == ']' && !first {\n            return Some((matched != negated, i + 1));\n        }\n        first = false;\n        // A range `a-z`, but a `-` just before the closing `]` is a literal.\n        if i + 2 < pat.len() && pat[i + 1] == '-' && pat[i + 2] != ']' {\n            if pat[i] <= c && c <= pat[i + 2] {\n                matched = true;\n            }\n            i += 3;\n        } else {\n            if pat[i] == c {\n                matched = true;\n            }\n            i += 1;\n        }\n    }\n    None\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/scope",
+  "src": "crates/bsc-util/src/scope/bracket.rs",
+  "moduleVis": "private",
+  "composes": []
+}

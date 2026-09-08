@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--promote--spec-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "spec_of",
+  "code": "//! `spec_of` — The `@/…` specifier a `src/`-relative module answers.\n\n/// The `@/…` specifier a `src/`-relative module answers.\npub fn spec_of(file: &str) -> String {\n    let stem = [\".tsx\", \".ts\", \".jsx\", \".js\"]\n        .iter()\n        .find_map(|e| file.strip_suffix(*e))\n        .unwrap_or(file);\n    format!(\"@/{}\", stem.strip_suffix(\"/index\").unwrap_or(stem))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/promote",
+  "src": "crates/bsc-ui/src/promote/spec_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--projection--add-months.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "add_months",
+  "code": "/// `YYYY-MM` arithmetic. PROPER MODULO, so stepping backwards over a year boundary works — `%` on a\n/// negative in both Rust and JavaScript yields a negative, and `2026-01` minus one month would land\n/// on month `-1` rather than December.\npub fn add_months(ym: &str, n: i64) -> String {\n    let year: i64 = ym[0..4].parse().unwrap_or(0);\n    let month: i64 = ym[5..7].parse().unwrap_or(1);\n    let total = year * 12 + (month - 1) + n;\n    let mm = total.rem_euclid(12);\n    let yy = (total - mm) / 12;\n    format!(\"{yy:04}-{:02}\", mm + 1)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/projection",
+  "src": "crates/bsc-fin/src/projection/add_months.rs",
+  "moduleVis": "private",
+  "composes": []
+}

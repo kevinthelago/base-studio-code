@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--membership--worker-pane-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worker_pane_id",
+  "code": "/// A worker's pane id — the one grammar `fleetPaneId` uses, so a member id is the id a director types\n/// into `bsc fleet wake` / `bsc-answer` / `bsc-assign`.\npub fn worker_pane_id(project_key: &str, stream_id: &str) -> String {\n    format!(\"{project_key}:{stream_id}\")\n}\n",
+  "folder": "crates/bsc-fleet/src/membership",
+  "src": "crates/bsc-fleet/src/membership/worker_pane_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "bsc-storefs--coord--schema.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "schema",
+  "src": "crates/bsc-storefs/src/coord/schema.rs",
+  "folder": "crates/bsc-storefs/src/coord",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--coord--drain.rs"
+  ],
+  "code": "use super::*;\n\n/// The readable contract, projected at `/coord/schema`. Prevention, so an agent can be right the\n/// first time instead of learning the vocabulary by being refused.\npub fn schema() -> String {\n    // Built as a joined line list rather than one multi-line literal: a backslash line\n    // continuation is easy to get wrong (this text shipped once with every line indented by\n    // nine spaces), and a contract an agent READS should not be the place that happens.\n    let mut out: Vec<String> = [\n        \"How to emit a coordination event.\",\n        \"\",\n        \"The FILENAME is the verb. The CONTENTS are the message.\",\n        \"\",\n        \"  echo \\\"Which branch should I target?\\\" > /coord/out/ask\",\n        \"  echo \\\"stream-3 landed on develop\\\"    > /coord/out/landed.42\",\n        \"\",\n        \"Use <verb>.<suffix> to emit several of the same verb before a drain.\",\n        \"\",\n        \"ACCEPTED VERBS\",\n    ]\n    .iter()\n    .map(|s| s.to_string())\n    .collect();\n    out.push(format!(\"  {}\", VERBS.join(\" \")));\n    out.extend(\n        [\n            \"\",\n            \"Whitespace in a message is collapsed to single spaces - the log is tab-separated, so\",\n            \"an embedded tab or newline would corrupt the record. An unknown VERB is refused.\",\n            \"\",\n            \"A refused entry comes back as <name>.rejected, whose text names the fix. That feedback\",\n            \"is ASYNCHRONOUS: it appears after the next drain, not when you write.\",\n            \"\",\n            \"/coord/out is the only writable path here. Everything else under /coord is a read-only\",\n            \"snapshot and writing to it will fail.\",\n            \"\",\n        ]\n        .iter()\n        .map(|s| s.to_string()),\n    );\n    out.join(\"\n\")\n}\n"
+}

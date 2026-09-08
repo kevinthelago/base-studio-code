@@ -1,0 +1,11 @@
+{
+  "id": "bsc-news--signals--framing--find-term.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "find_term",
+  "src": "crates/bsc-news/src/signals/framing/find_term.rs",
+  "folder": "crates/bsc-news/src/signals/framing",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Whole-word, case-insensitive occurrences of `term` in `text`, as byte offsets.\npub(crate) fn find_term(text: &str, term: &str) -> Vec<(usize, usize)> {\n    let lower = text.to_lowercase();\n    let mut out = Vec::new();\n    let mut from = 0usize;\n    while let Some(rel) = lower[from..].find(term) {\n        let start = from + rel;\n        let end = start + term.len();\n        let before_ok = start == 0 || !lower[..start].chars().next_back().is_some_and(|c| c.is_alphanumeric());\n        let after_ok = end >= lower.len() || !lower[end..].chars().next().is_some_and(|c| c.is_alphanumeric());\n        if before_ok && after_ok {\n            out.push((start, end));\n        }\n        from = end.max(start + 1);\n        if from >= lower.len() {\n            break;\n        }\n    }\n    out\n}\n"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-record--record-source--seed-matches-file.rs",
+  "src": "crates/bsc-record/src/record_source/seed_matches_file.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "seed_matches_file",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-record--record-source--norm.rs",
+    "bsc-record--record-source--split-preamble.rs",
+    "bsc-record--record-source--code-only.rs"
+  ],
+  "code": "use super::{code_only, norm, split_preamble};\n\n/// Does a seed's BODY equal the file it mirrors — exactly, or once both are reduced to code?\n///\n/// The preamble is stripped first: every migrated record opens with a block the file never had, so a raw\n/// comparison reports every one of them as drift.\npub fn seed_matches_file(seed_src_text: &str, file_src: &str) -> bool {\n    let file = norm(file_src);\n    let (_, body) = split_preamble(&norm(seed_src_text), &file);\n    body == file || code_only(&body) == code_only(&file)\n}\n"
+}

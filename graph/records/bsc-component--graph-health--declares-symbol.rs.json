@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--declares-symbol.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "declares_symbol",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\npub fn declares_symbol(source: &str, name: &str) -> bool {\n    [\"function \", \"const \", \"let \", \"var \", \"class \"].iter().any(|kw| {\n        let needle = format!(\"{kw}{name}\");\n        let mut from = 0;\n        while let Some(rel) = source[from..].find(&needle) {\n            let at = from + rel;\n            let after = at + needle.len();\n            let after_ok =\n                source[after..].chars().next().is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'));\n            if after_ok {\n                return true;\n            }\n            from = at + 1;\n        }\n        false\n    })\n}\n",
+  "src": "crates/bsc-component/src/graph_health/declares_symbol.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

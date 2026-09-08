@@ -1,0 +1,11 @@
+{
+  "id": "bsc-ui--sanitize-variant-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sanitize_variant_name",
+  "code": "/// Validate a NEW variant NAME (#2569 security). The name becomes a CSS selector / data-attribute value\n/// when the frontend compiles the variant, so it needs a STRICTER grammar than a token value: lowercase,\n/// starts with a letter, then `[a-z0-9-]`, no leading/trailing/double hyphen — a safe CSS identifier an\n/// LLM cannot inject a selector through.\npub fn sanitize_variant_name(name: &str) -> Result<(), String> {\n    let ok = !name.is_empty()\n        && name.starts_with(|c: char| c.is_ascii_lowercase())\n        && !name.ends_with('-')\n        && !name.contains(\"--\")\n        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');\n    if ok {\n        Ok(())\n    } else {\n        Err(format!(\n            \"variant name '{name}' must be a safe CSS identifier: lowercase [a-z][a-z0-9-]*, no leading/trailing/double hyphen\"\n        ))\n    }\n}\n",
+  "folder": "crates/bsc-ui/src",
+  "src": "crates/bsc-ui/src/sanitize_variant_name.rs",
+  "moduleVis": "private",
+  "composes": []
+}

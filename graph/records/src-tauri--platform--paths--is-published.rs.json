@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--is-published.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_published",
+  "composes": [
+    "src-tauri--platform--paths--published-marker.rs"
+  ],
+  "code": "use super::{published_marker};\n\n/// Whether a project hub carries the published marker (#922).\npub(crate) fn is_published(project_key: &str) -> bool {\n    published_marker(project_key).is_file()\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/is_published.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "logs--pss--basename.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "basename",
+  "src": "crates/logs/src/pss/basename.rs",
+  "folder": "crates/logs/src/pss",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The last path component of a `/`-joined string — `basename`, without touching the filesystem\n/// (the binary the process ran may no longer exist on disk, e.g. a since-removed build).\npub(crate) fn basename(path: &str) -> &str {\n    path.rsplit('/').next().unwrap_or(path)\n}\n"
+}

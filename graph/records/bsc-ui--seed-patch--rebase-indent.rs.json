@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--seed-patch--rebase-indent.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rebase_indent",
+  "code": "//! `rebase_indent` — Rebase a standalone `serde_json::to_string_pretty` rendering onto `indent`: the first line sits right after `\"key\": ` on the same line as-is\n\n/// Rebase a standalone `serde_json::to_string_pretty` rendering onto `indent`: the first line sits\n/// right after `\"key\": ` on the same line as-is, and every following line gets `indent` prefixed —\n/// which is exactly the offset a pretty-printer would have applied had it rendered the value in\n/// place one nesting level deeper. (`to_string_pretty` indents 2 spaces per level, same as every\n/// seed file, so re-basing by the field's own indent reproduces the file's existing style exactly.)\npub(crate) fn rebase_indent(pretty: &str, indent: &str) -> String {\n    let mut lines = pretty.lines();\n    let mut out = lines.next().unwrap_or(\"\").to_string();\n    for line in lines {\n        out.push('\\n');\n        out.push_str(indent);\n        out.push_str(line);\n    }\n    out\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/seed_patch",
+  "src": "crates/bsc-ui/src/seed_patch/rebase_indent.rs",
+  "moduleVis": "private",
+  "composes": []
+}

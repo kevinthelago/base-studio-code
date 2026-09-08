@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--imports--normalize-code.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "normalize_code",
+  "composes": [
+    "bsc-graph--imports--import-spans.rs"
+  ],
+  "code": "use super::*;\n\n/// Rewrite a record's `code` so its DERIVABLE imports sit in ONE canonical block at the top — the exact\n/// slot the emitter re-renders them into — and hand back the derived specs alongside. This is the\n/// `bsc graph imports normalize` core (imports-are-derived-from-the-composes-graph, option A: normalize\n/// FIRST, then migrate).\n///\n/// FLOOR imports (`@/…` resolving to no record `provides`) and any statement tree-sitter could not\n/// structure are LEFT WHERE THEY ARE, in the body — they stay hand-written. Because the canonical block\n/// is rendered by the SAME [`bsc_record::imports_fmt::body_with_imports`] the materializer uses, a later\n/// `migrate` that strips this block re-emits byte-for-byte: parity by CONSTRUCTION. Idempotent —\n/// normalizing already-normalized code returns it unchanged.\npub fn normalize_code(code: &str, provides: &HashSet<String>) -> NormalizedImports {\n    let mut derived: Vec<ImportSpec> = Vec::new();\n    let mut cut: Vec<(usize, usize)> = Vec::new();\n    for (start, end, specs) in import_spans(code) {\n        // Every spec in one statement shares its `from`, so the whole statement is derived or floor.\n        let floor = specs\n            .first()\n            .is_some_and(|s| s.from.starts_with(\"@/\") && !provides.contains(&s.from));\n        if specs.is_empty() || floor {\n            continue;\n        }\n        derived.extend(specs);\n        // Swallow the statement's trailing newline so excising it leaves no blank line behind.\n        let mut e = end;\n        if code[e..].starts_with(\"\\r\\n\") {\n            e += 2;\n        } else if code[e..].starts_with('\\n') {\n            e += 1;\n        }\n        cut.push((start, e));\n    }\n    if cut.is_empty() {\n        return NormalizedImports { code: code.to_string(), derived };\n    }\n    let mut cleaned = code.to_string();\n    for (s, e) in cut.into_iter().rev() {\n        cleaned.replace_range(s..e, \"\");\n    }\n    // Excising a statement leaves the blank line that separated the import block from the body; drop\n    // those leading blanks so [`layout`] re-adds EXACTLY one — otherwise re-normalizing piles them up.\n    let (head, body) = bsc_record::imports_fmt::split_head(&cleaned);\n    let body = body.trim_start_matches(['\\n', '\\r']);\n    let fmt: Vec<_> = derived.iter().map(to_fmt).collect();\n    let code = bsc_record::imports_fmt::layout(head, &bsc_record::imports_fmt::render_import_block(&fmt), body);\n    NormalizedImports { code, derived }\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/imports",
+  "src": "crates/bsc-graph/src/imports/normalize_code.rs",
+  "moduleVis": "private"
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ago,
   attribute,
+  coverageShortfall,
   diagnose,
   drifted,
   lastRepoCommit,
@@ -305,23 +306,77 @@ describe("graph-promote-check diagnosis", () => {
 // very functions that were crashing.
 //
 // So this spawns the module as a PROCESS against a stub `bsc`. It is the only shape that can
+
+describe("a clean verdict is only worth what it covered", () => {
+  // THE FAILURE THIS EXISTS FOR, and it passed a full gate. `target/debug/bsc` was a ZERO-BYTE file —
+  // what a binary IS for the seconds it is being linked — so `pickUsable` correctly rejected it and
+  // fell through to the STALE staged `~/.base-studio-code/bin/bsc`, which predates the per-record
+  // split and reads only `graph/algorithms.json`. That file now holds no implementations, so the stale
+  // binary found nothing to track, checked the 8 edges, and reported the repo store CURRENT. Rebuilt,
+  // the same check covered 1,734 and found 308 drifted records.
+  //
+  // A version handshake would not have caught it: the binary answered `version` perfectly well. It was
+  // current for its own build and merely older than the store's LAYOUT. The only thing that separates
+  // the two is how much it says it looked at.
+  it("catches a check that covered a fraction of the store and called it ok", () => {
+    expect(coverageShortfall({ checked: 8, checkedEdges: 8, ok: true }, 1726)).toEqual({
+      checked: 0,
+      expected: 1726,
+    });
+  });
+
+  it("passes a check that covered every record", () => {
+    expect(coverageShortfall({ checked: 1734, checkedEdges: 8 }, 1726)).toBeNull();
+  });
+
+  it("does not fire when the check covered MORE than the store holds", () => {
+    // The runtime store can legitimately carry ids this checkout's committed store does not, and a
+    // guard that fired on that would redden every branch mid-adoption.
+    expect(coverageShortfall({ checked: 2000, checkedEdges: 8 }, 1726)).toBeNull();
+  });
+
+  it("says nothing when the report is unreadable, rather than guessing", () => {
+    // An unparseable report is the TIMEOUT and no-binary paths' business, each of which has its own
+    // verdict and its own exit code. Claiming a coverage shortfall here would put a second, wrong
+    // explanation in front of a reader who already has the right one.
+    expect(coverageShortfall(null, 1726)).toBeNull();
+    expect(coverageShortfall({ ok: true }, 1726)).toBeNull();
+  });
+});
+
 // observe the declaration order the CLI actually uses.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** A checkout-shaped temp dir: the module, its one lib import, a stub `bsc`, and a repo store. */
+/**
+ * Stage the module and EVERY `./lib/*.mjs` it imports into `root/scripts/`.
+ *
+ * DERIVED from the module's own import statements rather than listed here. The list was hand-written
+ * and one entry long, so adding a second lib import (`recordStore.mjs`, when the committed store split
+ * into per-record files) made both CLI tests fail with `ERR_MODULE_NOT_FOUND` — a staging gap wearing
+ * a module bug's clothes. A list that has to be kept in step with an import statement will not be.
+ */
+function stageModule(root: string): string[] {
+  const src = readFileSync(join(HERE, "graph-promote-check.mjs"), "utf8");
+  const libs = [...src.matchAll(/from "\.\/lib\/([\w.-]+\.mjs)"/g)].map((m) => m[1]);
+  expect(libs.length, "the module imports at least one ./lib module, so this staging is real").toBeGreaterThan(0);
+  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
+  for (const lib of libs) copyFileSync(join(HERE, "lib", lib), join(root, "scripts", "lib", lib));
+  return libs;
+}
+
+/** A checkout-shaped temp dir: the module, every lib module it imports, a stub `bsc`, and a repo store. */
 function stubCheckout(): string {
   const root = mkdtempSync(join(tmpdir(), "promote-check-cli-"));
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });
-  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
-  copyFileSync(join(HERE, "lib", "bscBinary.mjs"), join(root, "scripts", "lib", "bscBinary.mjs"));
+  stageModule(root);
 
   // BOTH copies must be READABLE or `shapeOf` returns null before it ever touches `STAMPS` — the
   // early return would make this test pass against the unfixed module, which is the whole trap.
@@ -399,8 +454,7 @@ function stubSlowCheckout(): string {
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });
-  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
-  copyFileSync(join(HERE, "lib", "bscBinary.mjs"), join(root, "scripts", "lib", "bscBinary.mjs"));
+  stageModule(root);
 
   const bsc = join(root, "target", "debug", "bsc");
   writeFileSync(

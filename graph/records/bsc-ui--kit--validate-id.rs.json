@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--validate-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_id",
+  "code": "//! `validate_id` — Validate a store id: a publisher-scoped slug `publisher/name`, each segment lowercase `[a-z0-9-]` starting alphanumeric.\n\n/// Validate a store id: a publisher-scoped slug `publisher/name`, each segment lowercase\n/// `[a-z0-9-]` starting alphanumeric. Strict (reject, not slugify) — the id IS the identity a hash\n/// is pinned against, so silently rewriting it would corrupt the reference.\npub fn validate_id(id: &str) -> Result<(), String> {\n    let seg_ok = |s: &str| {\n        s.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())\n            && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')\n    };\n    match id.split('/').collect::<Vec<_>>().as_slice() {\n        [publisher, name] if seg_ok(publisher) && seg_ok(name) => Ok(()),\n        _ => Err(format!(\n            \"invalid kit id '{id}' — want a publisher-scoped slug like 'bsc/react-ui' (lowercase [a-z0-9-], one '/')\"\n        )),\n    }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/validate_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

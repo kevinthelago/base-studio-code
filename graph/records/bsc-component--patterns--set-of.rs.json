@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--patterns--set-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "set_of",
+  "code": "use serde_json::Value;\nuse std::collections::BTreeSet;\n\npub fn set_of(v: &Value, path: &[&str]) -> BTreeSet<String> {\n    let mut cur = v;\n    for p in path {\n        match cur.get(p) {\n            Some(next) => cur = next,\n            None => return BTreeSet::new(),\n        }\n    }\n    cur.as_array()\n        .map(|a| a.iter().filter_map(|x| x.as_str()).map(str::to_string).collect())\n        .unwrap_or_default()\n}\n",
+  "folder": "crates/bsc-component/src/patterns",
+  "src": "crates/bsc-component/src/patterns/set_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

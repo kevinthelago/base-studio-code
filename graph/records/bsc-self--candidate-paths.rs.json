@@ -1,0 +1,13 @@
+{
+  "id": "bsc-self--candidate-paths.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "candidate_paths",
+  "code": "use crate::EXE;\nuse std::path::{Path, PathBuf};\n\n/// Where a built or staged `bsc` may live, MOST-LOCAL FIRST — a local build is what you are iterating on,\n/// so it must win over the staged copy even when the staged one is newer.\npub fn candidate_paths(root: &Path, home: &Path) -> Vec<PathBuf> {\n    vec![\n        root.join(\"target\").join(\"debug\").join(EXE),\n        root.join(\"target\").join(\"release\").join(EXE),\n        home.join(\".base-studio-code\").join(\"bin\").join(EXE),\n    ]\n}\n",
+  "folder": "crates/bsc-self/src",
+  "src": "crates/bsc-self/src/candidate_paths.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-self--lib.rs"
+  ]
+}

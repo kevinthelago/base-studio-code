@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--backing--unresolvable-src.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "unresolvable_src",
+  "composes": [
+    "bsc-component--backing--backing-for.rs"
+  ],
+  "code": "use super::*;\nuse serde_json::Value;\n\n/// Every record whose `src` names a file that does NOT exist under `root` (#4223).\n///\n/// This is the gate's blind spot made visible. `backing_for` matches a path against each record's `src`;\n/// if that `src` is stale, the record backs a file the lookup can never find, and the gate answers\n/// \"not component-backed\" — a green light to edit the artifact directly, which is the exact outcome the\n/// gate exists to prevent. A false NEGATIVE here is far worse than a false positive.\n///\n/// Only meaningful when `root` is the repo the records describe; a caller running elsewhere would see\n/// every record as unresolvable, which is why the audit states its root and the gate only WARNS on it.\npub fn unresolvable_src(records: &[Value], root: &std::path::Path) -> Vec<Backing> {\n    let field = |v: &Value, k: &str| {\n        v.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).unwrap_or(\"\").to_string()\n    };\n    records\n        .iter()\n        .filter_map(|r| {\n            let src = field(r, \"src\");\n            if src.is_empty() || root.join(&src).exists() {\n                return None;\n            }\n            Some(Backing { id: field(r, \"id\"), kit_id: field(r, \"kitId\"), src })\n        })\n        .collect()\n}\n",
+  "folder": "crates/bsc-component/src/backing",
+  "src": "crates/bsc-component/src/backing/unresolvable_src.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--migrate--point-root-at-shared-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "point_root_at_shared_root",
+  "composes": [
+    "bsc-graph--migrate--lib-path-for.rs",
+    "bsc-graph--migrate--root-table.rs",
+    "bsc-graph--migrate--section-of.rs"
+  ],
+  "code": "use super::*;\n\n/// The manifest with the table that owns the crate root — `[lib]`, or `[[bin]]` for a BINARY — pointing\n/// at the SHARED crate root.\n///\n/// A binary reaches the shared root exactly as a library does; only the table differs. `bsc-hook` is\n/// the proof: 165 lines, no lib, no child module, and after this it is a `Cargo.toml` and nothing else.\n/// `pkg` names a `[[bin]]` table that has to be CREATED — cargo requires `name` there — and is unused\n/// for `[lib]`, which needs none.\npub fn point_root_at_shared_root(cargo_toml: &str, crate_dir: &str, root_name: &str, pkg: &str) -> String {\n    let table = root_table(root_name);\n    let wiring = lib_path_for(crate_dir);\n    if section_of(cargo_toml, table).lines().any(|l| l.trim() == wiring) {\n        return cargo_toml.to_string();\n    }\n    let note = \"# THE SHARED CRATE ROOT — this crate owns no source file at all. See\\n\\\n                # crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.\";\n    let mut lines: Vec<String> = cargo_toml.lines().map(str::to_string).collect();\n    match lines.iter().position(|l| l.trim() == table) {\n        Some(at) => {\n            // An existing `path` inside THIS table is replaced in place; anything else keeps its order.\n            let mut end = lines.iter().skip(at + 1).position(|l| l.trim_start().starts_with('[')).map_or(lines.len(), |i| at + 1 + i);\n            // Back up over the blank line that separates this table from the next, so the key lands\n            // INSIDE `[lib]` rather than orphaned above `[dependencies]` with the separator on the\n            // wrong side of it.\n            while end > at + 1 && lines[end - 1].trim().is_empty() {\n                end -= 1;\n            }\n            match lines[at + 1..end].iter().position(|l| l.trim_start().starts_with(\"path\")) {\n                Some(i) => lines[at + 1 + i] = wiring,\n                None => lines.insert(end, format!(\"{note}\\n{wiring}\")),\n            }\n        }\n        None => {\n            // A `[[bin]]` table cargo has been AUTO-DETECTING needs its `name` written down the moment\n            // the path stops being `src/main.rs`, or cargo looks for a binary target that is not there.\n            let name = if table == \"[[bin]]\" { format!(\"name = \\\"{pkg}\\\"\\n\") } else { String::new() };\n            let mut block = format!(\"{table}\\n{note}\\n{name}{wiring}\");\n            if !cargo_toml.trim_end().is_empty() {\n                block = format!(\"\\n{block}\");\n            }\n            lines.push(block);\n        }\n    }\n    let mut out = lines.join(\"\\n\");\n    if !out.ends_with('\\n') {\n        out.push('\\n');\n    }\n    out\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/point_root_at_shared_root.rs",
+  "moduleVis": "private"
+}

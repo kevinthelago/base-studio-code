@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--project--plan-db--with-suffix.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "with_suffix",
+  "src": "src-tauri/src/project/plan_db/with_suffix.rs",
+  "folder": "src-tauri/src/project/plan_db",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Append a suffix to a path's filename without lossy string round-tripping (`plans/x.db` + `-wal`\n/// → `plans/x.db-wal`). Used to name SQLite's `-wal`/`-shm` sidecars beside the relocated `.db`.\npub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {\n    let mut s = path.as_os_str().to_owned();\n    s.push(suffix);\n    PathBuf::from(s)\n}\n"
+}

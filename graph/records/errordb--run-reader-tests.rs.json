@@ -1,0 +1,16 @@
+{
+  "id": "errordb--run-reader-tests.rs",
+  "tech": "rust",
+  "role": "test",
+  "name": "run_reader_tests",
+  "composes": [],
+  "code": "use super::*;\n\nfn store(label: &str) -> (std::path::PathBuf, Store) {\n    let dir = std::env::temp_dir().join(format!(\"errordb-runrd-{label}-{}\", std::process::id()));\n    let _ = std::fs::remove_dir_all(&dir);\n    std::fs::create_dir_all(&dir).unwrap();\n    let path = dir.join(\"error.db\");\n    let s = Store::open(&path).unwrap();\n    (dir, s)\n}\n\nfn insert(s: &Store, ts: i64, stage: &str, source: &str, ms: Option<i64>, peak: Option<i64>) {\n    s.conn\n        .execute(\n            \"INSERT INTO runs (ts, stage, source, cmd, ok, exit_code, ms, peak_rss_bytes)\n                 VALUES (?1, ?2, ?3, 'c', 1, 0, ?4, ?5)\",\n            params![ts, stage, source, ms, peak],\n        )\n        .unwrap();\n}\n\n/// Newest first, and filtered by the axes `bsc mem build` scopes on.\n#[test]\nfn runs_reads_newest_first_and_filters_by_stage_source_and_since() {\n    let (dir, s) = store(\"filter\");\n    insert(&s, 100, \"build\", \"npm\", Some(10), Some(1));\n    insert(&s, 300, \"build\", \"cargo\", Some(30), Some(3));\n    insert(&s, 200, \"launch\", \"npm\", Some(20), Some(2));\n\n    let all = s.runs(&RunFilter::default()).unwrap();\n    assert_eq!(all.iter().map(|r| r.ts).collect::<Vec<_>>(), [300, 200, 100], \"newest first\");\n\n    let builds = s.runs(&RunFilter { stage: Some(\"build\".into()), ..Default::default() }).unwrap();\n    assert_eq!(builds.len(), 2);\n\n    let npm = s.runs(&RunFilter { source: Some(\"npm\".into()), ..Default::default() }).unwrap();\n    assert_eq!(npm.iter().map(|r| r.ts).collect::<Vec<_>>(), [200, 100]);\n\n    let recent = s.runs(&RunFilter { since: Some(200), ..Default::default() }).unwrap();\n    assert_eq!(recent.iter().map(|r| r.ts).collect::<Vec<_>>(), [300, 200]);\n\n    let one = s.runs(&RunFilter { limit: Some(1), ..Default::default() }).unwrap();\n    assert_eq!(one.len(), 1);\n    let _ = std::fs::remove_dir_all(&dir);\n}\n\n/// AN UNMEASURED RUN STAYS UNMEASURED all the way out. A NULL that surfaced as `Some(0)` would be a\n/// build that took no time and used no memory, and it would drag every median it entered downward.\n#[test]\nfn an_absent_measurement_reads_as_none_not_as_zero() {\n    let (dir, s) = store(\"absent\");\n    insert(&s, 1, \"build\", \"x\", None, None);\n    let got = s.runs(&RunFilter::default()).unwrap();\n    assert_eq!(got[0].ms, None);\n    assert_eq!(got[0].peak_rss_bytes, None);\n    let _ = std::fs::remove_dir_all(&dir);\n}\n",
+  "domain": "errordb",
+  "src": "crates/errordb/src/run_reader_tests.rs",
+  "folder": "crates/errordb/src",
+  "moduleAttrs": [
+    "#[cfg(test)]"
+  ],
+  "moduleVis": "private",
+  "feature": "observability"
+}

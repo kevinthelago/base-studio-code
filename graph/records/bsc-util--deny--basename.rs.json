@@ -1,0 +1,11 @@
+{
+  "id": "bsc-util--deny--basename.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "basename",
+  "code": "/// The final path segment — so a deny on `vi` still catches `/usr/bin/vi`, and a deny written as\n/// `/usr/bin/vi` still catches a bare `vi`.\npub fn basename(tok: &str) -> &str {\n    tok.rsplit(['/', '\\\\']).next().unwrap_or(tok)\n}\n",
+  "folder": "crates/bsc-util/src/deny",
+  "src": "crates/bsc-util/src/deny/basename.rs",
+  "moduleVis": "private",
+  "composes": []
+}

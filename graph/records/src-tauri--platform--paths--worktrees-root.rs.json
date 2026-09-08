@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--worktrees-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worktrees_root",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::bsc_base_dir;\n\n/// The root every project's worktree tree hangs off — the sibling of [`projects_root`].\n///\n/// Exists so a cwd can be resolved back to its project key from EITHER root. `project_key_from_cwd`\n/// stripped only `projects_root()`, which silently excluded every worker (they live here, not there,\n/// since #844) from the per-project stores keyed off that derivation.\npub(crate) fn worktrees_root() -> std::path::PathBuf {\n    bsc_base_dir().join(\"worktrees\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/worktrees_root.rs",
+  "moduleVis": "private"
+}

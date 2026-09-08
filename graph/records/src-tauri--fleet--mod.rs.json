@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--fleet--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fleet",
+  "composes": [],
+  "code": "",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/fleet/mod.rs",
+  "folder": "src-tauri/src/fleet",
+  "moduleVis": "private"
+}

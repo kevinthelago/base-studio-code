@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--folder-from-src.rs",
+  "name": "folder_from_src",
+  "role": "algorithm",
+  "tech": "rust",
+  "folder": "crates/bsc-util/src",
+  "src": "crates/bsc-util/src/folder_from_src.rs",
+  "moduleVis": "pub",
+  "domain": null,
+  "composes": [],
+  "code": "/// Derive a record's FOLDER — a nested, `/`-delimited path — from the source file it was harvested\n/// from (#3579 for components, #4107 for algorithms).\n///\n/// Both libraries organize like a real project's folders (`shared/ui/controls`, `features/github`), and\n/// both derive that from the same input, so this is ONE definition rather than two that can drift. It\n/// lives here for exactly the reason this crate exists: it was about to be copy-pasted into a second\n/// crate. `bsc-component` (harvest + `bsc ui regroup`) and `bsc-graph` (`curate` + `bsc graph refolder`)\n/// both call it, so a component and an algorithm harvested from the same tree land in the same folder.\n///\n/// Normalizes `\\` to `/`, drops the filename, and strips a leading `src/` root (harvested paths carry\n/// it, some kits' don't) for a consistent tree. Returns `None` when `src` has no usable directory — a\n/// bare filename, an empty string, or a file directly under the `src/` root — so such a record is left\n/// UNFOLDERED rather than bucketed under `\"\"`.\n///\n/// Examples:\n/// - `src/shared/ui/controls/Button.tsx` → `Some(\"shared/ui/controls\")`\n/// - `crates/bsc-graph/src/extract.rs`   → `Some(\"crates/bsc-graph/src\")`\n/// - `src/Widget.tsx` / `Widget.tsx` / `\"\"` → `None`\npub fn folder_from_src(src: &str) -> Option<String> {\n    let norm = src.trim().replace('\\\\', \"/\");\n    let (dir, _file) = norm.rsplit_once('/')?; // no directory ⇒ unfoldered\n    let segs: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();\n    let start = usize::from(segs.first() == Some(&\"src\")); // strip a leading `src/` root segment\n    let path = segs[start..].join(\"/\");\n    if path.is_empty() { None } else { Some(path) }\n}"
+}

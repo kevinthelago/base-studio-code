@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--sources--data--data-scan--infer-fields.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "infer_fields",
+  "src": "src-tauri/src/sources/data/data_scan/infer_fields.rs",
+  "folder": "src-tauri/src/sources/data/data_scan",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--sources--data--data-scan--infer-typed.rs"
+  ],
+  "code": "use super::*;\n\n/// Build typed fields for an object from its columns + the sampled rows (#1219). Column samples are\n/// matched by name against the read RowSet (falling back to position); no rows ⇒ all `string`.\n#[cfg(feature = \"source-stage\")]\npub(crate) fn infer_fields(columns: &[String], rs: Option<&bsc_data::RowSet>) -> Vec<ScanField> {\n    columns\n        .iter()\n        .enumerate()\n        .map(|(ci, name)| {\n            let samples: Vec<&str> = match rs {\n                Some(r) => {\n                    let idx = r.columns.iter().position(|c| c == name).unwrap_or(ci);\n                    r.rows.iter().filter_map(|row| row.get(idx).map(String::as_str)).collect()\n                }\n                None => vec![],\n            };\n            let (ty, enum_values) = infer_typed(&samples);\n            ScanField { name: name.clone(), ty, enum_values, ref_target: None }\n        })\n        .collect()\n}\n"
+}

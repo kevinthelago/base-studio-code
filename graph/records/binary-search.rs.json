@@ -1,0 +1,13 @@
+{
+  "code": "/// Binary search a sorted slice; `Some(index)` on a hit, else `None`.\npub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Option<usize> {\n    let (mut lo, mut hi) = (0, xs.len());\n    while lo < hi {\n        let mid = lo + (hi - lo) / 2;\n        match xs[mid].cmp(target) {\n            std::cmp::Ordering::Equal => return Some(mid),\n            std::cmp::Ordering::Less => lo = mid + 1,\n            std::cmp::Ordering::Greater => hi = mid,\n        }\n    }\n    None\n}\n",
+  "composes": [],
+  "feature": "reference",
+  "folder": "core",
+  "id": "binary-search.rs",
+  "kind": "search",
+  "name": "binary_search",
+  "role": "algorithm",
+  "summary": "Halve a sorted range each step until the target is found.",
+  "tech": "rust",
+  "vizCode": "({ datatype: 'array', input: [1, 3, 4, 7, 9, 12, 15, 18, 21], run(a) { const target = 15; let lo = 0; let hi = a.length; while (lo < hi) { const mid = lo + Math.floor((hi - lo) / 2); a.cursor('lo', lo); a.cursor('hi', hi - 1); a.cursor('mid', mid); const v = a.probe(mid); if (v === target) { a.found(mid); return mid; } if (v < target) lo = mid + 1; else hi = mid; } return -1; } })"
+}

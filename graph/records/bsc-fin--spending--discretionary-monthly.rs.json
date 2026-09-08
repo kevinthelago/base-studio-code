@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--spending--discretionary-monthly.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "discretionary_monthly",
+  "code": "use super::*;\nuse crate::money::Money;\n\n/// The figure `runway` asks for: what an ordinary month costs BEYOND the standing obligations.\n///\n/// Fixed spending is deliberately NOT included — the obligation calendar already carries it, and a\n/// runway that subtracted both would double-count every subscription it knows about.\npub fn discretionary_monthly(s: &SpendingAnalysis) -> Money {\n    s.variable_monthly\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/spending",
+  "src": "crates/bsc-fin/src/spending/discretionary_monthly.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--money.rs"
+  ]
+}

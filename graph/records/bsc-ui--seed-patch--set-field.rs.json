@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--seed-patch--set-field.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "set_field",
+  "composes": [
+    "bsc-ui--seed-patch--parse-top-level-fields.rs",
+    "bsc-ui--seed-patch--rebase-indent.rs",
+    "bsc-ui--seed-patch--verify-patch.rs"
+  ],
+  "code": "//! `set_field` — Set (or insert) a top-level field `key` to `value` in the JSON object `raw` (a per-record seed file — one `{ ...\n\nuse serde_json::Value;\nuse super::{parse_top_level_fields, rebase_indent, verify_patch};\n\n/// Set (or insert) a top-level field `key` to `value` in the JSON object `raw` (a per-record seed\n/// file — one `{ ... }` at the document root). Returns the patched text and whether the field's\n/// value actually differs from before (structural equality on the parsed JSON, not textual — so a\n/// pre-existing formatting quirk in the old value doesn't read as a change when the content is the\n/// same).\n///\n/// Every byte outside the target field's own span is preserved: no key reordering, no re-indentation\n/// of sibling fields. The new value is pretty-printed at 2-space indent (`serde_json::to_string_pretty`,\n/// matching every seed file's own convention) and rebased onto the field's existing indentation. A\n/// round-trip check (see [`verify_patch`]) refuses to write a result where any OTHER field parses\n/// differently than before, so a bug in the span-finding logic fails loudly instead of silently\n/// corrupting a neighbouring field.\npub fn set_field(raw: &str, key: &str, value: &Value) -> Result<(String, bool), String> {\n    let fields = parse_top_level_fields(raw)?;\n    let indent = fields.first().map(|f| f.indent.clone()).unwrap_or_else(|| \"  \".to_string());\n    let pretty = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;\n    let rebased = rebase_indent(&pretty, &indent);\n\n    let patched = match fields.iter().find(|f| f.key == key) {\n        Some(f) => format!(\"{}{}{}\", &raw[..f.value_start], rebased, &raw[f.value_end..]),\n        None => {\n            let last = fields\n                .last()\n                .ok_or_else(|| \"cannot append a field to a seed record with no fields\".to_string())?;\n            let insertion = format!(\",\\n{indent}\\\"{key}\\\": {rebased}\");\n            format!(\"{}{}{}\", &raw[..last.value_end], insertion, &raw[last.value_end..])\n        }\n    };\n\n    let changed = verify_patch(raw, &patched, key)?;\n    Ok((patched, changed))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/seed_patch",
+  "src": "crates/bsc-ui/src/seed_patch/set_field.rs",
+  "moduleVis": "private"
+}

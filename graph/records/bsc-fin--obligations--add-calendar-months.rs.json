@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--obligations--add-calendar-months.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "add_calendar_months",
+  "code": "use super::*;\n\n/// Step by CALENDAR months, keeping the day of the month and clamping where it does not exist.\n///\n/// `2026-01-31` plus one month is `2026-02-28`, not `2026-03-03`. Plus TWO months is `2026-03-31`,\n/// not `2026-03-28` — the anchor is the ORIGINAL date, so a bill on the 31st does not walk backwards\n/// through the year every time it passes a short month.\npub fn add_calendar_months(iso: &str, n: i64) -> String {\n    let (y, m, d) = match (iso.get(0..4).and_then(|s| s.parse::<i64>().ok()), iso.get(5..7).and_then(|s| s.parse::<i64>().ok()), iso.get(8..10).and_then(|s| s.parse::<i64>().ok())) {\n        (Some(y), Some(m), Some(d)) => (y, m, d),\n        _ => return iso.to_string(),\n    };\n    let total = y * 12 + (m - 1) + n;\n    let mm = total.rem_euclid(12);\n    let yy = (total - mm) / 12;\n    format!(\"{yy:04}-{:02}-{:02}\", mm + 1, d.min(days_in_month(yy, mm + 1)))\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/obligations",
+  "src": "crates/bsc-fin/src/obligations/add_calendar_months.rs",
+  "moduleVis": "private",
+  "composes": []
+}

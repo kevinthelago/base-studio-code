@@ -1,0 +1,13 @@
+{
+  "id": "bsc-news--signals--framing--matrix.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "matrix",
+  "src": "crates/bsc-news/src/signals/framing/matrix.rs",
+  "folder": "crates/bsc-news/src/signals/framing",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-news--signals--framing--find-term.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the framing matrix over a set of articles.\npub fn matrix(articles: &[ArticleVersion]) -> Matrix {\n    let mut axes: BTreeMap<String, BTreeMap<String, Cell>> = BTreeMap::new();\n    for axis in AXES {\n        let mut per_outlet: BTreeMap<String, Cell> = BTreeMap::new();\n        for art in articles {\n            let text = art.text();\n            for term in axis.terms {\n                for (start, end) in find_term(&text, term) {\n                    let cell = per_outlet\n                        .entry(art.outlet_id.clone())\n                        .or_insert_with(|| Cell { terms: BTreeMap::new(), spans: Vec::new() });\n                    *cell.terms.entry((*term).to_string()).or_insert(0) += 1;\n                    cell.spans.push(Span {\n                        url: art.url.clone(),\n                        outlet_id: art.outlet_id.clone(),\n                        start,\n                        end,\n                        text: text[start..end].to_string(),\n                    });\n                }\n            }\n        }\n        if !per_outlet.is_empty() {\n            axes.insert(axis.name.to_string(), per_outlet);\n        }\n    }\n\n    // An axis is contested when at least two outlets used it and they did not all pick the same\n    // vocabulary. An axis everyone words identically is agreement, and agreement is not news.\n    let contested = axes\n        .iter()\n        .filter(|(_, per_outlet)| {\n            if per_outlet.len() < 2 {\n                return false;\n            }\n            let choices: std::collections::BTreeSet<Vec<&String>> =\n                per_outlet.values().map(|c| c.terms.keys().collect()).collect();\n            choices.len() > 1\n        })\n        .map(|(name, _)| name.clone())\n        .collect();\n\n    Matrix { axes, contested }\n}\n"
+}

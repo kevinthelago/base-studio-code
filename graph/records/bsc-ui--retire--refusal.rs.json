@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--retire--refusal.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "refusal",
+  "composes": [
+    "bsc-ui--retire--is-algorithm-seed-module.rs"
+  ],
+  "code": "//! `refusal` — May this module be retired?\n\nuse super::{Refusal, RetireFacts, is_algorithm_seed_module};\n\n/// May this module be retired? `None` permits it; anything else is the reason it may not.\n///\n/// ORDER IS DELIBERATE — the cheapest and most absolute refusals come first, so a module that can never\n/// be retired is reported as such rather than as a seed mismatch that someone might try to \"fix\".\npub fn refusal(f: &RetireFacts) -> Option<Refusal> {\n    if !f.build_config_importers.is_empty() {\n        return Some(Refusal::BuildConfig(f.build_config_importers.clone()));\n    }\n    // `shared/lib/algorithms/*` is never retirable: the node's `code` is GENERATED from the module, so\n    // deleting it turns a checked fact into a claim. The census learned this; the tool that actually\n    // deletes did not, and `llmEnergy.ts` went in a tranche because of the gap.\n    if is_algorithm_seed_module(f.rel) {\n        return Some(Refusal::AlgorithmSeed);\n    }\n    if !f.entry_importers.is_empty() {\n        return Some(Refusal::EntryImport(f.entry_importers.clone()));\n    }\n    let Some(seed) = f.seed_source else {\n        return Some(Refusal::NoSeed {\n            spec: f.spec.to_string(),\n            near: f.near_miss.clone(),\n        });\n    };\n    // Graph-hosted: `@/components/<id>` resolves only in the runtime loader, so the record cannot be\n    // materialized as a bundle module and the file is still doing the work.\n    let (any, specs) = crate::record_source::imports_siblings_by_record_id(seed);\n    if any {\n        return Some(Refusal::GraphHosted(specs));\n    }\n    // Last, and the one the census only ADVISES about: this tool acts, so it re-decides for itself.\n    if !crate::record_source::seed_matches_file(seed, f.file_source) {\n        return Some(Refusal::SeedDiffers(f.spec.to_string()));\n    }\n    None\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/retire",
+  "src": "crates/bsc-ui/src/retire/refusal.rs",
+  "moduleVis": "private"
+}

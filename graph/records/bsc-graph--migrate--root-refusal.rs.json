@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--migrate--root-refusal.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "root_refusal",
+  "composes": [
+    "bsc-graph--migrate--root-blockers.rs"
+  ],
+  "code": "use super::*;\n\n/// [`root_blockers`] as a refusal message, or `None` when the root can move.\npub(crate) fn root_refusal(root_name: &str, root_src: &str) -> Option<String> {\n    let blockers = root_blockers(root_src);\n    if blockers.is_empty() {\n        return None;\n    }\n    Some(format!(\n        \"src/{root_name} holds {} thing(s) an `include!`d file cannot: {}. An inner attribute is not \\\n         permitted in an included file at all — move a lint one to the manifest's [lints] table \\\n         (`#![forbid(unsafe_code)]` becomes `[lints.rust] unsafe_code = \\\"forbid\\\"`, stable since Rust \\\n         1.74) and re-run. One with no manifest home (`cfg_attr(…, windows_subsystem = …)`) means this \\\n         crate is not a candidate, and saying so is the honest answer\",\n        blockers.len(),\n        blockers.join(\"; \")\n    ))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/root_refusal.rs",
+  "moduleVis": "private"
+}

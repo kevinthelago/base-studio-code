@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--packaged-artifact.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "packaged_artifact",
+  "code": "//! `packaged_artifact` — The packaged artifact's canonical (LF) bytes.\n\nuse super::packaged_kit_json;\n\n/// The packaged artifact's canonical (LF) bytes.\npub(crate) fn packaged_artifact() -> String {\n    packaged_kit_json().replace(\"\\r\\n\", \"\\n\")\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/packaged_artifact.rs",
+  "moduleVis": "private",
+  "composes": []
+}

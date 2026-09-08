@@ -1,0 +1,12 @@
+{
+  "id": "errordb--normalize-frame.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "normalize_frame",
+  "code": "/// Collapse every run of ASCII digits to a single `#` so line/column numbers and (most of) an address\n/// don't fork the fingerprint of the same fault across runs.\npub(crate) fn normalize_frame(line: &str) -> String {\n    let mut out = String::with_capacity(line.len());\n    let mut prev_digit = false;\n    for c in line.chars() {\n        if c.is_ascii_digit() {\n            if !prev_digit {\n                out.push('#');\n            }\n            prev_digit = true;\n        } else {\n            out.push(c);\n            prev_digit = false;\n        }\n    }\n    out\n}\n",
+  "feature": "observability",
+  "folder": "crates/errordb/src",
+  "src": "crates/errordb/src/normalize_frame.rs",
+  "moduleVis": "private",
+  "composes": []
+}

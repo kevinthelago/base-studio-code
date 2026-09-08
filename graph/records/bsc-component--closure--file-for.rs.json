@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--closure--file-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "file_for",
+  "code": "/// Resolve a `src/`-relative module base to a real file, trying the specifier AS WRITTEN first and then\n/// the extensions and directory index in the order Vite's resolver does.\n///\n/// As-written comes first because a specifier can already carry its extension — a CSS side-effect import\n/// (`import \"@/features/algorithms/algorithms.css\"`) is a real dependency of a real component, and\n/// extension-guessing alone left two page records failing on their stylesheets.\npub fn file_for(src_root: &std::path::Path, base: &str) -> Option<std::path::PathBuf> {\n    for cand in [\n        base.to_string(),\n        format!(\"{base}.ts\"),\n        format!(\"{base}.tsx\"),\n        format!(\"{base}/index.ts\"),\n        format!(\"{base}/index.tsx\"),\n    ] {\n        let p = src_root.join(cand.replace('/', std::path::MAIN_SEPARATOR_STR));\n        if p.is_file() {\n            return Some(p);\n        }\n    }\n    None\n}\n",
+  "folder": "crates/bsc-component/src/closure",
+  "src": "crates/bsc-component/src/closure/file_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

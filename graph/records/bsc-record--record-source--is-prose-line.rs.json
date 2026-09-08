@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--is-prose-line.rs",
+  "src": "crates/bsc-record/src/record_source/is_prose_line.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "is_prose_line",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// A line that is PROSE — a comment continuation. Only the INLINE pattern consults this: a `require(\"./x\")`\n/// written inside a doc comment is an example, not a dependency.\npub(crate) fn is_prose_line(line: &str) -> bool {\n    let t = line.trim_start();\n    t.starts_with('*') || t.starts_with(\"//\") || t.starts_with(\"/*\")\n}\n"
+}

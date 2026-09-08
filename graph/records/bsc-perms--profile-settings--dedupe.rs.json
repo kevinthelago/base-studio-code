@@ -1,0 +1,11 @@
+{
+  "id": "bsc-perms--profile-settings--dedupe.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dedupe",
+  "code": "/// Order-preserving de-duplication — the first occurrence wins, matching the TypeScript's `new Set`.\npub(crate) fn dedupe(xs: Vec<String>) -> Vec<String> {\n    let mut seen = std::collections::HashSet::new();\n    xs.into_iter().filter(|x| seen.insert(x.clone())).collect()\n}\n",
+  "folder": "crates/bsc-perms/src/profile_settings",
+  "src": "crates/bsc-perms/src/profile_settings/dedupe.rs",
+  "moduleVis": "private",
+  "composes": []
+}

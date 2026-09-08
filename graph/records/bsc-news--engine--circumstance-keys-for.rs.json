@@ -1,0 +1,11 @@
+{
+  "id": "bsc-news--engine--circumstance-keys-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "circumstance_keys_for",
+  "src": "crates/bsc-news/src/engine/circumstance_keys_for.rs",
+  "folder": "crates/bsc-news/src/engine",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn circumstance_keys_for(name: &str) -> Vec<&'static str> {\n    let n = name.to_lowercase();\n    // A family name (`disaster`) expands to every circumstance in it, so \"what disasters is anyone\n    // covering\" is answerable without naming one.\n    let by_family: Vec<&'static str> =\n        crate::gazetteer::CIRCUMSTANCES.iter().filter(|c| c.family == n).map(|c| c.key).collect();\n    if by_family.is_empty() {\n        crate::gazetteer::CIRCUMSTANCES.iter().filter(|c| c.key == n).map(|c| c.key).collect()\n    } else {\n        by_family\n    }\n}\n"
+}

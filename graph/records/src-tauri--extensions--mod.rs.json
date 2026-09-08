@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--extensions--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "extensions",
+  "composes": [],
+  "code": "",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/extensions/mod.rs",
+  "folder": "src-tauri/src/extensions",
+  "moduleVis": "private"
+}

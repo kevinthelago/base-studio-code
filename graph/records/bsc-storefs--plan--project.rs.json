@@ -1,0 +1,15 @@
+{
+  "id": "bsc-storefs--plan--project.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "project",
+  "src": "crates/bsc-storefs/src/plan/project.rs",
+  "folder": "crates/bsc-storefs/src/plan",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--plan--readme.rs",
+    "bsc-storefs--plan--field.rs",
+    "bsc-storefs--plan--write-schema.rs"
+  ],
+  "code": "use super::*;\n\n/// Render the tree. `generated_at` is passed in rather than read from the clock so the projection\n/// stays pure and its tests are deterministic.\npub fn project(items: &[PlanItem], generated_at: &str) -> Tree {\n    let mut t = Tree::new();\n    let mut by_status: BTreeMap<&str, Vec<&PlanItem>> = BTreeMap::new();\n\n    for it in items.iter().filter(|i| id_is_safe(&i.reference)) {\n        let base = format!(\"items/{}\", it.reference);\n        // Every field is always present, even when empty: a predictable shape means `cat` returns\n        // nothing rather than failing, and an agent never has to test for a file's existence.\n        t.insert(format!(\"{base}/status\"), format!(\"{}\\n\", it.status));\n        t.insert(format!(\"{base}/title\"), format!(\"{}\\n\", it.title));\n        t.insert(format!(\"{base}/body\"), it.body.clone());\n        t.insert(format!(\"{base}/acceptance\"), lines(&it.acceptance));\n        t.insert(format!(\"{base}/labels\"), lines(&it.labels));\n        t.insert(format!(\"{base}/dependsOn\"), lines(&it.depends_on));\n        by_status.entry(it.status.as_str()).or_default().push(it);\n    }\n\n    // `ls /plan/by-status/open` answers \"what is available\" without a query language.\n    for (status, group) in &by_status {\n        if status.is_empty() {\n            continue;\n        }\n        for it in group {\n            t.insert(\n                format!(\"by-status/{}/{}\", status, it.reference),\n                format!(\"{}\\n\", it.title),\n            );\n        }\n    }\n\n    t.insert(\"README\".into(), readme(items.len(), generated_at));\n    // PREVENTION, the same way /ui and /coord do it: the write contract is readable, so a worker\n    // can be right the first time rather than discovering the vocabulary by being refused.\n    t.insert(\"schema\".into(), write_schema());\n    t\n}\n"
+}

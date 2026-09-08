@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--extensions--cfg.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cfg",
+  "composes": [],
+  "code": "//! The extension wire types — RE-EXPORTED from `crates/bsc-resolve`.\n//!\n//! They moved with the resolution that produces them\n//! (`the-resolution-decisions-live-in-the-app-binary-not-a-crate`): a payload type owned by a\n//! different crate from the decision that fills it is the shape that lets the two drift.\n\npub(crate) use bsc_resolve::cfg::{HookCfg, McpServerCfg, SkillCfg};\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/extensions/cfg.rs",
+  "folder": "src-tauri/src/extensions",
+  "moduleVis": "pub"
+}

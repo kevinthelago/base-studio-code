@@ -1,0 +1,15 @@
+{
+  "id": "bsc-storefs--plan--accept-write.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "accept_write",
+  "src": "crates/bsc-storefs/src/plan/accept_write.rs",
+  "folder": "crates/bsc-storefs/src/plan",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--plan--field.rs",
+    "bsc-storefs--plan--prose.rs",
+    "bsc-storefs--plan--token.rs"
+  ],
+  "code": "use super::*;\n\n/// Validate one outbox entry into the `bsc plan` call it becomes.\npub fn accept_write(entry: &str, fields: &[(String, String)]) -> Result<PlanWrite, WriteRejection> {\n    if !id_is_safe(entry) {\n        return Err(WriteRejection::UnsafeName(entry.to_string()));\n    }\n    let verb = token(fields, \"verb\")\n        .ok_or_else(|| WriteRejection::MissingVerb(entry.to_string()))?;\n    if !WRITE_VERBS.contains(&verb.as_str()) {\n        return Err(WriteRejection::UnknownVerb { entry: entry.into(), verb });\n    }\n    let missing = |f: &str| WriteRejection::MissingField {\n        entry: entry.to_string(),\n        verb: verb.clone(),\n        field: f.to_string(),\n    };\n    // Every verb but `request` names an item; a request is the lane for something with no item yet.\n    let item_ref = |field_name: &str| -> Result<String, WriteRejection> {\n        let r = token(fields, \"ref\").ok_or_else(|| WriteRejection::MissingField {\n            entry: entry.to_string(),\n            verb: field_name.to_string(),\n            field: \"ref\".to_string(),\n        })?;\n        if !id_is_safe(&r) {\n            return Err(WriteRejection::UnsafeRef { entry: entry.into(), r#ref: r });\n        }\n        Ok(r)\n    };\n\n    Ok(match verb.as_str() {\n        \"change\" => PlanWrite::Change {\n            r#ref: item_ref(\"change\")?,\n            title: prose(fields, \"title\").ok_or_else(|| missing(\"title\"))?,\n            description: prose(fields, \"description\").ok_or_else(|| missing(\"description\"))?,\n        },\n        \"note\" => PlanWrite::Note {\n            r#ref: item_ref(\"note\")?,\n            text: prose(fields, \"text\").ok_or_else(|| missing(\"text\"))?,\n            from: token(fields, \"from\"),\n        },\n        \"gate\" => PlanWrite::Gate {\n            r#ref: item_ref(\"gate\")?,\n            gate: token(fields, \"gate\").ok_or_else(|| missing(\"gate\"))?,\n            result: token(fields, \"result\").ok_or_else(|| missing(\"result\"))?,\n        },\n        \"status\" => {\n            let r = item_ref(\"status\")?;\n            let status = token(fields, \"status\").ok_or_else(|| missing(\"status\"))?;\n            if !WRITABLE_STATUSES.contains(&status.as_str()) {\n                return Err(WriteRejection::RefusedStatus { entry: entry.into(), status });\n            }\n            PlanWrite::Status { r#ref: r, status }\n        }\n        \"request\" => PlanWrite::Request {\n            text: prose(fields, \"text\").ok_or_else(|| missing(\"text\"))?,\n            command: prose(fields, \"command\"),\n            from: token(fields, \"from\"),\n        },\n        _ => unreachable!(\"verb was checked against WRITE_VERBS above\"),\n    })\n}\n"
+}

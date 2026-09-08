@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--refresh-seed--serialize-algorithms.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "serialize_algorithms",
+  "code": "//! `serialize_algorithms` — Serialize the packaged `algorithms.json` the way the file on disk is actually written: 2-space indent, non-ASCII kept LITERAL, and a trailin\n\n/// Serialize the packaged `algorithms.json` the way the file on disk is actually written: 2-space\n/// indent, non-ASCII kept LITERAL, and a trailing newline.\n///\n/// Pinned by `the_shipped_algorithms_seed_round_trips_byte_for_byte`, which is the only assertion here\n/// that cannot drift. Two other scripts carry a docstring claiming 1-space + `ensure_ascii` + no trailing\n/// newline; measured against the shipped file that reconstruction differs by 72,941 bytes, so running one\n/// reformats the whole 6.6 MB and buries the real change in a 22,500-line diff\n/// (`the-seed-serializers-do-not-match-the-seed`).\npub fn serialize_algorithms(v: &serde_json::Value) -> Result<String, String> {\n    serde_json::to_string_pretty(v).map(|s| format!(\"{s}\\n\")).map_err(|e| e.to_string())\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/refresh_seed",
+  "src": "crates/bsc-ui/src/refresh_seed/serialize_algorithms.rs",
+  "moduleVis": "private",
+  "composes": []
+}

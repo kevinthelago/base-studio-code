@@ -1,0 +1,13 @@
+{
+  "code": "/// Linear search — the index of the first element equal to `target`, else `None`.\npub fn linear_search<T: PartialEq>(xs: &[T], target: &T) -> Option<usize> {\n    xs.iter().position(|x| x == target)\n}\n",
+  "composes": [],
+  "feature": "reference",
+  "folder": "core",
+  "id": "linear-search.rs",
+  "kind": "search",
+  "name": "linear_search",
+  "role": "algorithm",
+  "summary": "Scan for the first element equal to the target; Some(index) on a hit, else None.",
+  "tech": "rust",
+  "vizCode": "({ datatype: 'array', input: [5,3,8,1,9,2,7], run(a) { const target = 9; for (let i = 0; i < a.length; i++) { a.cursor('i', i); a.mark(i, 'checked'); if (a.get(i) === target) { a.mark(i, 'found'); a.markSorted(); return i; } } } })"
+}

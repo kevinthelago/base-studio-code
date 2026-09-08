@@ -1,0 +1,13 @@
+{
+  "id": "bsc-storefs--ui--drain-writes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "drain_writes",
+  "src": "crates/bsc-storefs/src/ui/drain_writes.rs",
+  "folder": "crates/bsc-storefs/src/ui",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--ui--accept-write.rs"
+  ],
+  "code": "use super::*;\n\n/// Drain an outbox: accepted writes, and `(name.rejected, fix-text)` pairs to write back.\npub fn drain_writes(\n    entries: &[(String, Vec<(String, String)>)],\n) -> (Vec<ComponentWrite>, Vec<(String, String)>) {\n    let mut ok = Vec::new();\n    let mut rejected = Vec::new();\n    for (id, fields) in entries {\n        if id.ends_with(\".rejected\") {\n            continue; // our own feedback, not a new entry\n        }\n        match accept_write(id, fields) {\n            Ok(w) => ok.push(w),\n            Err(r) => rejected.push((format!(\"{id}.rejected\"), r.fix())),\n        }\n    }\n    (ok, rejected)\n}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--mobile--tunnel--state--session-state-msg.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "session_state_msg",
+  "src": "src-tauri/src/mobile/tunnel/state/session_state_msg.rs",
+  "folder": "src-tauri/src/mobile/tunnel/state",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "// The protocol wire types (`SessionMeta`, `ServerMsg`) live in the sibling `protocol`\n// module; the parent `state` reaches them via `use super::protocol::*`, so a child record\n// imports the parent namespace to keep resolving them after decomposition.\nuse super::*;\n\n/// Build a `session_state` event from a pushed snapshot.\npub(crate) fn session_state_msg(s: &SessionMeta) -> ServerMsg {\n    ServerMsg::SessionState {\n        pane_id: s.pane_id.clone(),\n        status: s.status.clone(),\n        current_task: s.current_task.clone(),\n        last_activity: s.last_activity.clone(),\n        prompt: s.prompt.clone(),\n    }\n}\n"
+}

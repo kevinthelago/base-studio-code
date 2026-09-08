@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--observability--tokens--messages--parse-transcript-messages.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_transcript_messages",
+  "src": "src-tauri/src/observability/tokens/messages/parse_transcript_messages.rs",
+  "folder": "src-tauri/src/observability/tokens/messages",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--observability--tokens--messages--message-text.rs",
+    "src-tauri--observability--tokens--messages--parse-iso-ms.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse a Claude transcript (JSONL) into its user/assistant text turns, keeping the newest\n/// `limit`. Tolerant: malformed lines, non-message types, and empty-text turns are skipped.\npub(crate) fn parse_transcript_messages(jsonl: &str, limit: usize) -> Vec<crate::mobile::tunnel::PlanMessage> {\n    let mut msgs: Vec<crate::mobile::tunnel::PlanMessage> = Vec::new();\n    for line in jsonl.lines() {\n        let line = line.trim();\n        if line.is_empty() {\n            continue;\n        }\n        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };\n        let role = match v[\"type\"].as_str() {\n            Some(\"user\") => \"user\",\n            Some(\"assistant\") => \"assistant\",\n            _ => continue,\n        };\n        let text = message_text(&v[\"message\"][\"content\"]);\n        if text.trim().is_empty() {\n            continue;\n        }\n        let at = v[\"timestamp\"].as_str().map(parse_iso_ms).unwrap_or(0);\n        msgs.push(crate::mobile::tunnel::PlanMessage { role: role.to_string(), text, at });\n    }\n    let n = msgs.len();\n    if n > limit { msgs.split_off(n - limit) } else { msgs }\n}\n"
+}

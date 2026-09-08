@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--is-action-prop.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_action_prop",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// Is `(name, ty)` an ACTION prop — an event/callback the component fires (`onClick`, `onChange`,\n/// `onSelect`, …: name starts with `on` + a function type)? Its presence marks the component as\n/// INTERACTIVE, so the `no-analytics` check (#3810) expects an events manifest. Mirrors `isActionProp`\n/// (graphHealth.ts).\npub fn is_action_prop(name: &str, ty: &str) -> bool {\n    name.len() > 2 && name.to_lowercase().starts_with(\"on\") && ty.contains(\"=>\")\n}\n",
+  "src": "crates/bsc-component/src/graph_health/is_action_prop.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

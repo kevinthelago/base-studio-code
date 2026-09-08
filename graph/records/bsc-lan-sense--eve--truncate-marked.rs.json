@@ -1,0 +1,11 @@
+{
+  "id": "bsc-lan-sense--eve--truncate-marked.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "truncate_marked",
+  "src": "crates/bsc-lan-sense/src/eve/truncate_marked.rs",
+  "folder": "crates/bsc-lan-sense/src/eve",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Truncate to at most `max` bytes without ever splitting a character.\n///\n/// `&s[..max]` panics when `max` lands inside a multi-byte character, and this\n/// function's input is attacker-controlled, so that would be a remote panic.\npub fn truncate_marked(s: &str, max: usize) -> String {\n    if s.len() <= max {\n        return s.to_string();\n    }\n    // Leave room for the mark, then walk back to a character boundary.\n    let budget = max.saturating_sub(TRUNCATION_MARK.len());\n    let mut cut = 0;\n    for (i, c) in s.char_indices() {\n        if i + c.len_utf8() > budget {\n            break;\n        }\n        cut = i + c.len_utf8();\n    }\n    let mut out = String::with_capacity(cut + TRUNCATION_MARK.len());\n    out.push_str(&s[..cut]);\n    out.push_str(TRUNCATION_MARK);\n    out\n}\n"
+}

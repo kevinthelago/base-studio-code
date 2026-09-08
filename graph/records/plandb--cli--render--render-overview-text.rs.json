@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--render--render-overview-text.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_overview_text",
+  "code": "use super::PlanOverview;\n\n/// Render the overview as compact lines (totals · streams).\npub(crate) fn render_overview_text(o: &PlanOverview) -> String {\n    let mut out = format!(\"{} issue{}\", o.total, if o.total == 1 { \"\" } else { \"s\" });\n    for (st, n) in &o.status {\n        out.push_str(&format!(\" · {st} {n}\"));\n    }\n    out.push('\\n');\n    if !o.streams.is_empty() {\n        let parts: Vec<String> = o.streams.iter().map(|(s, n)| format!(\"{s} {n}\")).collect();\n        out.push_str(&format!(\"stream: {}\\n\", parts.join(\" · \")));\n    }\n    out\n}\n",
+  "folder": "crates/plandb/src/cli/render",
+  "src": "crates/plandb/src/cli/render/render_overview_text.rs",
+  "moduleVis": "private",
+  "composes": []
+}

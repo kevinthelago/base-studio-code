@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--backing--rejection.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rejection",
+  "composes": [
+    "bsc-component--backing--normalize.rs"
+  ],
+  "code": "use super::*;\n\n/// The rejection a worker sees when it edited a record-backed file (#4193).\n///\n/// It names the file, the record, and BOTH commands — because the failure mode this gate exists for is\n/// not \"the worker disagreed\", it is \"the worker did not know a record existed\". A message that only says\n/// no teaches nothing and gets routed around.\npub fn rejection(path: &str, b: &Backing) -> String {\n    format!(\n        \"blocked: `{}` is the emitted artifact of component `{}` (kit `{}`), so editing the file loses the \\\n         change — the record is the source of truth and the file is regenerated from it (#4193).\\n\\\n         Edit the record, then re-emit:\\n\\\n         \\x20 bsc ui get {id}                    # read it first\\n\\\n         \\x20 bsc ui set …                       # the authoritative change\\n\\\n         \\x20 bsc ui emit component {id} <dir>   # the file follows\",\n        normalize(path),\n        b.id,\n        b.kit_id,\n        id = b.id,\n    )\n}\n",
+  "folder": "crates/bsc-component/src/backing",
+  "src": "crates/bsc-component/src/backing/rejection.rs",
+  "moduleVis": "private"
+}

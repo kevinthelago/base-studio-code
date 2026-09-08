@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--imports-fmt--parse-import-line.rs",
+  "src": "crates/bsc-record/src/imports_fmt/parse_import_line.rs",
+  "folder": "crates/bsc-record/src/imports_fmt",
+  "name": "parse_import_line",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::ImportSpec;\n\n/// Parse one rendered import line back into its [`ImportSpec`] — the exact inverse of a single\n/// iteration of [`crate::imports_fmt::render_import_block`]. Returns `None` for any line that is not one of the four\n/// rendered forms, which is how [`crate::imports_fmt::strip_imports`] detects the end of the block.\npub fn parse_import_line(line: &str) -> Option<ImportSpec> {\n    let t = line.trim();\n    let src_end = t.strip_suffix(\"\\\";\")?;\n    let quote = src_end.rfind('\"')?;\n    let from = src_end[quote + 1..].to_string();\n    let prefix = src_end[..quote].trim_end();\n    let mk = |symbols: Vec<String>, type_only: bool, kind: &str| ImportSpec {\n        from: from.clone(),\n        symbols,\n        type_only,\n        kind: kind.to_string(),\n    };\n    // side-effect: `import \"Y\";`\n    if prefix == \"import\" {\n        return Some(mk(vec![], false, \"side-effect\"));\n    }\n    // every other form is `... from \"Y\";`\n    let mid = prefix.strip_suffix(\"from\")?.trim_end();\n    // namespace: `import * as X`\n    if let Some(ns) = mid.strip_prefix(\"import * as \") {\n        return Some(mk(vec![ns.trim().to_string()], false, \"namespace\"));\n    }\n    // named, optionally type-only: `import [type] { a, b }`\n    let (type_only, after_kw) = match mid.strip_prefix(\"import type \") {\n        Some(rest) => (true, rest),\n        None => (false, mid.strip_prefix(\"import \")?),\n    };\n    if let Some(inner) = after_kw.strip_prefix('{').and_then(|b| b.strip_suffix('}')) {\n        let symbols = inner\n            .split(',')\n            .map(|s| s.trim().to_string())\n            .filter(|s| !s.is_empty())\n            .collect();\n        return Some(mk(symbols, type_only, \"named\"));\n    }\n    // default: `import X` (no braces, never type-only)\n    if !type_only {\n        return Some(mk(vec![after_kw.trim().to_string()], false, \"default\"));\n    }\n    None\n}\n"
+}

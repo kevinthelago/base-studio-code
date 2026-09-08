@@ -1,0 +1,14 @@
+{
+  "id": "bsc-agent--mcp--build-tools-call.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_tools_call",
+  "composes": [
+    "bsc-agent--mcp--build-request.rs"
+  ],
+  "code": "use serde_json::json;\nuse serde_json::Value;\n\nuse super::build_request::build_request;\n\npub(crate) fn build_tools_call(id: i64, name: &str, args: &Value) -> Value {\n    build_request(id, \"tools/call\", json!({ \"name\": name, \"arguments\": args }))\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/mcp",
+  "src": "crates/bsc-agent/src/mcp/build_tools_call.rs",
+  "moduleVis": "private"
+}

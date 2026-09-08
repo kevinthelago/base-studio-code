@@ -1,0 +1,12 @@
+{
+  "id": "llm--turn.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "turn",
+  "composes": [],
+  "code": "//! Model-agnostic tool-use *turn* API (#1098 / epic #1078, P2).\n//!\n//! `complete` (the single-shot text path) powers llm_complete; `turn` adds the\n//! multi-turn, tool-using conversation the `bsc-agent` runtime loop drives. The\n//! types here are provider-neutral; each provider maps them onto its own wire\n//! format (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/role:tool,\n//! Gemini `functionCall`/`functionResponse`).\n\nuse serde::{Deserialize, Serialize};\nuse serde_json::Value;\n\n/// A tool the model may call: a name, a one-line description, and a JSON-Schema\n/// for its parameters (the `args` the model fills in).\n#[derive(Clone, Debug)]\npub struct ToolDef {\n    pub name: String,\n    pub description: String,\n    pub schema: Value,\n}\n\n/// A tool invocation the model emitted. `id` correlates the call with its result\n/// (synthesized from the name for providers — e.g. Gemini — that don't issue ids).\n#[derive(Clone, Debug, Serialize, Deserialize)]\npub struct ToolCall {\n    pub id: String,\n    pub name: String,\n    pub args: Value,\n}\n\n/// One conversation message in the normalized turn protocol.\n#[derive(Clone, Debug, Serialize, Deserialize)]\npub enum Msg {\n    User(String),\n    Assistant { text: String, tool_calls: Vec<ToolCall> },\n    ToolResult { id: String, content: String },\n}\n\n/// A full turn request: the system prompt, the conversation so far, the available\n/// tools, and the model + token budget.\n#[derive(Clone, Debug)]\npub struct Turn {\n    pub system: String,\n    pub messages: Vec<Msg>,\n    pub tools: Vec<ToolDef>,\n    pub model: String,\n    pub max_tokens: u32,\n}\n\n/// The model's normalized response for a turn: any assistant text, the tool calls\n/// it wants run (empty ⇒ the turn is final), token usage, and the stop reason.\n#[derive(Clone, Debug, Default)]\npub struct TurnResult {\n    pub text: String,\n    pub tool_calls: Vec<ToolCall>,\n    pub usage: Value,\n    pub stop_reason: String,\n}\n",
+  "domain": "llm",
+  "src": "crates/llm/src/turn.rs",
+  "folder": "crates/llm/src",
+  "moduleVis": "private"
+}

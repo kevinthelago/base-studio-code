@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--warden--zip-worktree-changes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "zip_worktree_changes",
+  "code": "use super::*;\nuse std::collections::BTreeMap;\n\n/// Zip a batched worktree-diff result back onto the panes it was requested for.\n///\n/// **INDEX-ALIGNED, and that is the whole risk.** A short, long or misordered batch must never\n/// attribute one worker's changed files to another — that quarantines the wrong session. A missing\n/// entry degrades to \"no file signal\", exactly as a failed single-pane read did before batching.\n///\n/// Reads `tracked` only (#3983): merging in untracked paths made a `.agentscratch.txt`\n/// indistinguishable from an out-of-lane source edit, and the warden killed four workers that had zero\n/// tracked changes between them.\n///\n/// STILL UNWIRED HERE, for the same reason as [`parse_audit_commands`]: the evidence is gathered where\n/// the verdict is computed, and that is the renderer until the glob decision lands.\n#[allow(dead_code)] // wired by `the-warden-produces-its-own-verdicts-once-the-glob-engines-agree`\npub fn zip_worktree_changes(\n    panes: &[String],\n    changes: &[Option<WorktreeChanges>],\n) -> BTreeMap<String, Vec<String>> {\n    panes\n        .iter()\n        .enumerate()\n        .map(|(i, p)| {\n            let files = changes\n                .get(i)\n                .and_then(|c| c.as_ref())\n                .map(|c| c.tracked.clone())\n                .unwrap_or_default();\n            (p.clone(), files)\n        })\n        .collect()\n}\n",
+  "folder": "crates/bsc-fleet/src/warden",
+  "src": "crates/bsc-fleet/src/warden/zip_worktree_changes.rs",
+  "moduleVis": "private",
+  "composes": []
+}

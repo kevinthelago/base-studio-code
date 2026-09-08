@@ -1,0 +1,12 @@
+{
+  "id": "data--source-meta.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "source_meta",
+  "composes": [],
+  "code": "//! Source-connector auth + live-support enums (#1197 / source-pane wiring).\n//!\n//! The connector *catalog* now lives in [`crate::descriptor`] (`BUILTINS`, #1594); this module keeps\n//! the two shared metadata enums it (and the Tauri dispatch) key off. Read-only (#782); building the\n//! live transport + running the scan lives in the Tauri layer (it needs HTTP / the keychain).\n\n/// How a source connector authenticates — drives how the scan command builds its transport.\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub enum SourceAuth {\n    /// Authorization-code flow (token obtained out of band) — e.g. Salesforce, QuickBooks.\n    OAuth,\n    /// A single API/user token in a header.\n    Token,\n    /// Username + password (e.g. a SQL login).\n    Password,\n    /// HTTP Basic (e.g. SAP OData).\n    Basic,\n    /// An API key in a header.\n    ApiKey,\n    /// An open endpoint with no auth — e.g. a public FHIR sandbox / test server. Network, but no\n    /// secret. (SMART-on-FHIR bearer auth for live PHI endpoints is a gated follow-up, #1311.)\n    Open,\n    /// A local file upload (CSV) — no network, no secret.\n    Upload,\n}\n\n/// Whether the scan command currently has a live transport for a connector, or it falls back to\n/// the pane's sample inventory.\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub enum LiveSupport {\n    /// A live read-only scan is implemented.\n    Live,\n    /// No live transport yet — the reason is shown to the user; the pane uses the sample shape.\n    Pending(&'static str),\n}\n",
+  "domain": "data",
+  "src": "crates/data/src/source_meta.rs",
+  "folder": "crates/data/src",
+  "moduleVis": "pub"
+}

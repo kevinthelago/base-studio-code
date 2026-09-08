@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--refresh-seed--file-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "file_for",
+  "code": "//! `file_for` — The `src/`-relative file a `@/…` specifier names, or `None` when it is already retired.\n\n/// The `src/`-relative file a `@/…` specifier names, or `None` when it is already retired.\npub fn file_for(spec: &str, src_files: &std::collections::BTreeSet<String>) -> Option<String> {\n    let base = spec.strip_prefix(\"@/\")?;\n    [\"\", \".ts\", \".tsx\", \".js\", \".jsx\", \"/index.ts\", \"/index.tsx\"]\n        .iter()\n        .map(|e| format!(\"{base}{e}\"))\n        .find(|c| src_files.contains(c))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/refresh_seed",
+  "src": "crates/bsc-ui/src/refresh_seed/file_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

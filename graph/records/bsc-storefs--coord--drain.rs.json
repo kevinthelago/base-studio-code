@@ -1,0 +1,13 @@
+{
+  "id": "bsc-storefs--coord--drain.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "drain",
+  "src": "crates/bsc-storefs/src/coord/drain.rs",
+  "folder": "crates/bsc-storefs/src/coord",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--coord--accept.rs"
+  ],
+  "code": "use super::*;\n\n/// Drain an outbox: accepted events to append, and `(name.rejected, fix-text)` pairs to write back.\n///\n/// Entries are processed in the order given; the caller sorts, so a drain is deterministic.\npub fn drain(\n    entries: &[(String, String)],\n    pane: &str,\n    ts: &str,\n    actor: &str,\n) -> (Vec<Event>, Vec<(String, String)>) {\n    let mut ok = Vec::new();\n    let mut rejected = Vec::new();\n    for (name, contents) in entries {\n        if name.ends_with(\".rejected\") {\n            continue; // our own feedback, not a new entry\n        }\n        match accept(name, contents, pane, ts, actor) {\n            Ok(e) => ok.push(e),\n            Err(r) => rejected.push((format!(\"{name}.rejected\"), r.fix())),\n        }\n    }\n    (ok, rejected)\n}\n"
+}

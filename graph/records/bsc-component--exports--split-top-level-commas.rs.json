@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--exports--split-top-level-commas.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "split_top_level_commas",
+  "code": "/// Split `s` on commas that sit at bracket depth 0 — the declarator boundaries of `const a = f(1, 2), b`,\n/// where the first comma is an argument separator and must not split anything.\npub(crate) fn split_top_level_commas(s: &str) -> Vec<&str> {\n    let mut out = Vec::new();\n    let mut depth = 0i32;\n    let mut start = 0usize;\n    for (i, c) in s.char_indices() {\n        match c {\n            '(' | '{' | '[' => depth += 1,\n            ')' | '}' | ']' => depth -= 1,\n            ',' if depth <= 0 => {\n                out.push(&s[start..i]);\n                start = i + 1;\n            }\n            _ => {}\n        }\n    }\n    out.push(&s[start..]);\n    out\n}\n",
+  "folder": "crates/bsc-component/src/exports",
+  "src": "crates/bsc-component/src/exports/split_top_level_commas.rs",
+  "moduleVis": "private",
+  "composes": []
+}

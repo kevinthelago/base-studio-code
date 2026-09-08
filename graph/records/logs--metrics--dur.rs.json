@@ -1,0 +1,12 @@
+{
+  "id": "logs--metrics--dur.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dur",
+  "code": "/// `2m14s` / `47s` / `—` (nothing to bracket).\npub(crate) fn dur(ms: u64) -> String {\n    if ms == 0 {\n        return \"—\".into();\n    }\n    let s = ms / 1_000;\n    if s >= 60 {\n        format!(\"{}m{:02}s\", s / 60, s % 60)\n    } else {\n        format!(\"{s}s\")\n    }\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/metrics",
+  "src": "crates/logs/src/metrics/dur.rs",
+  "moduleVis": "private",
+  "composes": []
+}

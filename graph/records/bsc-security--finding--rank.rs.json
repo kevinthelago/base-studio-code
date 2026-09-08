@@ -1,0 +1,12 @@
+{
+  "id": "bsc-security--finding--rank.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rank",
+  "code": "use super::Finding;\n\n/// Rank findings worst-first, then by kind and fingerprint so the order is total and reproducible —\n/// a report that reorders between runs cannot be diffed against itself.\npub fn rank(mut findings: Vec<Finding>) -> Vec<Finding> {\n    findings.sort_by(|a, b| {\n        b.severity\n            .cmp(&a.severity)\n            .then_with(|| a.kind.cmp(&b.kind))\n            .then_with(|| a.fingerprint.cmp(&b.fingerprint))\n    });\n    findings.dedup_by(|a, b| a.fingerprint == b.fingerprint);\n    findings\n}\n",
+  "domain": "bsc-security",
+  "folder": "crates/bsc-security/src/finding",
+  "src": "crates/bsc-security/src/finding/rank.rs",
+  "moduleVis": "private",
+  "composes": []
+}

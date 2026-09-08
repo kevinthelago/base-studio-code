@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--rust-test--closure-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "closure_of",
+  "composes": [
+    "bsc-graph--rust-test--field.rs"
+  ],
+  "code": "use super::*;\n\n/// Walk `composes` transitively. Cycle-safe: a record already seen is never re-entered, so a mutual\n/// `composes` pair terminates instead of spinning.\npub fn closure_of<'a>(impls: &[&'a Value], root_id: &str) -> Closure<'a> {\n    let find = |id: &str| impls.iter().find(|i| field(i, \"id\") == Some(id)).copied();\n    let mut seen: HashSet<String> = HashSet::new();\n    let (mut algorithms, mut primitives) = (Vec::new(), Vec::new());\n    let mut stack = vec![root_id.to_string()];\n    while let Some(id) = stack.pop() {\n        if !seen.insert(id.clone()) {\n            continue;\n        }\n        let Some(rec) = find(&id) else { continue };\n        if field(rec, \"role\") == Some(\"primitive\") {\n            primitives.push(rec);\n            continue;\n        }\n        for dep in rec.get(\"composes\").and_then(Value::as_array).into_iter().flatten() {\n            if let Some(d) = dep.as_str() {\n                stack.push(d.to_string());\n            }\n        }\n        algorithms.push(rec);\n    }\n    // The root goes LAST so the file reads dependencies-first. Order is irrelevant to rustc.\n    algorithms.sort_by_key(|r| field(r, \"id\") == Some(root_id));\n    Closure { algorithms, primitives }\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/rust_test",
+  "src": "crates/bsc-graph/src/rust_test/closure_of.rs",
+  "moduleVis": "private"
+}

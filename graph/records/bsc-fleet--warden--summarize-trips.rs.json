@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--warden--summarize-trips.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "summarize_trips",
+  "code": "use super::*;\n\n/// Condense trips into one human line for the quarantine banner and the mobile push body.\n///\n/// Derived only from trusted signals, so it is safe to surface and to send. The tail is a COUNT, not a\n/// re-listing — a push body is not the place to enumerate a worker's every stray edit.\npub fn summarize_trips(trips: &[ConformanceTrip]) -> String {\n    let Some(first) = trips.first() else { return \"on plan\".to_string() };\n    let part = |t: &ConformanceTrip| -> String {\n        if t.kind == \"out-of-glob\" {\n            format!(\"edited out-of-lane {}\", t.detail)\n        } else {\n            format!(\"ran denied `{}`\", t.detail)\n        }\n    };\n    let head = part(first);\n    if trips.len() == 1 {\n        head\n    } else {\n        format!(\"{head} (+{} more)\", trips.len() - 1)\n    }\n}\n",
+  "folder": "crates/bsc-fleet/src/warden",
+  "src": "crates/bsc-fleet/src/warden/summarize_trips.rs",
+  "moduleVis": "private",
+  "composes": []
+}

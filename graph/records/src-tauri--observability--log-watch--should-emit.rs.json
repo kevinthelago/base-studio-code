@@ -1,0 +1,10 @@
+{
+  "id": "src-tauri--observability--log-watch--should-emit.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "should_emit",
+  "code": "use std::time::SystemTime;\n\n/// Whether a stream's mtime transition warrants an event: it ADVANCED or APPEARED — not an unchanged\n/// mtime, and not a deletion (`now == None`, which just resets the baseline). Pure, so the emit rule is\n/// unit-testable without touching the filesystem or the clock.\npub(crate) fn should_emit(prev: Option<SystemTime>, now: Option<SystemTime>) -> bool {\n    now.is_some() && prev != now\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    use std::time::Duration;\n\n    #[test]\n    fn should_emit_only_on_advance_or_appearance() {\n        let t0 = SystemTime::UNIX_EPOCH;\n        let t1 = t0 + Duration::from_secs(1);\n        assert!(should_emit(None, Some(t0)), \"a file appearing is a change\");\n        assert!(should_emit(Some(t0), Some(t1)), \"an advanced mtime is a change\");\n        assert!(!should_emit(Some(t0), Some(t0)), \"an unchanged mtime is NOT a change\");\n        assert!(!should_emit(Some(t0), None), \"a deletion resets the baseline, no event\");\n        assert!(!should_emit(None, None), \"still-missing is not a change\");\n    }\n}\n",
+  "folder": "src-tauri/src/observability/log_watch",
+  "src": "src-tauri/src/observability/log_watch/should_emit.rs",
+  "moduleVis": "private"
+}

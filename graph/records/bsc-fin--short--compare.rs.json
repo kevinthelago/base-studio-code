@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--short--compare.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "compare",
+  "code": "use super::*;\nuse crate::money::{money, Money};\n\n/// The same bearish view expressed three ways, so the trade-off is a table rather than an argument.\npub fn compare(price: Money, shares: i64, put_premium: Money, put_strike: Money, contracts: i64, etf_stake: Money) -> Vec<Exposure> {\n    let cur = price.currency;\n    vec![\n        Exposure {\n            vehicle: Vehicle::Naked,\n            capital_at_risk: money((shares * price.minor) / 2, cur),\n            // NO NUMBER. The price has no ceiling and inventing a bound here would invite somebody\n            // to size against it.\n            max_loss: None,\n            max_gain: money(shares * price.minor, cur),\n            needs_margin: true,\n            note: \"loss has no ceiling, and the broker closes it at the call price rather than when you are proved wrong\",\n        },\n        Exposure {\n            vehicle: Vehicle::Put,\n            capital_at_risk: money(put_premium.minor * 100 * contracts, cur),\n            max_loss: Some(money(put_premium.minor * 100 * contracts, cur)),\n            max_gain: money(put_strike.minor * 100 * contracts - put_premium.minor * 100 * contracts, cur),\n            needs_margin: false,\n            note: \"the most you can lose is what you paid — that is what the premium buys, and it expires whether or not you were right\",\n        },\n        Exposure {\n            vehicle: Vehicle::InverseEtf,\n            capital_at_risk: etf_stake,\n            max_loss: Some(etf_stake),\n            max_gain: etf_stake,\n            needs_margin: false,\n            note: \"no margin and a bounded loss, but it rebalances DAILY and drifts from the index over any longer horizon\",\n        },\n    ]\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/short",
+  "src": "crates/bsc-fin/src/short/compare.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--money.rs"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "plandb--changes--row-to-change.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "row_to_change",
+  "src": "crates/plandb/src/changes/row_to_change.rs",
+  "folder": "crates/plandb/src/changes",
+  "moduleVis": "private",
+  "composes": [
+    "plandb--changes--json-vec.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn row_to_change(r: &rusqlite::Row) -> rusqlite::Result<Change> {\n    let issues: String = r.get(3)?;\n    let gates: String = r.get(8)?;\n    let notes: String = r.get(9)?;\n    Ok(Change {\n        r#ref: r.get(0)?,\n        title: r.get(1)?,\n        body: r.get(2)?,\n        issues: json_vec(&issues),\n        base: r.get(4)?,\n        head_sha: r.get(5)?,\n        merge_sha: r.get(6)?,\n        status: r.get(7)?,\n        gates: serde_json::from_str(&gates).unwrap_or_default(),\n        notes: serde_json::from_str(&notes).unwrap_or_default(),\n        reviewer: r.get(10)?,\n        reviewed_at: r.get(11)?,\n        gh_number: r.get(12)?,\n        gh_node_id: r.get(13)?,\n        synced_at: r.get(14)?,\n        created_at: r.get(15)?,\n        updated_at: r.get(16)?,\n        // Appended LAST in the SELECT so every existing positional index above is untouched — a new\n        // column inserted mid-list would silently re-map every field after it.\n        measures: serde_json::from_str(&r.get::<_, String>(17)?).unwrap_or_default(),\n    })\n}\n"
+}

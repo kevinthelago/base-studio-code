@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--github--repos.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "repos",
+  "composes": [
+    "src-tauri--prelude.rs"
+  ],
+  "code": "use crate::prelude::*;\n\n/// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at\n/// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.\n/// Idempotent: if the destination is already a git clone it is returned as-is.\n/// After cloning, `CLAUDE.local.md` is appended to the clone's\n/// `.git/info/exclude` so the planner-generated per-repo context file stays out\n/// of `git status`.\n#[tauri::command]\npub(crate) async fn clone_repo(project: String, full_name: String) -> Result<String, String> {\n    let _perf = PerfSpan::new(\"clone_repo\");\n    // ONE COPY of the clone (#the-director-can-clone-its-projects-repos). This used to be the only\n    // thing in the app that could clone a linked repo — which made it the only door, and a director is\n    // a shell session that cannot reach it. The act moved to `bsc-project` (Tauri-free) so\n    // `bsc fleet clone` performs the identical clone, with the identical excludes and the identical\n    // URL. Two doors onto one function cannot drift; two implementations would.\n    let (path, _outcome) = bsc_project::ensure_clone(&project, &full_name, \"\", None)?;\n    Ok(path.to_string_lossy().into_owned())\n}\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/github/repos.rs",
+  "folder": "src-tauri/src/github",
+  "moduleVis": "pub"
+}

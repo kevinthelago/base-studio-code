@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--claude-config--claude-paths.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "claude_paths",
+  "src": "src-tauri/src/session/claude_config/claude_paths.rs",
+  "folder": "src-tauri/src/session/claude_config",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn claude_paths(local_path: &str) -> (std::path::PathBuf, std::path::PathBuf) {\n    if local_path.is_empty() {\n        let global = home_dir().join(\".claude\");\n        (global.join(\"CLAUDE.md\"), global.join(\"settings.json\"))\n    } else {\n        let base = std::path::PathBuf::from(local_path);\n        (base.join(\"CLAUDE.md\"), base.join(\".claude\").join(\"settings.json\"))\n    }\n}\n"
+}

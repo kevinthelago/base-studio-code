@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--obligations--due-between.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "due_between",
+  "code": "use super::*;\n\n/// What is due inside a window — the \"can I get to Friday?\" question.\npub fn due_between<'a>(c: &'a ObligationCalendar, from: &str, to: &str) -> Vec<&'a Obligation> {\n    c.obligations.iter().filter(|o| o.date.as_str() >= from && o.date.as_str() <= to).collect()\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/obligations",
+  "src": "crates/bsc-fin/src/obligations/due_between.rs",
+  "moduleVis": "private",
+  "composes": []
+}

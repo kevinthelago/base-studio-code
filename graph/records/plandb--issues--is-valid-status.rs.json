@@ -1,0 +1,11 @@
+{
+  "id": "plandb--issues--is-valid-status.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_valid_status",
+  "src": "crates/plandb/src/issues/is_valid_status.rs",
+  "folder": "crates/plandb/src/issues",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// True if `s` is one of the known {@link STATUSES} — guards against a typo wedging the board.\npub fn is_valid_status(s: &str) -> bool {\n    STATUSES.contains(&s)\n}\n"
+}

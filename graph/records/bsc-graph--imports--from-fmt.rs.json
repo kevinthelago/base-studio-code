@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--imports--from-fmt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "from_fmt",
+  "composes": [],
+  "code": "use super::*;\n\n/// The inverse of [`to_fmt`] — a spec that came back out of the shared renderer, in this crate's type.\npub(crate) fn from_fmt(s: &bsc_record::imports_fmt::ImportSpec) -> ImportSpec {\n    ImportSpec {\n        from: s.from.clone(),\n        symbols: s.symbols.clone(),\n        type_only: s.type_only,\n        kind: s.kind.clone(),\n    }\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/imports",
+  "src": "crates/bsc-graph/src/imports/from_fmt.rs",
+  "moduleVis": "private"
+}

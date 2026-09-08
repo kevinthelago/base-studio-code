@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--retire--resolves-to-target.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolves_to_target",
+  "code": "//! `resolves_to_target` — per-method record of the retire module.\n\npub(crate) fn resolves_to_target(\n    from_dir: &str,\n    rel_spec: &str,\n    target_rel: &str,\n    target_specifier: &str,\n) -> bool {\n    let joined = format!(\"{from_dir}/{rel_spec}\");\n    let mut out: Vec<&str> = Vec::new();\n    for p in joined.split('/') {\n        match p {\n            \".\" | \"\" => continue,\n            \"..\" => {\n                out.pop();\n            }\n            _ => out.push(p),\n        }\n    }\n    // BOTH SPELLINGS reach a barrel: `./lib/plannerCore` (the directory) and `./lib/plannerCore/index`\n    // (the file). Matching only the second left every directory-form importer untouched — and the\n    // directory form is the one consumers normally write, so that is the half that actually breaks.\n    let hit = out.join(\"/\");\n    hit == target_rel || hit == target_specifier\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/retire",
+  "src": "crates/bsc-ui/src/retire/resolves_to_target.rs",
+  "moduleVis": "private",
+  "composes": []
+}

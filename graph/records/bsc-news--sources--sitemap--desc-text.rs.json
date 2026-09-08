@@ -1,0 +1,11 @@
+{
+  "id": "bsc-news--sources--sitemap--desc-text.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "desc_text",
+  "src": "crates/bsc-news/src/sources/sitemap/desc_text.rs",
+  "folder": "crates/bsc-news/src/sources/sitemap",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Text of the first descendant with this local name, trimmed. Descendant rather than child,\n/// because the news block nests (`news:news` → `news:publication` → `news:name`).\npub(crate) fn desc_text(node: Node, name: &str) -> Option<String> {\n    node.descendants()\n        .find(|c| c.is_element() && c.tag_name().name() == name)\n        .and_then(|c| c.text().map(|t| t.trim().to_string()))\n        .filter(|s| !s.is_empty())\n}\n"
+}

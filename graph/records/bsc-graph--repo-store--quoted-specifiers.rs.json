@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--quoted-specifiers.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "quoted_specifiers",
+  "composes": [],
+  "code": "/// Every `@/…` specifier that appears inside a quoted string in `text`.\n///\n/// Deliberately crude — it is looking for evidence that SOMETHING still names a specifier, not\n/// parsing a module graph, and over-reporting only makes the guard below more conservative.\npub fn quoted_specifiers(text: &str, into: &mut std::collections::BTreeSet<String>) {\n    for (i, _) in text.match_indices(\"@/\") {\n        let rest = &text[i..];\n        let end = rest\n            .find(|c: char| c == '\"' || c == '\\'' || c == '`' || c.is_whitespace())\n            .unwrap_or(rest.len());\n        let spec = &rest[..end];\n        if spec.len() > 2 {\n            into.insert(spec.trim_end_matches([',', ';', ')']).to_string());\n        }\n    }\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/quoted_specifiers.rs",
+  "moduleVis": "private"
+}

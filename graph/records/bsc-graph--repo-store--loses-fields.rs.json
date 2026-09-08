@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--loses-fields.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "loses_fields",
+  "composes": [],
+  "code": "use super::*;\n\n/// Would writing `fresh` over `existing` DROP a field `existing` carries?\n///\n/// Key PRESENCE, not value equality, and that distinction was learned the hard way. The first version\n/// asked \"is fresh a subset of existing\", which reclassified 6 of 9 regressed records correctly and left\n/// 3 as drift — because the app's reset had also rewritten their `summary`, so they were not a clean\n/// subset. But a record that both lost `vizCode` AND changed a summary is still a record that will lose\n/// `vizCode` if promoted. The risk that matters here is LOSS, and it does not stop mattering because\n/// something else moved too.\npub fn loses_fields(fresh: &Value, existing: &Value) -> bool {\n    let (Some(fresh), Some(existing)) = (fresh.as_object(), existing.as_object()) else {\n        return false;\n    };\n    existing\n        .iter()\n        // An empty value is nothing to lose.\n        .filter(|(_, v)| !v.is_null() && v.as_str() != Some(\"\"))\n        .any(|(k, _)| !fresh.contains_key(k))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/loses_fields.rs",
+  "moduleVis": "private"
+}

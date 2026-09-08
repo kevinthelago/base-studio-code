@@ -1,0 +1,21 @@
+{
+  "id": "bsc-cad--stl.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stl",
+  "composes": [
+    "bsc-cad--math.rs",
+    "bsc-cad--mesh.rs"
+  ],
+  "code": "//! Binary STL export (#2621). STL is unitless by convention millimetres — which is exactly our model\n//! unit, so there's no conversion. Every slicer/CAD viewer reads binary STL; per-facet normals are the\n//! triangle's geometric normal (viewers/slicers recompute anyway).\nuse crate::mesh::Mesh;\n\n/// Encode `mesh` as a binary STL blob (80-byte header · u32 count · 50 bytes/triangle).\npub fn to_binary_stl(mesh: &Mesh) -> Vec<u8> {\n    let mut out = Vec::with_capacity(84 + mesh.triangles.len() * 50);\n    out.extend_from_slice(&[0u8; 80]); // header (ignored by readers)\n    out.extend_from_slice(&(mesh.triangles.len() as u32).to_le_bytes());\n    for t in &mesh.triangles {\n        let a = mesh.positions[t[0] as usize];\n        let b = mesh.positions[t[1] as usize];\n        let c = mesh.positions[t[2] as usize];\n        let normal = (b - a).cross(c - a).normalize();\n        for v in [normal, a, b, c] {\n            out.extend_from_slice(&(v.x as f32).to_le_bytes());\n            out.extend_from_slice(&(v.y as f32).to_le_bytes());\n            out.extend_from_slice(&(v.z as f32).to_le_bytes());\n        }\n        out.extend_from_slice(&0u16.to_le_bytes()); // attribute byte count\n    }\n    out\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    use crate::mesh::Mesh;\n    use crate::math::Vec3;\n\n    #[test]\n    fn binary_stl_has_the_right_length() {\n        let mesh = Mesh {\n            positions: vec![Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)],\n            triangles: vec![[0, 1, 2]],\n        };\n        // 80 header + 4 count + 1 triangle * 50 bytes.\n        assert_eq!(to_binary_stl(&mesh).len(), 84 + 50);\n    }\n}\n",
+  "domain": "bsc-cad",
+  "src": "crates/bsc-cad/src/stl.rs",
+  "tests": [
+    {
+      "name": "stl.rs",
+      "src": "//! Binary STL export (#2621). STL is unitless by convention millimetres — which is exactly our model\n//! unit, so there's no conversion. Every slicer/CAD viewer reads binary STL; per-facet normals are the\n//! triangle's geometric normal (viewers/slicers recompute anyway).\nuse crate::mesh::Mesh;\n\n/// Encode `mesh` as a binary STL blob (80-byte header · u32 count · 50 bytes/triangle).\npub fn to_binary_stl(mesh: &Mesh) -> Vec<u8> {\n    let mut out = Vec::with_capacity(84 + mesh.triangles.len() * 50);\n    out.extend_from_slice(&[0u8; 80]); // header (ignored by readers)\n    out.extend_from_slice(&(mesh.triangles.len() as u32).to_le_bytes());\n    for t in &mesh.triangles {\n        let a = mesh.positions[t[0] as usize];\n        let b = mesh.positions[t[1] as usize];\n        let c = mesh.positions[t[2] as usize];\n        let normal = (b - a).cross(c - a).normalize();\n        for v in [normal, a, b, c] {\n            out.extend_from_slice(&(v.x as f32).to_le_bytes());\n            out.extend_from_slice(&(v.y as f32).to_le_bytes());\n            out.extend_from_slice(&(v.z as f32).to_le_bytes());\n        }\n        out.extend_from_slice(&0u16.to_le_bytes()); // attribute byte count\n    }\n    out\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    use crate::mesh::Mesh;\n    use crate::math::Vec3;\n\n    #[test]\n    fn binary_stl_has_the_right_length() {\n        let mesh = Mesh {\n            positions: vec![Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)],\n            triangles: vec![[0, 1, 2]],\n        };\n        // 80 header + 4 count + 1 triangle * 50 bytes.\n        assert_eq!(to_binary_stl(&mesh).len(), 84 + 50);\n    }\n}\n"
+    }
+  ],
+  "folder": "crates/bsc-cad/src",
+  "moduleVis": "pub"
+}

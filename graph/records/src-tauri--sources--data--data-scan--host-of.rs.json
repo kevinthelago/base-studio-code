@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--sources--data--data-scan--host-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "host_of",
+  "src": "src-tauri/src/sources/data/data_scan/host_of.rs",
+  "folder": "src-tauri/src/sources/data/data_scan",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The bare host of a URL/hostname (drops scheme + path), for a friendly instance label.\n#[cfg(feature = \"source-stage\")]\npub(crate) fn host_of(url: &str) -> String {\n    url.trim_end_matches('/')\n        .trim_start_matches(\"https://\")\n        .trim_start_matches(\"http://\")\n        .split('/')\n        .next()\n        .unwrap_or(url)\n        .to_string()\n}\n"
+}

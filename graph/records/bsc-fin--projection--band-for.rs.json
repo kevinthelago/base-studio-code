@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--projection--band-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "band_for",
+  "code": "use super::*;\n\n/// The band for one month of a projection, or none if it is outside the horizon.\npub fn band_for<'a>(p: &'a IncomeProjection, month: &str) -> Option<&'a MonthBand> {\n    p.months.iter().find(|b| b.month == month)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/projection",
+  "src": "crates/bsc-fin/src/projection/band_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--position--round3.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "round3",
+  "code": "pub(crate) fn round3(x: f64) -> f64 {\n    (x * 1000.0).round() / 1000.0\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/position",
+  "src": "crates/bsc-fin/src/position/round3.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,10 @@
+{
+  "id": "bsc-mem--lib.rs",
+  "tech": "rust",
+  "role": "doc",
+  "name": "bsc-mem--lib",
+  "code": "`bsc cost` — the RESOURCE-COST surface, and the counterpart to `bsc perf`.\n\n# Why this exists\n\n`bsc perf` was added because \"the fleet could change performance but never measure it\". That\nargument was only half-served. A worker could read the frontend instrumentation — render commits,\nphases, jank — and still had no way to answer the other two questions it is judged on:\n\n* **did my change cost memory?** Nothing on the surface answered it. The one real source of heap\n  truth was `e2e/glanceProfile.spec.ts`, reachable only by someone able to run an npm script and\n  read a printed table — which is precisely the shape\n  `record-operations-belong-on-the-bsc-surface-not-in-scripts` exists to correct.\n* **did my change cost build time?** Nothing recorded it. `bsc errors run` wrapped every build and\n  kept only the failures, so a clean 90-second 8 GB build and a clean 20-second 2 GB build were the\n  same event afterwards.\n\n# One noun, because a worker should not have to know which store holds the answer\n\nThe measurements genuinely live in different places — build cost in the project's `error.db` (see\n[`errordb`], written by `bsc errors run`), session RSS in the app's `perf.db`, heap in a browser\nthat has to be driven. Making a worker learn that map is how a surface goes unused. So: one noun.\n\n| verb | answers | source |\n|---|---|---|\n| `build` | what do builds cost, and is it moving? | `runs` in `error.db` |\n| `compare` | did MY change help? | the same rows, split at a boundary |\n| `growth` | is this live session leaking? | `perf.db`, via [`logs::perf`] |\n| `app` | what does the running app hold? | the Chromium harness |\n\n# A READ surface\n\nNothing here takes a write scope. `bsc cost` only ever reports what something else already recorded,\nwhich is what lets it be given to every role without a grant.\n",
+  "folder": "crates/bsc-mem/src",
+  "src": "crates/bsc-mem/src/lib.rs",
+  "composes": []
+}

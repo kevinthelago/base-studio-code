@@ -1,0 +1,13 @@
+{
+  "code": "/// The nth Fibonacci number (0-indexed: F0 = 0, F1 = 1), iterated bottom-up.\npub fn fibonacci(n: u64) -> u64 {\n    if n < 2 {\n        return n;\n    }\n    let (mut a, mut b) = (0u64, 1u64);\n    for _ in 2..=n {\n        let next = a + b;\n        a = b;\n        b = next;\n    }\n    b\n}\n",
+  "composes": [],
+  "feature": "reference",
+  "folder": "core",
+  "id": "fibonacci.rs",
+  "kind": "accumulate",
+  "name": "fibonacci",
+  "role": "algorithm",
+  "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n).",
+  "tech": "rust",
+  "vizCode": "({ datatype: 'array', input: [0,1,0,0,0,0,0], run(a) { for (let i = 2; i < a.length; i++) { a.cursor('i', i); a.set(i, a.get(i - 1) + a.get(i - 2)); a.mark(i, 'computed'); } a.markSorted(); } })"
+}

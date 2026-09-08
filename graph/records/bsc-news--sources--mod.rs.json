@@ -1,0 +1,15 @@
+{
+  "id": "bsc-news--sources--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sources",
+  "composes": [
+    "bsc-news--http.rs",
+    "bsc-news--types.rs"
+  ],
+  "code": "//! Per-source feed clients. Each submodule keeps a **pure parser** (fixture-tested, no network)\n//! separate from the thin `fetch` entry points that build the request and call [`crate::http`].\n//! This module dispatches by the roster's [`FeedKind`].\n\n\nuse crate::http::Http;\nuse crate::types::{FeedItem, FeedKind, Outlet};\n\n/// How many child sitemaps of an index to walk. The newest articles are in the first page; the rest\n/// are pagination the brief will never reach.\npub const MAX_INDEX_CHILDREN: usize = 2;\n\n/// Fetch one outlet's current items, routed by its feed kind.\npub fn fetch_outlet(http: &Http, outlet: &Outlet) -> Result<Vec<FeedItem>, String> {\n    match outlet.feed_kind {\n        FeedKind::Rss => rss::fetch(http, &outlet.feed),\n        FeedKind::Sitemap => sitemap::fetch(http, &outlet.feed),\n        FeedKind::SitemapIndex => sitemap::fetch_index(http, &outlet.feed, MAX_INDEX_CHILDREN),\n    }\n}\n",
+  "domain": "bsc-news",
+  "src": "crates/bsc-news/src/sources/mod.rs",
+  "folder": "crates/bsc-news/src/sources",
+  "moduleVis": "pub"
+}

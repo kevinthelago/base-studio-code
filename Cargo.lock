@@ -943,6 +943,7 @@ name = "bsc-cli-util"
 version = "0.1.0"
 dependencies = [
  "bsc-util",
+ "graph-materialize",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1329,6 +1330,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-config",
  "bsc-util",
+ "graph-materialize",
  "log",
  "serde",
  "serde_json",

@@ -1,0 +1,11 @@
+{
+  "id": "data--ddl--quote-ident.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "quote_ident",
+  "src": "crates/data/src/ddl/quote_ident.rs",
+  "folder": "crates/data/src/ddl",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Validate an entity/field key as a SQL identifier and return it double-quoted.\n///\n/// Entity/field keys originate from a Data Model authored by a user or agent, so they\n/// are untrusted. We allow only `[A-Za-z_][A-Za-z0-9_]*` and reject everything else —\n/// no escaping games, no injection surface.\n/// The predicate lives on the MODEL ([`crate::schema::is_safe_ident`]) rather than here, so the gate\n/// that admits a model and the layer that quotes it cannot drift into disagreeing about what \"safe\"\n/// means. Before `the-data-model-check-rejects-what-the-store-will-reject` they already did: this\n/// rule was enforced here and nowhere else, so a model passed `DataModel::check` and then failed at\n/// DDL time.\npub fn quote_ident(name: &str) -> Result<String> {\n    if crate::schema::is_safe_ident(name) {\n        Ok(format!(\"\\\"{name}\\\"\"))\n    } else {\n        Err(DataError::Schema(format!(\"unsafe identifier `{name}`\")))\n    }\n}\n"
+}

@@ -235,8 +235,12 @@ fn a_store_with_no_edges_key_emits_normally() {
 fn the_committed_store_still_names_the_test_target_bsc_lan_stream_declares() {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = repo_root_by_walk(&here).expect("this crate is in the repo");
-    let raw = std::fs::read_to_string(root.join("graph").join("algorithms.json")).expect("the store");
-    let store: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    // Through THIS CRATE'S OWN merged loader, which is what `emit_into` reads the store with: records
+    // live one-per-file under `graph/records/` and edges may follow, so a `read_to_string` of the store
+    // file alone would eventually assert over an edge list the build does not have.
+    let store = load_merged_value(&root.join("graph").join("algorithms.json"))
+        .expect("the store")
+        .expect("the store exists");
     let empty = Vec::new();
     let edges = store.get("edges").and_then(|v| v.as_array()).unwrap_or(&empty);
     let plan = plan_for(&root.join("crates").join("bsc-lan-stream"), Some(&root)).expect("plan");

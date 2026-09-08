@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--fsx--worktree-slug.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worktree_slug",
+  "src": "src-tauri/src/platform/fsx/worktree_slug.rs",
+  "folder": "src-tauri/src/platform/fsx",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--platform--fsx--map-slug.rs"
+  ],
+  "code": "use super::*;\n\n/// Slugify a worktree/branch reference: keep `[A-Za-z0-9._-]`, every other char becomes `-`.\n///\n/// Must stay identical to the frontend `worktreeSlug` AND be the single source of truth on the Rust\n/// side — the fleet uses it to *create* a worktree's on-disk path while session discovery uses it to\n/// *recompute* that path; if the two ever diverged, recovery would miss live worktrees (#1300).\npub(crate) fn worktree_slug(s: &str) -> String {\n    // keep [A-Za-z0-9._-] → '-', no cap (delegates to map_slug; semantics frozen).\n    map_slug(s, |c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-', '-', None)\n}\n"
+}

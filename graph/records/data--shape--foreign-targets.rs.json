@@ -1,0 +1,11 @@
+{
+  "id": "data--shape--foreign-targets.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "foreign_targets",
+  "src": "crates/data/src/shape/foreign_targets.rs",
+  "folder": "crates/data/src/shape",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The entity's outbound FKs to OTHER entities, deduped by target — the join-heaviness signal.\npub(crate) fn foreign_targets(entity: &Entity) -> Vec<&str> {\n    let mut out: Vec<&str> = Vec::new();\n    for f in &entity.fields {\n        if f.ty != FieldType::Ref {\n            continue;\n        }\n        let Some(target) = f.reference.as_deref() else { continue };\n        if target == entity.key || out.contains(&target) {\n            continue;\n        }\n        out.push(target);\n    }\n    out\n}\n"
+}

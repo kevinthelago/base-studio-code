@@ -1,0 +1,11 @@
+{
+  "id": "data--transport--keychain-account.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "keychain_account",
+  "src": "crates/data/src/transport/keychain_account.rs",
+  "folder": "crates/data/src/transport",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The keychain account string for one connector secret field.\n///\n/// MUST match `src-tauri/src/sources/credentials.rs::account` (the `fn account` there):\n/// `{project}\\u{1f}{source_uid}\\u{1f}{field}` — the parts joined by the ASCII unit-separator\n/// (U+001F) so they can't collide at a part boundary (`a|bc` vs `ab|c`).\npub(crate) fn keychain_account(project: &str, source_uid: &str, field: &str) -> String {\n    format!(\"{project}\\u{1f}{source_uid}\\u{1f}{field}\")\n}\n"
+}

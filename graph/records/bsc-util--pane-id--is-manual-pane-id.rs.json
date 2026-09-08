@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--pane-id--is-manual-pane-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_manual_pane_id",
+  "code": "/// Whether an id is a manual console pane — manual panes are never auto-recovered.\n///\n/// This reads the PREFIX alone, so it can and does disagree with [`parse_pane_identity`]: `man:tab:p`\n/// is manual here and a worker there. That is the shipping behaviour, not an oversight.\npub fn is_manual_pane_id(id: &str) -> bool {\n    id.starts_with(\"man:\")\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_id",
+  "src": "crates/bsc-util/src/pane_id/is_manual_pane_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

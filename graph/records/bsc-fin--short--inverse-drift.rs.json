@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--short--inverse-drift.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "inverse_drift",
+  "code": "/// Where a daily-rebalanced inverse fund ends up over a PATH, against where a naive reading expects.\n///\n/// A `-3x` fund does not deliver `-3 ×` the period return over more than one day, and the gap is not\n/// a fee — it is compounding. Up 10% then down 9.09% leaves the index flat and a 3x inverse fund\n/// down about 11%. Over a choppy year this is the dominant term, and it is why these are built for\n/// single-day holds.\npub fn inverse_drift(daily_returns: &[f64], multiple: f64) -> (f64, f64) {\n    let index = daily_returns.iter().fold(1.0, |v, r| v * (1.0 + r)) - 1.0;\n    let fund = daily_returns.iter().fold(1.0, |v, r| v * (1.0 + multiple * -r)) - 1.0;\n    // What somebody reading the label expects, and what compounding actually produced.\n    (-multiple * index, fund)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/short",
+  "src": "crates/bsc-fin/src/short/inverse_drift.rs",
+  "moduleVis": "private",
+  "composes": []
+}

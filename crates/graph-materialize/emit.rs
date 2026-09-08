@@ -415,6 +415,82 @@ impl Plan {
     }
 }
 
+/// The per-record directory beside a store file — `graph/records/` beside `graph/algorithms.json`.
+///
+/// A directory, not a suffix rule: the layout mirrors `src-tauri/data/components/**`, where a record
+/// has ALWAYS been one file, and it is what makes two branches editing two different records merge
+/// without touching one line of the same file
+/// (`epic-retire-json-ledgers-for-db-and-git-drivers`).
+pub fn records_dir_beside(store_path: &Path) -> Option<PathBuf> {
+    store_path.parent().map(|p| p.join("records"))
+}
+
+/// Load the committed record store, merging the store file with the per-record files under
+/// `records/*.json` beside it.
+///
+/// THIS IS THE ONE DEFINITION every reader of the committed store must go through. A reader that
+/// parses the store file alone silently sees an `implementations` array missing every split-out
+/// record — and silently seeing less is this repo's signature failure, not a hypothetical one.
+///
+/// Each per-record file is ONE record object, appended to `implementations`; the files are read in
+/// sorted order so the merged array is deterministic. A record lives in exactly ONE place, so there
+/// is no precedence rule to get wrong. No `records/` dir means the store file is returned untouched,
+/// which is what makes a temp store in a test a clean no-op.
+///
+/// Returns merged JSON TEXT rather than a `Value` because the materializer's consumers re-parse
+/// `raw` anyway; [`load_merged_value`] is the parsed twin for callers that want the document.
+pub fn load_merged_store(store_path: &Path) -> Result<String, String> {
+    let raw = std::fs::read_to_string(store_path)
+        .map_err(|e| format!("cannot read the committed graph store at {}: {e}", store_path.display()))?;
+    let records_dir = match store_path.parent() {
+        Some(p) => p.join("records"),
+        None => return Ok(raw),
+    };
+    if !records_dir.is_dir() {
+        return Ok(raw);
+    }
+    let mut store: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", store_path.display()))?;
+    let impls = store
+        .get_mut("implementations")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| format!("{} has no `implementations` array", store_path.display()))?;
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&records_dir)
+        .map_err(|e| format!("cannot read {}: {e}", records_dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    for p in files {
+        let text = std::fs::read_to_string(&p)
+            .map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        let rec: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("{} is not valid JSON: {e}", p.display()))?;
+        impls.push(rec);
+    }
+    serde_json::to_string(&store).map_err(|e| format!("cannot serialize the merged store: {e}"))
+}
+
+/// [`load_merged_store`] parsed — the shape a caller that wants the document, not the text, needs.
+///
+/// `Ok(None)` when the store file is ABSENT, which is not an error: a repo that has migrated nothing
+/// yet has no store, and a caller must be able to tell that from "the store is corrupt".
+///
+/// `allow(dead_code)` because this file is ALSO `include!`d by `build.rs`, which is a binary crate
+/// that materializes and never reads the document — an unreachable `pub` item there is dead code,
+/// and this one exists for the LIBRARY consumers (`bsc-graph`'s repo store, `src-tauri`'s source
+/// guards) that must not each re-implement the merge.
+#[allow(dead_code)]
+pub fn load_merged_value(store_path: &Path) -> Result<Option<serde_json::Value>, String> {
+    if !store_path.exists() {
+        return Ok(None);
+    }
+    let raw = load_merged_store(store_path)?;
+    serde_json::from_str(&raw)
+        .map(Some)
+        .map_err(|e| format!("{} is not valid JSON: {e}", store_path.display()))
+}
+
 /// Materialize one crate: resolve, watch, read, render, write. The whole build script, minus the
 /// environment.
 ///
@@ -432,8 +508,19 @@ pub fn emit_into(
     for p in &plan.rerun {
         println!("cargo:rerun-if-changed={}", p.display());
     }
-    let raw = std::fs::read_to_string(&plan.store_path)
-        .map_err(|e| format!("cannot read the committed graph store at {}: {e}", plan.store_path.display()))?;
+    // Merge the legacy single-file store with any per-record files under `graph/records/` — the
+    // file-per-record layout (mirroring `src-tauri/data/components/**`) that retires the 27 MB
+    // monolith (`epic-retire-json-ledgers-for-db-and-git-drivers`). A no-op until records are split
+    // out, so this is transition-safe: a record lives in exactly one place at a time.
+    let raw = load_merged_store(&plan.store_path)?;
+    if let Some(dir) = records_dir_beside(&plan.store_path) {
+        if dir.is_dir() {
+            println!("cargo:rerun-if-changed={}", dir.display());
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                println!("cargo:rerun-if-changed={}", e.path().display());
+            }
+        }
+    }
     // The crate's own documentation, ALWAYS written — `crate_root.rs` `include_str!`s it
     // unconditionally, so a missing file is a compile error rather than an empty doc page, and a crate
     // that has authored no doc record yet must still build. Written BEFORE the module render can bail,

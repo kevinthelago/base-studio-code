@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--observability--tokens--messages--message-text.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "message_text",
+  "src": "src-tauri/src/observability/tokens/messages/message_text.rs",
+  "folder": "src-tauri/src/observability/tokens/messages",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The readable text of a transcript message's `content`: a bare string, or the concatenated\n/// `text` blocks of a content array (skipping tool_use / tool_result / image blocks).\npub(crate) fn message_text(content: &serde_json::Value) -> String {\n    if let Some(s) = content.as_str() {\n        return s.to_string();\n    }\n    let Some(arr) = content.as_array() else { return String::new() };\n    let mut out = String::new();\n    for block in arr {\n        if block[\"type\"] == \"text\" {\n            if let Some(t) = block[\"text\"].as_str() {\n                if !out.is_empty() {\n                    out.push('\\n');\n                }\n                out.push_str(t);\n            }\n        }\n    }\n    out\n}\n"
+}

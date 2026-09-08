@@ -1,0 +1,15 @@
+{
+  "id": "src-tauri--platform--paths--plan-db-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_db_path",
+  "composes": [
+    "src-tauri--platform--paths--plans-root.rs",
+    "src-tauri--platform--fsx--mod.rs",
+    "src-tauri--platform--fsx--sanitize-project-key.rs"
+  ],
+  "code": "use super::{plans_root};\nuse crate::platform::fsx::{sanitize_project_key};\n\n/// The per-project SQLite plan store: `plans/<key>.db` (#plan-db; relocated OUT of the hub, #2996). The\n/// sole fleet store (#1805). Resolved by every session via `$BSC_PLAN_DB`; existing in-hub\n/// `projects/<key>/plan.db` files are moved here once at startup by\n/// [`crate::project::plan_db::migrate_plan_dbs_to_central`]. Key sanitize is idempotent, so a\n/// cwd-derived (already-sanitized) key resolves to the same path.\npub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {\n    plans_root().join(format!(\"{}.db\", sanitize_project_key(project_key)))\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/plan_db_path.rs",
+  "moduleVis": "private"
+}

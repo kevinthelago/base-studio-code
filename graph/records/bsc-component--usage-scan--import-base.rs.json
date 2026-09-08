@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--usage-scan--import-base.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "import_base",
+  "composes": [
+    "bsc-component--usage-scan--strip-ext.rs"
+  ],
+  "code": "use super::*;\n\n/// The import BASE a specifier resolves to, from an importer at `from_rel` (a `src/`-relative path, or\n/// empty for a record, which has no path).\n///\n/// `@/x/Y` → `x/Y`. A RELATIVE specifier is resolved against the importer's directory, which is why the\n/// corpus carries file paths: `./App` from `src/app/main.tsx` is `app/App`, and without that the app\n/// root reads as unused. Records import by their `@/` alias (the repo forbids deep relatives), so a\n/// record importer with no path simply contributes nothing here rather than guessing.\npub fn import_base(spec: &str, from_rel: &str) -> String {\n    if let Some(rest) = spec.strip_prefix(\"@/\") {\n        return strip_ext(rest);\n    }\n    if !(spec.starts_with(\"./\") || spec.starts_with(\"../\")) || from_rel.is_empty() {\n        return String::new();\n    }\n    let Some(dir) = from_rel.strip_prefix(\"src/\").and_then(|r| r.rfind('/').map(|i| &r[..i])) else {\n        return String::new();\n    };\n    let mut segs: Vec<&str> = if dir.is_empty() { Vec::new() } else { dir.split('/').collect() };\n    for part in spec.split('/') {\n        match part {\n            \".\" | \"\" => {}\n            \"..\" => {\n                if segs.pop().is_none() {\n                    return String::new(); // climbed above `src/` — outside the corpus we model\n                }\n            }\n            other => segs.push(other),\n        }\n    }\n    strip_ext(&segs.join(\"/\"))\n}\n",
+  "folder": "crates/bsc-component/src/usage_scan",
+  "src": "crates/bsc-component/src/usage_scan/import_base.rs",
+  "moduleVis": "private"
+}

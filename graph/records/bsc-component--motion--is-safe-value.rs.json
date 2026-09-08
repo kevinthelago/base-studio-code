@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--motion--is-safe-value.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_safe_value",
+  "code": "/// A declaration/duration/easing VALUE that cannot end the declaration or inject CSS (mirrors `safeValue`).\npub(crate) fn is_safe_value(v: &str) -> bool {\n    if v.is_empty() {\n        return false;\n    }\n    if v.chars().any(|c| matches!(c, ';' | '{' | '}' | '<' | '>' | '\\\\')) {\n        return false;\n    }\n    let lower = v.to_ascii_lowercase();\n    !(lower.contains(\"url(\") || lower.contains(\"expression(\") || lower.contains(\"@import\") || lower.contains(\"/*\"))\n}\n",
+  "folder": "crates/bsc-component/src/motion",
+  "src": "crates/bsc-component/src/motion/is_safe_value.rs",
+  "moduleVis": "private",
+  "composes": []
+}

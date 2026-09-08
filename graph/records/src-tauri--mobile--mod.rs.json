@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--mobile--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mobile",
+  "composes": [],
+  "code": "//! The paired mobile companion (#1300): the relay `tunnel` (wire protocol + Noise crypto +\n//! dial-out transport) and FCM (`fcm`) push delivery.\n\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/mobile/mod.rs",
+  "folder": "src-tauri/src/mobile",
+  "moduleVis": "private"
+}

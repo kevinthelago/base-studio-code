@@ -1,0 +1,12 @@
+{
+  "id": "logs--instrument--parse-hms.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_hms",
+  "code": "use super::*;\n\npub(crate) fn parse_hms(s: &str) -> Result<Clock, String> {\n    parse_clock(&format!(\"{s} \")).ok_or_else(|| {\n        format!(\"'{s}' is not HH:MM:SS (the log stamps carry no date, so times are within one log)\")\n    })\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/parse_hms.rs",
+  "moduleVis": "private",
+  "composes": []
+}

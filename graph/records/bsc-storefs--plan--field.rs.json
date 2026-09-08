@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--plan--field.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "field",
+  "src": "crates/bsc-storefs/src/plan/field.rs",
+  "folder": "crates/bsc-storefs/src/plan",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn field(fields: &[(String, String)], k: &str) -> Option<String> {\n    fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone())\n}\n"
+}

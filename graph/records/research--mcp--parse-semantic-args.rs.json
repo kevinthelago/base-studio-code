@@ -1,0 +1,11 @@
+{
+  "id": "research--mcp--parse-semantic-args.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_semantic_args",
+  "code": "use mcp_rpc::arg_str;\nuse serde_json::Value;\n\n/// Parse the `semantic_search` arguments into `(query, ids, top_k)`.\npub fn parse_semantic_args(args: &Value) -> Result<(String, Vec<String>, usize), String> {\n    let query = arg_str(args, \"query\")?;\n    let ids: Vec<String> = args\n        .get(\"ids\")\n        .and_then(|v| v.as_array())\n        .ok_or(\"missing required array argument 'ids'\")?\n        .iter()\n        .filter_map(|v| v.as_str().map(|s| s.to_string()))\n        .filter(|s| !s.trim().is_empty())\n        .collect();\n    if ids.is_empty() {\n        return Err(\"'ids' must contain at least one paper id\".into());\n    }\n    let top_k = args.get(\"top_k\").and_then(|v| v.as_u64()).map(|n| (n as usize).clamp(1, 50)).unwrap_or(8);\n    Ok((query, ids, top_k))\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    use serde_json::json;\n\n    #[test]\n    fn parse_semantic_args_requires_nonempty_ids() {\n        let ok = parse_semantic_args(&json!({ \"query\": \"q\", \"ids\": [\"arxiv:1\", \"doi:10.1/x\"], \"top_k\": 3 })).unwrap();\n        assert_eq!(ok.0, \"q\");\n        assert_eq!(ok.1, vec![\"arxiv:1\", \"doi:10.1/x\"]);\n        assert_eq!(ok.2, 3);\n        assert!(parse_semantic_args(&json!({ \"query\": \"q\", \"ids\": [] })).is_err());\n        assert!(parse_semantic_args(&json!({ \"query\": \"q\" })).is_err());\n    }\n}\n",
+  "folder": "crates/research/src/mcp",
+  "src": "crates/research/src/mcp/parse_semantic_args.rs",
+  "moduleVis": "private",
+  "composes": []
+}

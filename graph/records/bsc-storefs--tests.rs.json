@@ -1,0 +1,15 @@
+{
+  "id": "bsc-storefs--tests.rs",
+  "tech": "rust",
+  "role": "test",
+  "name": "tests",
+  "composes": [],
+  "code": "use super::*;\n\n#[test]\nfn slug_maps_rather_than_rejects() {\n    // Grouping keys routinely hold ':' (pane ids) and '/' (folders). Rejecting them would\n    // silently drop a whole index directory.\n    assert_eq!(slug(\"design-studio:designer-react\"), \"design-studio-designer-react\");\n    assert_eq!(slug(\"features/settings/pages\"), \"features-settings-pages\");\n    assert_eq!(slug(\"\"), \"unspecified\");\n    assert_eq!(slug(\"///\"), \"unspecified\");\n}\n\n#[test]\nfn id_is_safe_refuses_traversal() {\n    assert!(!id_is_safe(\"../../etc/passwd\"));\n    assert!(!id_is_safe(\".hidden\"));\n    assert!(!id_is_safe(\"\"));\n    assert!(id_is_safe(\"a-star.rs\"));\n    assert!(id_is_safe(\"phase-0-linux-port-viability\"));\n}\n\n#[test]\nfn merge_under_prefixes_every_key() {\n    let mut dest = Tree::new();\n    let mut t = Tree::new();\n    t.insert(\"items/a/status\".into(), \"open\\n\".into());\n    merge_under(&mut dest, \"plan\", t);\n    assert_eq!(dest[\"plan/items/a/status\"], \"open\\n\");\n}\n\n#[test]\nfn lines_terminates_and_empties_cleanly() {\n    assert_eq!(lines(&[]), \"\");\n    assert_eq!(lines(&[\"a\".into(), \"b\".into()]), \"a\\nb\\n\");\n}\n",
+  "domain": "bsc-storefs",
+  "src": "crates/bsc-storefs/src/tests.rs",
+  "folder": "crates/bsc-storefs/src",
+  "moduleVis": "private",
+  "moduleAttrs": [
+    "#[cfg(test)]"
+  ]
+}

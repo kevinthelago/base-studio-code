@@ -1,0 +1,11 @@
+{
+  "id": "plandb--issues--row-to-issue.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "row_to_issue",
+  "src": "crates/plandb/src/issues/row_to_issue.rs",
+  "folder": "crates/plandb/src/issues",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {\n    Ok(PlanIssue {\n        r#ref: r.get(0)?,\n        title: r.get(1)?,\n        phase: phase_from_db(r.get::<_, Option<String>>(2)?),\n        repo: r.get(3)?,\n        stream: r.get(4)?,\n        parent: r.get(5)?,\n        body: r.get(6)?,\n        acceptance: json_to_arr(&r.get::<_, String>(7)?),\n        owns: json_to_arr(&r.get::<_, String>(8)?),\n        depends_on: json_to_arr(&r.get::<_, String>(9)?),\n        labels: json_to_arr(&r.get::<_, String>(10)?),\n        status: r.get(11)?,\n        gh_number: r.get(12)?,\n        gh_node_id: r.get(13)?,\n        synced_at: r.get(14)?,\n        notes: serde_json::from_str(&r.get::<_, String>(15)?).unwrap_or_default(),\n    })\n}\n"
+}

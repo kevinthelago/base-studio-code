@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--backing-reconcile--line-set.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "line_set",
+  "code": "//! `line_set` — The \"significant lines\" of a module — the comparison unit for similarity.\n\nuse std::collections::HashSet;\n\n/// The \"significant lines\" of a module — the comparison unit for similarity. Short lines (`}`, `);`,\n/// blanks) are dropped: they are identical in every React file and would float every score.\npub fn line_set(src: &str) -> HashSet<String> {\n    src.lines().map(str::trim).filter(|t| t.chars().count() > 12).map(str::to_string).collect()\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/backing_reconcile",
+  "src": "crates/bsc-ui/src/backing_reconcile/line_set.rs",
+  "moduleVis": "private",
+  "composes": []
+}

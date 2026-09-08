@@ -1,0 +1,11 @@
+{
+  "id": "bsc-persona--baseline--tier-rank.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tier_rank",
+  "code": "use serde_json::Value;\n\n/// `none` < `read` < `write`. An unknown string sorts as `none` — the safe direction, matching\n/// [`crate::floor`]: an unreadable tier can never be the thing that lets a widening through.\npub fn tier_rank(tier: &Value) -> u8 {\n    match tier.as_str() {\n        Some(\"write\") => 2,\n        Some(\"read\") => 1,\n        _ => 0,\n    }\n}\n",
+  "folder": "crates/bsc-persona/src/baseline",
+  "src": "crates/bsc-persona/src/baseline/tier_rank.rs",
+  "moduleVis": "private",
+  "composes": []
+}

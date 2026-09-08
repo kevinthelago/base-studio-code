@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--impls-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "impls_of",
+  "composes": [],
+  "code": "use super::*;\n\n/// The implementations a repo store carries, in file order.\npub fn impls_of(store: &Value) -> Vec<Value> {\n    store.get(\"implementations\").and_then(Value::as_array).cloned().unwrap_or_default()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/impls_of.rs",
+  "moduleVis": "private"
+}

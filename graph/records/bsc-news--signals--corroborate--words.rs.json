@@ -1,0 +1,11 @@
+{
+  "id": "bsc-news--signals--corroborate--words.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "words",
+  "code": "/// Lowercase alphanumeric words, in order. Punctuation and case are dropped because they are the\n/// first thing a subeditor changes and the last thing that carries meaning.\npub fn words(text: &str) -> Vec<String> {\n    text.split(|c: char| !c.is_alphanumeric())\n        .filter(|w| !w.is_empty())\n        .map(|w| w.to_lowercase())\n        .collect()\n}\n",
+  "folder": "crates/bsc-news/src/signals/corroborate",
+  "src": "crates/bsc-news/src/signals/corroborate/words.rs",
+  "moduleVis": "private",
+  "composes": []
+}

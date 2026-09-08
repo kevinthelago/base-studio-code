@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--short--ladder.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ladder",
+  "code": "use super::*;\nuse crate::money::money;\n\n/// The scenario table: what happens across a ladder of moves, and which ones you never reach.\n///\n/// The unreachable rows are KEPT rather than filtered, because seeing that +30% is past your call\n/// price is the entire point — a table that stopped at the call would hide how ordinary a move it is.\npub fn ladder(cap: &Capacity, shares: i64, moves: &[f64], carry: &Carry) -> Vec<Outcome> {\n    moves\n        .iter()\n        .map(|m| outcome_at(cap, shares, money(((cap.price.minor as f64) * (1.0 + m)).round() as i64, cap.equity.currency), carry))\n        .collect()\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/short",
+  "src": "crates/bsc-fin/src/short/ladder.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--money.rs"
+  ]
+}

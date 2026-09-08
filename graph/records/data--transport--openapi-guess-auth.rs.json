@@ -1,0 +1,11 @@
+{
+  "id": "data--transport--openapi-guess-auth.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "openapi_guess_auth",
+  "src": "crates/data/src/transport/openapi_guess_auth.rs",
+  "folder": "crates/data/src/transport",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Guess the runtime auth kind from an OpenAPI doc's `components.securitySchemes` (HTTP basic →\n/// `basic`, HTTP bearer → `token`, `apiKey` → `apikey`, `oauth2` → `oauth`); defaults to `token`.\npub(crate) fn openapi_guess_auth(spec: &Value) -> String {\n    let schemes = spec.get(\"components\").and_then(|c| c.get(\"securitySchemes\")).and_then(Value::as_object);\n    if let Some(schemes) = schemes {\n        for s in schemes.values() {\n            match s.get(\"type\").and_then(Value::as_str).unwrap_or(\"\") {\n                \"http\" => {\n                    let scheme = s.get(\"scheme\").and_then(Value::as_str).unwrap_or(\"\");\n                    return if scheme.eq_ignore_ascii_case(\"basic\") { \"basic\".into() } else { \"token\".into() };\n                }\n                \"apiKey\" => return \"apikey\".into(),\n                \"oauth2\" => return \"oauth\".into(),\n                _ => {}\n            }\n        }\n    }\n    \"token\".into()\n}\n"
+}

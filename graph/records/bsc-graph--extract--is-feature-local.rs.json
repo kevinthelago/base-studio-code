@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--extract--is-feature-local.rs",
+  "name": "is_feature_local",
+  "tech": "rust",
+  "role": "algorithm",
+  "folder": "crates/bsc-graph/src/extract",
+  "src": "crates/bsc-graph/src/extract/is_feature_local.rs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Does `src` sit under a FEATURE slice — code written for one app's vocabulary by construction?\n///\n/// Deliberately a location signal, not a content one: `features/planner/lib/focusedPlan.ts` may be\n/// clean, generic-looking TypeScript and still be meaningless outside this product. The bar #4091 sets\n/// is \"would another project reach for this?\", and a feature-local module answers no by definition.\npub(crate) fn is_feature_local(src: &str) -> bool {\n    src.contains(\"features/\") || src.contains(\"/panes/\") || src.starts_with(\"app/\")\n}\n"
+}

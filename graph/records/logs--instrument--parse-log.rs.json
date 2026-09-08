@@ -1,0 +1,14 @@
+{
+  "id": "logs--instrument--parse-log.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_log",
+  "composes": [
+    "logs--instrument--parse-line.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse a whole log into events, dropping every uninstrumented line.\npub fn parse_log(text: &str) -> Vec<Event> {\n    text.lines().filter_map(parse_line).collect()\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/parse_log.rs",
+  "moduleVis": "private"
+}

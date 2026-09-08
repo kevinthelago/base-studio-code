@@ -1,0 +1,14 @@
+{
+  "id": "llm--gemini--turn-request-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "turn_request_body",
+  "src": "crates/llm/src/gemini/turn_request_body.rs",
+  "folder": "crates/llm/src/gemini",
+  "moduleVis": "private",
+  "composes": [
+    "llm--gemini--function-declarations.rs",
+    "llm--gemini--build-contents.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the Gemini `:generateContent` request body for a tool-using turn.\n/// Pure — unit-testable without I/O.\npub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {\n    let mut body = serde_json::json!({\n        \"contents\": build_contents(&t.messages),\n        \"generationConfig\": { \"maxOutputTokens\": t.max_tokens },\n    });\n    if !t.system.is_empty() {\n        body[\"systemInstruction\"] = serde_json::json!({ \"parts\": [ { \"text\": t.system } ] });\n    }\n    if !t.tools.is_empty() {\n        body[\"tools\"] = function_declarations(&t.tools);\n    }\n    body\n}\n"
+}

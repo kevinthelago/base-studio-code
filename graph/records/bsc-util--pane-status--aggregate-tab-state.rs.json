@@ -1,0 +1,16 @@
+{
+  "id": "bsc-util--pane-status--aggregate-tab-state.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "aggregate_tab_state",
+  "composes": [
+    "bsc-util--pane-status--pane-count-for-layout.rs",
+    "bsc-util--pane-id--pane-id-for.rs",
+    "bsc-util--pane-id--mod.rs"
+  ],
+  "code": "use super::pane_count_for_layout::pane_count_for_layout;\nuse super::PaneStatus;\nuse crate::pane_id::{pane_id_for, IdentityTab};\nuse std::collections::BTreeMap;\n\n/// Roll a tab's per-pane statuses up to one tab-level status (#435).\n///\n/// Only panes IN the current grid and NOT disabled contribute. Precedence: any live `Run` ⇒ `Run`;\n/// else any `On` ⇒ `On`; else `Idle`. A pane that paused mid-turn never pulls a tab out of `Run` while\n/// another cell is still working, because the rollup is over the whole live set rather than the last\n/// event.\npub fn aggregate_tab_state(\n    tab: &IdentityTab,\n    layout: &str,\n    tab_idx: i64,\n    statuses: &BTreeMap<String, PaneStatus>,\n    disabled: &BTreeMap<String, bool>,\n) -> PaneStatus {\n    let count = pane_count_for_layout(layout);\n    let mut result = PaneStatus::Idle;\n    for i in 0..count {\n        let pid = pane_id_for(Some(tab), tab_idx, i);\n        if disabled.get(&pid).copied().unwrap_or(false) {\n            continue;\n        }\n        match statuses.get(&pid).copied().unwrap_or(PaneStatus::Idle) {\n            PaneStatus::Run => return PaneStatus::Run,\n            PaneStatus::On => result = PaneStatus::On,\n            PaneStatus::Idle => {}\n        }\n    }\n    result\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_status",
+  "src": "crates/bsc-util/src/pane_status/aggregate_tab_state.rs",
+  "moduleVis": "private"
+}

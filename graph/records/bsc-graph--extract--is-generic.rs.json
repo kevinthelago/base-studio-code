@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--extract--is-generic.rs",
+  "name": "is_generic",
+  "tech": "rust",
+  "role": "algorithm",
+  "folder": "crates/bsc-graph/src/extract",
+  "src": "crates/bsc-graph/src/extract/is_generic.rs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Does the function declare its OWN type parameters (a `<…>` in the signature, before the parameter\n/// list)? A generic function is reusable across types rather than welded to one concrete app type.\npub(crate) fn is_generic(code: &str) -> bool {\n    code.split_once('(').map(|(sig, _)| sig.contains('<')).unwrap_or(false)\n}\n"
+}

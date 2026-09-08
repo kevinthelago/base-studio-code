@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--find-line-anchored-export-brace.rs",
+  "src": "crates/bsc-record/src/record_source/find_line_anchored_export_brace.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "find_line_anchored_export_brace",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The next line-anchored `export [type] {` … `}` after `from`, as (open-brace, close-brace) indices.\npub(crate) fn find_line_anchored_export_brace(c: &[char], from: usize) -> Option<(usize, usize)> {\n    let n = c.len();\n    let mut i = from;\n    while i < n {\n        // Line-anchored: at input start, or the first non-space thing on its line.\n        let at_line_start = i == 0 || {\n            let mut k = i;\n            let mut ok = false;\n            while k > 0 {\n                k -= 1;\n                match c[k] {\n                    '\\n' => {\n                        ok = true;\n                        break;\n                    }\n                    ' ' | '\\t' => continue,\n                    _ => break,\n                }\n            }\n            ok || k == 0 && matches!(c[0], ' ' | '\\t')\n        };\n        if at_line_start && c[i..].starts_with(&['e', 'x', 'p', 'o', 'r', 't']) {\n            let mut j = i + 6;\n            while j < n && (c[j] == ' ' || c[j] == '\\t') {\n                j += 1;\n            }\n            if c[j..].starts_with(&['t', 'y', 'p', 'e']) {\n                let k = j + 4;\n                if k < n && (c[k] == ' ' || c[k] == '\\t' || c[k] == '{') {\n                    j = k;\n                    while j < n && (c[j] == ' ' || c[j] == '\\t') {\n                        j += 1;\n                    }\n                }\n            }\n            if j < n && c[j] == '{' {\n                if let Some(off) = c[j..].iter().position(|ch| *ch == '}') {\n                    return Some((j, j + off));\n                }\n            }\n        }\n        i += 1;\n    }\n    None\n}\n"
+}

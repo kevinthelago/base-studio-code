@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--build-facet--is-tier-a.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_tier_a",
+  "composes": [
+    "bsc-graph--build-facet--crate-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Is this record a whole module of a crate that materializes its source?\n///\n/// Such a record is **Tier A**: it compiles INSIDE its crate, against that crate's dependencies.\n/// Building it standalone fails with `cannot find module or crate …`, which is correct rather than a\n/// defect — and recording that as `verdict: fail` would libel a healthy record. Measured: `--all` marked\n/// `bsc-blueprint-cli.rs` failed for exactly this reason before the exclusion existed.\npub fn is_tier_a(src: Option<&str>, materialized_crates: &[String]) -> bool {\n    crate_of(src).is_some_and(|c| materialized_crates.iter().any(|m| m == c))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/is_tier_a.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--console--pty--launch--shell-safe.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "shell_safe",
+  "src": "src-tauri/src/console/pty/launch/shell_safe.rs",
+  "folder": "src-tauri/src/console/pty/launch",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Build the bash init line written into a freshly opened Git-Bash PTY: `cd` into the session cwd\n/// (a loud red warning + nearest-existing-ancestor fallback when it's `cwd_missing`, nothing when\n/// `cwd` is empty), install the OSC-7 cwd + `__bsc_state` run/idle markers and the `claude()`\n/// wrapper (`claude_fn`), source the bsc-* helpers from `rc_bash` into the interactive shell,\n/// wire `PROMPT_COMMAND`, clear the screen AND its scrollback (`3J`, #3938 — `2J` alone pushes the erased\n/// rows into scrollback, leaving a screenful of blank lines above the prompt), and append the optional\n/// `launch` command — EXCEPT when\n/// the cwd is missing (#2438): the launch is suppressed, since it would start the agent in the\n/// fallback ancestor (for a fleet worktree that's the parent of EVERY worktree) with no role gate\n/// (`ensure_session_settings` wrote into the missing configured path), and the agent's TUI would\n/// clear the warning off screen. Pure (no fs/env) so the exact wire string is unit-testable;\n/// `to_bash_path` is a no-op off Windows.\n/// `sandboxed` means this session runs inside a mount namespace, so every path it can see is a\n/// GUEST path — which is why it suppresses the cwd report. See the `osc7` binding below.\n/// Strip what could escape a double-quoted bash word. The reasons are ours, not user input, but a\n/// path is interpolated into one and a message that broke the init line would take the whole session\n/// with it — a 4096-byte truncation already did exactly that once.\npub(crate) fn shell_safe(s: &str) -> String {\n    // By CODE POINT, not char literals: a quote, a backslash and a backtick in one Rust expression\n    // is exactly the shape that gets mangled passing through a shell — it did, twice, writing this.\n    const UNSAFE: [char; 4] = [\n        char::from_u32(34).unwrap(),\n        char::from_u32(92).unwrap(),\n        char::from_u32(36).unwrap(),\n        char::from_u32(96).unwrap(),\n    ];\n    s.chars().filter(|c| !UNSAFE.contains(c)).collect()\n}\n"
+}

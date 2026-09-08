@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--norm.rs",
+  "src": "crates/bsc-record/src/record_source/norm.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "norm",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// LF, no trailing whitespace — the byte form every comparison here works in.\npub fn norm(s: &str) -> String {\n    s.replace(\"\\r\\n\", \"\\n\").trim_end().to_string()\n}\n"
+}

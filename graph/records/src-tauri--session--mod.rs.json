@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--session--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "session",
+  "composes": [],
+  "code": "//! Session launch, configuration & settings (#1917): the consolidated home for everything that\n//! decides how an agent session is launched and what it can do — the harness seam (launch/resume in a\n//! PTY), the `~/.claude.json` trust state, the `.claude/settings.json` permission file the session\n//! runs under, and the one-shot LLM completion command. (The #1880 role/profile/permission\n//! composition lands here too, so the security-critical logic sits in ONE directory.)\n\n\n// ── the permission derivation now lives in a CRATE ───────────────────────────────────────────────\n//\n// `role_gate`, `profile_settings`, `denies`, `write_scope`, `agent_perms`, `access_env`,\n// `hook_chain` and `tool_rules` moved to `crates/bsc-perms`\n// (#the-session-permission-derivation-lives-in-a-crate-not-src-tauri). They were always pure — their\n// whole non-std import surface was serde, `bsc_util::scope` and each other — but living here meant\n// that changing which commands a role may run cost a new binary and a restarted window with a fleet\n// in it, and that no live session could ask what its own role resolved to.\n//\n// RE-EXPORTED UNDER THEIR OLD PATHS ON PURPOSE. The ~20 call sites are almost all in\n// `console/pty/mod.rs`, the highest-churn file in the app and the one the routing rule exists to\n// protect; rewriting them would put this move INTO that file for no behavioural gain. `crate::session::role_gate::X`\n// keeps resolving, and the code it resolves to is now hot-swappable.\npub use bsc_perms::access_env;\npub use bsc_perms::agent_perms;\npub use bsc_perms::denies;\npub use bsc_perms::hook_chain;\npub use bsc_perms::profile_settings;\npub use bsc_perms::role_gate;\npub use bsc_perms::tool_rules;\npub use bsc_perms::write_scope;\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/session/mod.rs",
+  "folder": "src-tauri/src/session",
+  "moduleVis": "private"
+}

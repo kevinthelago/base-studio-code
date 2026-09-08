@@ -1,0 +1,12 @@
+{
+  "id": "logs--cost--json-unescape-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "json_unescape_path",
+  "code": "/// Reverse the escapes a JSON string can carry for a filesystem path (`tokens.log` stores the\n/// hook's `transcript_path` verbatim): `\\\\` → `\\` (Windows), `\\/` → `/`.\npub(crate) fn json_unescape_path(p: &str) -> String {\n    p.replace(\"\\\\\\\\\", \"\\\\\").replace(\"\\\\/\", \"/\")\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/cost",
+  "src": "crates/logs/src/cost/json_unescape_path.rs",
+  "moduleVis": "private",
+  "composes": []
+}

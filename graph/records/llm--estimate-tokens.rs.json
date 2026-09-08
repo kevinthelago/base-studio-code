@@ -1,0 +1,13 @@
+{
+  "id": "llm--estimate-tokens.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "estimate_tokens",
+  "code": "use crate::CHARS_PER_TOKEN;\n\n/// Rough token count for a string, erring HIGH (see [`crate::CHARS_PER_TOKEN`]).\npub fn estimate_tokens(s: &str) -> usize {\n    s.len() * 10 / CHARS_PER_TOKEN + 1\n}\n",
+  "folder": "crates/llm/src",
+  "src": "crates/llm/src/estimate_tokens.rs",
+  "moduleVis": "private",
+  "composes": [
+    "llm--lib.rs"
+  ]
+}

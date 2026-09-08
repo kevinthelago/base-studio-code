@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--migrate--strip-child-decls.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "strip_child_decls",
+  "composes": [
+    "bsc-graph--migrate--remove-decl-blocks.rs"
+  ],
+  "code": "use super::*;\n\n/// A DIRECTORY module's body with its OWN children's declarations removed.\n///\n/// `src/cli.rs` says `mod nouns;`, and after migration nothing named `src/cli/nouns.rs` exists —\n/// `graph-materialize/build.rs` emits `mod nouns { … }` INSIDE `mod cli { … }` instead. A record that\n/// kept the declaration would send rustc looking for a deleted file, and the error would name a\n/// generated file under `target/` rather than this step.\npub fn strip_child_decls(module_src: &str, children: &[ModuleDecl]) -> Result<String, String> {\n    remove_decl_blocks(module_src, children)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/strip_child_decls.rs",
+  "moduleVis": "private"
+}

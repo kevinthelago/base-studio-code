@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--plans-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plans_root",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::{bsc_base_dir};\n\n/// The root that holds every project's plan store, OUT of the hub (#2996): `~/.base-studio-code/plans`.\n/// plan.db moved here (from `projects/<key>/plan.db`) so the plan persists independently of whether the\n/// hub folder exists — the database is the source of truth; the hub is a projection materialized at\n/// triage (epic #2993). One source of truth for the path (#2081).\npub(crate) fn plans_root() -> std::path::PathBuf {\n    bsc_base_dir().join(\"plans\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/plans_root.rs",
+  "moduleVis": "private"
+}

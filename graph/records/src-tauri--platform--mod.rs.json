@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--platform--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "platform",
+  "composes": [],
+  "code": "//! Platform primitives (#1300): the OS- and environment-level helpers shared across every\n//! domain — filesystem paths under `~/.base-studio-code`, git command execution, child-process\n//! spawning, shell resolution + path/quoting conversion, and small filesystem utilities.\n//!\n//! These have no dependency on the app's domain logic; everything else depends on them. Extracted\n//! from the flat `lib.rs` so the shared foundation is visible as one module.\n\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/platform/mod.rs",
+  "folder": "src-tauri/src/platform",
+  "moduleVis": "private"
+}

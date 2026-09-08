@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--snapshot--str-array.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "str_array",
+  "code": "use serde_json::Value;\n\npub(crate) fn str_array(v: Vec<String>) -> Value {\n    Value::Array(v.into_iter().map(Value::String).collect())\n}\n",
+  "folder": "crates/plandb/src/cli/snapshot",
+  "src": "crates/plandb/src/cli/snapshot/str_array.rs",
+  "moduleVis": "private",
+  "composes": []
+}

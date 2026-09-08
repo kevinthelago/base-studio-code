@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--mobile--fcm--build-alert-message.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_alert_message",
+  "src": "src-tauri/src/mobile/fcm/build_alert_message.rs",
+  "folder": "src-tauri/src/mobile/fcm",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--mobile--fcm--notification-body.rs",
+    "src-tauri--mobile--fcm--build-push.rs"
+  ],
+  "code": "use super::*;\n\n/// Build an FCM push for one alert from the #2498 taxonomy (agent-paused / prompt-waiting /\n/// worker-question / fleet-failed / fleet-landed / gate-ready / planner-waiting). The\n/// notification banner carries the frontend-composed title/body; the `data` block carries the\n/// `kind` (mobile routes the tap on it) and the pane/session id when the alert has one. The\n/// inbox itself rides the `alerts` store_state domain — this push is the out-of-band notify\n/// for a backgrounded/quit phone.\npub fn build_alert_message(\n    device_token: &str,\n    kind: &str,\n    title: &str,\n    body: &str,\n    pane_id: &str,\n) -> serde_json::Value {\n    let title = if title.trim().is_empty() { \"Studio Code\" } else { title };\n    build_push(\n        device_token,\n        title,\n        &notification_body(body),\n        // Contract — mobile parses these exact keys; values MUST be strings.\n        serde_json::json!({ \"type\": \"alert\", \"kind\": kind, \"paneId\": pane_id }),\n    )\n}\n"
+}

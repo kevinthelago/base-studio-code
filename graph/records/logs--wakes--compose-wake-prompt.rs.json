@@ -1,0 +1,14 @@
+{
+  "id": "logs--wakes--compose-wake-prompt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "compose_wake_prompt",
+  "src": "crates/logs/src/wakes/compose_wake_prompt.rs",
+  "folder": "crates/logs/src/wakes",
+  "moduleVis": "private",
+  "composes": [
+    "logs--wakes--wake-prompt-for.rs",
+    "logs--wakes--waiting-wake-prompt.rs"
+  ],
+  "code": "use super::*;\n\n/// The standard wake for `session`, composed from the coordination state.\n///\n/// THIS IS THE FLIP. `bsc fleet wake` has always documented that \"without `--prompt` the app supplies\n/// its standard change-request wake\", and that sentence was composed in the renderer — so a director\n/// that did not know about it re-sent the original task as a `--prompt` six times over. Composing it\n/// in the process that performs the wake means it cannot be skipped by a caller unaware of it.\n///\n/// The precedence is by SPECIFICITY, and each rung says something the next cannot:\n///\n/// 1. a parked WAITER whose deps are the reason it stopped — it learns which landed and HOW, which is\n///    the only rung that can carry that;\n/// 2. a session paused for the USER — there are no deps to report, and it is told it was resumed;\n/// 3. anything else — the generic change request, because a woken session with no coordination record\n///    is being brought back for work the log cannot name.\n///\n/// An explicit `--prompt` never reaches here: the caller prefers it, and this is only consulted when\n/// none was given.\npub fn compose_wake_prompt(session: &str, s: &CoordState) -> String {\n    if let Some(w) = s.waiters.iter().find(|w| w.session == session) {\n        return wake_prompt_for(w, s);\n    }\n    if let Some(w) = s.waiting.iter().find(|w| w.session == session) {\n        return waiting_wake_prompt(w);\n    }\n    DEFAULT_WAKE_PROMPT.to_string()\n}\n"
+}

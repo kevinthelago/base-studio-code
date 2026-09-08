@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--parse-stamp.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_stamp",
+  "code": "//! `parse_stamp` — Parse the provenance stamp from a vendored file's content (its first line).\n\nuse super::Stamp;\n\n/// Parse the provenance stamp from a vendored file's content (its first line).\npub fn parse_stamp(content: &str) -> Option<Stamp> {\n    let first = content.lines().next()?;\n    let rest = first.strip_prefix(\"// vendored from \")?;\n    let (kit_ref, after) = rest.split_once(\" (sha256:\")?;\n    let hash = after.split_once(')').map(|(h, _)| h)?;\n    Some(Stamp { kit_ref: kit_ref.to_string(), body_sha256: hash.to_string() })\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/parse_stamp.rs",
+  "moduleVis": "private",
+  "composes": []
+}

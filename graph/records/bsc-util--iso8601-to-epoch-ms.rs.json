@@ -1,0 +1,14 @@
+{
+  "id": "bsc-util--iso8601-to-epoch-ms.rs",
+  "name": "iso8601_to_epoch_ms",
+  "role": "algorithm",
+  "tech": "rust",
+  "folder": "crates/bsc-util/src",
+  "src": "crates/bsc-util/src/iso8601_to_epoch_ms.rs",
+  "moduleVis": "pub",
+  "domain": null,
+  "composes": [
+    "bsc-util--days-from-civil.rs"
+  ],
+  "code": "/// `YYYY-MM-DDTHH:MM:SSZ` (UTC) → epoch **milliseconds**, the inverse of [`crate::epoch_ms_to_iso8601`].\n/// Returns `None` on a malformed value. (The seconds field defaults to `00` if absent; a trailing\n/// `Z` is optional.)\npub fn iso8601_to_epoch_ms(ts: &str) -> Option<i64> {\n    let ts = ts.trim();\n    let (date, time) = ts.split_once('T')?;\n    let mut d = date.split('-');\n    let y: i64 = d.next()?.parse().ok()?;\n    let mo: i64 = d.next()?.parse().ok()?;\n    let da: i64 = d.next()?.parse().ok()?;\n    let time = time.trim_end_matches('Z');\n    let mut t = time.split(':');\n    let h: i64 = t.next()?.parse().ok()?;\n    let mi: i64 = t.next()?.parse().ok()?;\n    let s: i64 = t.next().unwrap_or(\"0\").parse().ok()?;\n    let days = crate::days_from_civil(y, mo, da);\n    Some((days * 86_400 + h * 3_600 + mi * 60 + s) * 1_000)\n}"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-record--imports-fmt--strip-imports.rs",
+  "src": "crates/bsc-record/src/imports_fmt/strip_imports.rs",
+  "folder": "crates/bsc-record/src/imports_fmt",
+  "name": "strip_imports",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-record--imports-fmt--split-head.rs",
+    "bsc-record--imports-fmt--parse-import-line.rs",
+    "bsc-record--imports-fmt--layout.rs"
+  ],
+  "code": "use super::{layout, parse_import_line, split_head, ImportSpec};\n\n/// Pull the import block out of a canonically-shaped module: returns the module carrying only its\n/// doc-comment + body (exactly what a migrated record would STORE) and the specs the block encoded.\n/// `body_with_imports(&stripped, &specs)` then reproduces the original byte for byte — the identity\n/// `strip_and_body_with_imports_are_exact_inverses` pins. This is the READ half the graph-side\n/// `normalize`/`migrate` verbs call.\npub fn strip_imports(code: &str) -> (String, Vec<ImportSpec>) {\n    let (head, after_head) = split_head(code);\n    let mut specs = Vec::new();\n    let mut idx = 0usize;\n    for line in after_head.split_inclusive('\\n') {\n        if let Some(s) = parse_import_line(line) {\n            specs.push(s);\n            idx += line.len();\n        } else if line.trim().is_empty() && !specs.is_empty() {\n            // the blank line terminating the block: consume it and stop.\n            idx += line.len();\n            break;\n        } else {\n            break;\n        }\n    }\n    let body = after_head[idx..].trim_start_matches(['\\n', '\\r']);\n    (layout(head, \"\", body), specs)\n}\n"
+}

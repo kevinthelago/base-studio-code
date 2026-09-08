@@ -1,0 +1,14 @@
+{
+  "id": "data--shape--is-join-table.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_join_table",
+  "src": "crates/data/src/shape/is_join_table.rs",
+  "folder": "crates/data/src/shape",
+  "moduleVis": "private",
+  "composes": [
+    "data--shape--foreign-targets.rs",
+    "data--shape--payload-fields.rs"
+  ],
+  "code": "use super::*;\n\n/// Is `entity` a JOIN TABLE — nearly all wiring, pointing at ≥2 distinct other entities? Such an\n/// entity IS the edge set of a many-to-many relation rather than a record collection.\npub(crate) fn is_join_table(entity: &Entity) -> bool {\n    foreign_targets(entity).len() >= 2 && payload_fields(entity).len() <= 2\n}\n"
+}

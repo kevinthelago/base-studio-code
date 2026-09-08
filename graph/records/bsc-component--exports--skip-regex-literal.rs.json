@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--exports--skip-regex-literal.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "skip_regex_literal",
+  "code": "\n/// The index just past a REGEX LITERAL opening at `chars[start]` (a `/` [`is_regex_context`] already\n/// confirmed), including its trailing flags (`/…/g`). A `[…]` character class is tracked so a `/` INSIDE\n/// one (`/[/]/`) does not end the literal early, mirroring how a real tokenizer reads one. An unterminated\n/// literal (hits a newline first) bails at the newline — same \"prose, not code\" fallback the plain-quote\n/// scanners in this file use for an unterminated `'`/`\"`.\npub(crate) fn skip_regex_literal(chars: &[char], start: usize) -> usize {\n    let n = chars.len();\n    let mut i = start + 1; // past the opening `/`\n    let mut in_class = false;\n    while i < n {\n        match chars[i] {\n            '\\\\' => i += 2,\n            '\\n' => return i,\n            '[' => {\n                in_class = true;\n                i += 1;\n            }\n            ']' => {\n                in_class = false;\n                i += 1;\n            }\n            '/' if !in_class => {\n                i += 1;\n                break;\n            }\n            _ => i += 1,\n        }\n    }\n    while i < n && chars[i].is_ascii_alphabetic() {\n        i += 1; // flags: g, i, m, s, u, y, d, v …\n    }\n    i\n}\n",
+  "folder": "crates/bsc-component/src/exports",
+  "src": "crates/bsc-component/src/exports/skip_regex_literal.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-component--exports--is-regex-context.rs"
+  ]
+}

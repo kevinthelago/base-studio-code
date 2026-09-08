@@ -1,0 +1,12 @@
+{
+  "id": "bsc-session--caged-agent-conversation-dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "caged_agent_conversation_dir",
+  "code": "use std::path::{Path, PathBuf};\n\n/// The HOST directory backing [`crate::CAGED_AGENT_SESSION_GUEST`] for a pane whose sandbox stores live\n/// at `stores_root`.\npub fn caged_agent_conversation_dir(stores_root: &Path) -> PathBuf {\n    stores_root.join(\"home\").join(\"bsc-agent\")\n}\n",
+  "feature": "fleet",
+  "folder": "crates/bsc-session/src",
+  "src": "crates/bsc-session/src/caged_agent_conversation_dir.rs",
+  "moduleVis": "private",
+  "composes": []
+}

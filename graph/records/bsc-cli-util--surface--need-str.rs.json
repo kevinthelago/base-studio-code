@@ -1,0 +1,11 @@
+{
+  "id": "bsc-cli-util--surface--need-str.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "need_str",
+  "code": "use serde_json::Value;\n\npub(crate) fn need_str(v: &Value, key: &str) -> Result<String, String> {\n    v.get(key)\n        .and_then(Value::as_str)\n        .map(str::to_string)\n        .ok_or_else(|| format!(\"missing or non-string `{key}`\"))\n}\n",
+  "folder": "crates/bsc-cli-util/src/surface",
+  "src": "crates/bsc-cli-util/src/surface/need_str.rs",
+  "moduleVis": "private",
+  "composes": []
+}

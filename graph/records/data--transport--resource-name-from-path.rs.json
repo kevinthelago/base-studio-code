@@ -1,0 +1,11 @@
+{
+  "id": "data--transport--resource-name-from-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resource_name_from_path",
+  "src": "crates/data/src/transport/resource_name_from_path.rs",
+  "folder": "crates/data/src/transport",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The last non-templated segment of a request path (`/api/v1/customers/{id}` → `customers`), the\n/// connector object name guess. Falls back to `root` for an empty/all-templated path.\npub(crate) fn resource_name_from_path(path: &str) -> String {\n    path.split('/')\n        .rfind(|seg| !seg.is_empty() && !seg.starts_with('{'))\n        .unwrap_or(\"root\")\n        .to_string()\n}\n"
+}

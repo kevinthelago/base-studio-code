@@ -1,0 +1,12 @@
+{
+  "id": "logs--instrument--commit-samples.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "commit_samples",
+  "code": "use super::*;\n\npub(crate) fn commit_samples(ev: &[Event], surface: Option<&str>) -> Vec<(String, f64)> {\n    ev.iter()\n        .filter_map(|e| match e {\n            Event::Commit { surface: s, ms, .. } if surface.is_none_or(|w| w == s) => Some((s.clone(), *ms)),\n            _ => None,\n        })\n        .collect()\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/commit_samples.rs",
+  "moduleVis": "private",
+  "composes": []
+}

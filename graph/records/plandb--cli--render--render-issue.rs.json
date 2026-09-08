@@ -1,0 +1,13 @@
+{
+  "id": "plandb--cli--render--render-issue.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_issue",
+  "code": "use crate::PlanIssue;\n\n/// The full human-readable spec of one issue (for `get`).\npub(crate) fn render_issue(i: &PlanIssue) -> String {\n    let mut out = format!(\"{}  [{}]  {}\\n\", i.r#ref, i.status, i.title);\n    let mut meta: Vec<String> = Vec::new();\n    if let Some(p) = &i.phase {\n        meta.push(format!(\"phase: {}\", p.to_string().trim_matches('\"')));\n    }\n    if let Some(s) = &i.stream {\n        meta.push(format!(\"stream: {s}\"));\n    }\n    if let Some(r) = &i.repo {\n        meta.push(format!(\"repo: {r}\"));\n    }\n    if let Some(p) = &i.parent {\n        meta.push(format!(\"parent: {p}\"));\n    }\n    if !meta.is_empty() {\n        out.push_str(&format!(\"  {}\\n\", meta.join(\"   \")));\n    }\n    if !i.owns.is_empty() {\n        out.push_str(&format!(\"  owns: {}\\n\", i.owns.join(\", \")));\n    }\n    if !i.depends_on.is_empty() {\n        out.push_str(&format!(\"  depends on: {}\\n\", i.depends_on.join(\", \")));\n    }\n    if !i.labels.is_empty() {\n        out.push_str(&format!(\"  labels: {}\\n\", i.labels.join(\", \")));\n    }\n    if !i.acceptance.is_empty() {\n        out.push_str(\"  acceptance:\\n\");\n        for a in &i.acceptance {\n            out.push_str(&format!(\"    - {a}\\n\"));\n        }\n    }\n    if let Some(b) = &i.body {\n        if !b.trim().is_empty() {\n            out.push('\\n');\n            for line in b.lines() {\n                out.push_str(&format!(\"  {line}\\n\"));\n            }\n        }\n    }\n    if !i.notes.is_empty() {\n        out.push_str(\"\\n  notes:\\n\");\n        for n in &i.notes {\n            let who = if n.author.is_empty() { String::new() } else { format!(\" ({})\", n.author) };\n            out.push_str(&format!(\"    - {}{}\\n\", n.text, who));\n        }\n    }\n    out\n}\n",
+  "folder": "crates/plandb/src/cli/render",
+  "src": "crates/plandb/src/cli/render/render_issue.rs",
+  "moduleVis": "private",
+  "composes": [
+    "plandb--issues--mod.rs"
+  ]
+}

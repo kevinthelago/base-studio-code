@@ -1,0 +1,11 @@
+{
+  "id": "data--ddl--field-lineage-ddl.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "field_lineage_ddl",
+  "src": "crates/data/src/ddl/field_lineage_ddl.rs",
+  "folder": "crates/data/src/ddl",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `CREATE TABLE IF NOT EXISTS` for the per-field lineage table — one row per reconciled\n/// (record, field) recording which source won (#785). Includes `license` for full provenance.\npub fn field_lineage_ddl() -> String {\n    format!(\n        \"CREATE TABLE IF NOT EXISTS {FIELD_LINEAGE_TABLE} \\\n         (entity VARCHAR, identity VARCHAR, field VARCHAR, \\\n          source VARCHAR, loaded_at VARCHAR, license VARCHAR)\"\n    )\n}\n"
+}

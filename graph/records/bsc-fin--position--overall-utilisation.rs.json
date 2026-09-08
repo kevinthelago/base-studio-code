@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--position--overall-utilisation.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "overall_utilisation",
+  "code": "use super::*;\nuse crate::account::Kind;\n\n/// Utilisation across every credit line together — the figure a score actually reads.\npub fn overall_utilisation(p: &Position) -> Option<f64> {\n    let lines: Vec<&AccountPosition> = p.accounts.iter().filter(|a| a.kind == Kind::Credit && a.credit_limit.is_some()).collect();\n    let limit: i64 = lines.iter().map(|a| a.credit_limit.unwrap().minor).sum();\n    if limit <= 0 {\n        return None;\n    }\n    let owed: i64 = lines.iter().map(|a| a.owed.map(|o| o.minor).unwrap_or(0)).sum();\n    Some(round3(owed as f64 / limit as f64))\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/position",
+  "src": "crates/bsc-fin/src/position/overall_utilisation.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--account.rs"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--imports--parse-clause.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_clause",
+  "composes": [],
+  "code": "use super::*;\n\n/// A clause is `{ … }` (named), `* as X` (namespace), a bare identifier (default), or a default\n/// combined with either of the first two (`D, { … }` / `D, * as X`).\npub(crate) fn parse_clause(clause: &str, from: &str, type_only: bool) -> Vec<ImportSpec> {\n    let clause = clause.trim();\n    // default + (named | namespace): a top-level comma before a `{` or `*`.\n    if let Some(idx) = clause.find(',') {\n        let (left, right) = clause.split_at(idx);\n        let left = left.trim();\n        let right = right[1..].trim();\n        if (right.starts_with('{') || right.starts_with('*')) && !left.is_empty() && !left.starts_with('{') {\n            let mut out = vec![ImportSpec {\n                from: from.to_string(),\n                symbols: vec![left.to_string()],\n                type_only,\n                kind: \"default\".to_string(),\n            }];\n            out.extend(parse_clause(right, from, type_only));\n            return out;\n        }\n    }\n    if let Some(inner) = clause.strip_prefix('{').and_then(|c| c.strip_suffix('}')) {\n        let symbols: Vec<String> = inner\n            .split(',')\n            .map(|s| s.trim().to_string())\n            .filter(|s| !s.is_empty())\n            .collect();\n        return vec![ImportSpec { from: from.to_string(), symbols, type_only, kind: \"named\".to_string() }];\n    }\n    if let Some(name) = clause.strip_prefix('*') {\n        // `* as X`\n        let binding = name.trim().strip_prefix(\"as \").map(|s| s.trim()).unwrap_or(\"\").to_string();\n        return vec![ImportSpec {\n            from: from.to_string(),\n            symbols: if binding.is_empty() { Vec::new() } else { vec![binding] },\n            type_only,\n            kind: \"namespace\".to_string(),\n        }];\n    }\n    // bare identifier → default import.\n    vec![ImportSpec {\n        from: from.to_string(),\n        symbols: vec![clause.to_string()],\n        type_only,\n        kind: \"default\".to_string(),\n    }]\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/imports",
+  "src": "crates/bsc-graph/src/imports/parse_clause.rs",
+  "moduleVis": "private"
+}

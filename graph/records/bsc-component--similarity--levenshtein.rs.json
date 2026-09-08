@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--similarity--levenshtein.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "levenshtein",
+  "code": "/// Levenshtein edit distance (two-row DP).\npub(crate) fn levenshtein(a: &str, b: &str) -> usize {\n    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());\n    if a.is_empty() {\n        return b.len();\n    }\n    if b.is_empty() {\n        return a.len();\n    }\n    let mut prev: Vec<usize> = (0..=b.len()).collect();\n    let mut cur = vec![0usize; b.len() + 1];\n    for (i, ca) in a.iter().enumerate() {\n        cur[0] = i + 1;\n        for (j, cb) in b.iter().enumerate() {\n            let cost = if ca == cb { 0 } else { 1 };\n            cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost);\n        }\n        std::mem::swap(&mut prev, &mut cur);\n    }\n    prev[b.len()]\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/similarity",
+  "src": "crates/bsc-component/src/similarity/levenshtein.rs",
+  "moduleVis": "private",
+  "composes": []
+}

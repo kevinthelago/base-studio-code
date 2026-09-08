@@ -1,0 +1,12 @@
+{
+  "id": "bsc-resolve--cfg.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cfg",
+  "composes": [],
+  "code": "//! The wire types a session's extensions are handed over as.\n//!\n//! Field names match the frontend payloads exactly; these are deserialized from what the renderer\n//! sends and re-serialized into `.mcp.json` / `.claude/skills/<slug>/SKILL.md`, so a rename here is a\n//! wire break, not a refactor.\n\n\n\n/// One MCP server an extension contributes to a session's `.mcp.json`. Field names\n/// match the frontend `McpServerPayload`.\n#[derive(serde::Deserialize, serde::Serialize, Clone)]\npub struct McpServerCfg {\n    pub name: String,\n    pub transport: String, // \"stdio\" | \"http\"\n    #[serde(default)]\n    pub command: Option<String>,\n    #[serde(default)]\n    pub args: Vec<String>,\n    #[serde(default)]\n    pub url: Option<String>,\n    #[serde(default)]\n    pub env: Vec<(String, String)>,\n}\n/// One lifecycle hook an extension contributes to a session's settings.json.\n#[derive(serde::Deserialize, serde::Serialize, Clone)]\npub struct HookCfg {\n    pub event: String,   // PreToolUse | PostToolUse | …\n    #[serde(default)]\n    pub matcher: String, // optional tool matcher; empty = all\n    pub command: String,\n}\n/// One reusable Skill written into a session as a Claude Code Skill file\n/// (`.claude/skills/<slug>/SKILL.md`). Field names match the frontend payload.\n#[derive(serde::Deserialize, serde::Serialize, Clone)]\npub struct SkillCfg {\n    /// The stable skilldb skill id — carried so attach-time usage counting (#A) can bump the right\n    /// row. Optional (defaults empty) so older payloads / tests without it still deserialize.\n    #[serde(default)]\n    pub id: String,\n    pub name: String,\n    pub description: String,\n    pub prompt: String,\n    #[serde(default)]\n    pub tools: Vec<String>,\n}\n",
+  "domain": "bsc-resolve",
+  "src": "crates/bsc-resolve/src/cfg.rs",
+  "folder": "crates/bsc-resolve/src",
+  "moduleVis": "pub"
+}

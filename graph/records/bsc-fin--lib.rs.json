@@ -1,0 +1,17 @@
+{
+  "id": "bsc-fin--lib.rs",
+  "tech": "rust",
+  "role": "doc",
+  "name": "bsc-fin--lib",
+  "code": "`bsc fin` — the personal finance store.\n\nA LOCAL surface, and the locality is a requirement rather than a default. Statements are parsed on\nthis machine, into a store on this machine, and no verb here sends anything anywhere. The analysis\nthat runs over it is meant to run on a LOCAL model for the same reason: a bank statement is not\nsomething to hand to a third party in order to be told what is in it.\n\nA COMMAND SURFACE, not a server. `bsc` is in the mandatory permission tier every session role can\nalready run, so a worker or an architect reaches this with no grant — where an MCP server would\nneed registering, scoping and keeping alive to do the same job worse.\n\nAmounts are integer MINOR UNITS end to end ([`money`]). The parse never constructs a float, so a\nfigure in the store is the figure on the statement.\n",
+  "domain": "finance",
+  "folder": "crates/bsc-fin/src",
+  "src": "crates/bsc-fin/src/lib.rs",
+  "tags": [
+    "finance",
+    "rust",
+    "docs"
+  ],
+  "composes": [],
+  "feature": "finance"
+}

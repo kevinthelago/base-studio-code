@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--skills-db.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "skills_db",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::{bsc_base_dir};\n\n/// The global skills store: `~/.base-studio-code/skills.db` (the `bsc skill` CLI's db). Not per-project.\npub(crate) fn skills_db() -> std::path::PathBuf {\n    bsc_base_dir().join(\"skills.db\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/skills_db.rs",
+  "moduleVis": "private"
+}

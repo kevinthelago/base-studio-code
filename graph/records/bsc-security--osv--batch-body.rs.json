@@ -1,0 +1,14 @@
+{
+  "id": "bsc-security--osv--batch-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "batch_body",
+  "composes": [
+    "bsc-security--osv--query-body.rs",
+    "bsc-security--types.rs"
+  ],
+  "code": "//! `batch_body` — the `/v1/querybatch` request body for many packages. Pure (fixture-tested).\n\nuse crate::types::Package;\nuse serde_json::{json, Value};\nuse super::query_body::query_body;\n\n/// The `/v1/querybatch` request body for many packages.\npub fn batch_body(pkgs: &[Package]) -> Value {\n    json!({ \"queries\": pkgs.iter().map(query_body).collect::<Vec<_>>() })\n}\n\n#[cfg(test)]\nmod tests {\n    use super::batch_body;\n    use crate::types::{Ecosystem, Package};\n\n    #[test]\n    fn batch_body_wraps_each_package_as_a_query() {\n        let pkgs = vec![\n            Package::new(Ecosystem::Npm, \"a\", Some(\"1\".into())),\n            Package::new(Ecosystem::Pypi, \"b\", Some(\"2\".into())),\n        ];\n        let b = batch_body(&pkgs);\n        let qs = b[\"queries\"].as_array().unwrap();\n        assert_eq!(qs.len(), 2);\n        assert_eq!(qs[1][\"package\"][\"ecosystem\"], \"PyPI\");\n    }\n}\n",
+  "folder": "crates/bsc-security/src/osv",
+  "src": "crates/bsc-security/src/osv/batch_body.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "plandb--validate--stream-id-char-ok.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stream_id_char_ok",
+  "code": "//! `stream_id_char_ok` — the fleet stream-id character alphabet, per-method record of the validate module.\n\n/// The characters a fleet stream id may contain: lowercase alphanumerics and `-`, nothing else.\n///\n/// MIRRORS `streamIdFromNode` in `@/features/planner/fleet/teamFleet`, which slugs a team position's\n/// nodeId to exactly this alphabet \"so it is safe as a pane-id tail (`<key>:<id>`) and a git branch\n/// name\". That constraint has always been real; it was simply never taught to the plan.db write path,\n/// so the one authoring surface an LLM actually reaches could write ids the launch path cannot use.\n///\n/// MEASURED before choosing the alphabet: of 149 stream rows across every plan store on this machine,\n/// exactly ONE fails it — `twitter-clone:api`, the row this rule exists for. So the rule describes\n/// what the fleet already is, and no existing project has to change to satisfy it.\npub(crate) fn stream_id_char_ok(c: char) -> bool {\n    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/validate",
+  "src": "crates/plandb/src/validate/stream_id_char_ok.rs",
+  "moduleVis": "private",
+  "composes": []
+}

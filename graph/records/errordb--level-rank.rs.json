@@ -1,0 +1,12 @@
+{
+  "id": "errordb--level-rank.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "level_rank",
+  "code": "/// Severity rank for keeping the highest level when a fault re-records (`fatal` > `error` > `warn`).\npub(crate) fn level_rank(l: &str) -> i64 {\n    match l {\n        \"fatal\" => 3,\n        \"error\" => 2,\n        \"warn\" => 1,\n        _ => 0,\n    }\n}\n",
+  "feature": "observability",
+  "folder": "crates/errordb/src",
+  "src": "crates/errordb/src/level_rank.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--rewrite-imports.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rewrite_imports",
+  "code": "//! `rewrite_imports` — Rewrite every first-party `@/…` import specifier in `source` using `resolve` (spec-without-`@/` → the relative import to write).\n\n/// Rewrite every first-party `@/…` import specifier in `source` using `resolve` (spec-without-`@/` →\n/// the relative import to write). An unresolved `@/…` is left verbatim (never dropped). Non-`@/`\n/// specifiers are untouched.\npub(crate) fn rewrite_imports(source: &str, _dir: &str, resolve: &dyn Fn(&str) -> Option<String>) -> String {\n    let mut out = String::with_capacity(source.len());\n    let mut last = 0;\n    let mut search = 0;\n    while let Some(rel) = source[search..].find(\"@/\") {\n        let at = search + rel;\n        let after = at + 2;\n        // The specifier body runs until the closing quote.\n        let end = source[after..].find(['\"', '\\'']).map(|e| after + e).unwrap_or(source.len());\n        let spec = &source[after..end];\n        out.push_str(&source[last..at]);\n        match resolve(spec) {\n            Some(relimport) => out.push_str(&relimport),\n            None => out.push_str(&source[at..end]), // leave `@/spec` untouched\n        }\n        last = end;\n        search = end;\n    }\n    out.push_str(&source[last..]);\n    out\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/rewrite_imports.rs",
+  "moduleVis": "private",
+  "composes": []
+}

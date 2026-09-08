@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--ellipsis-reads-as-prose.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ellipsis_reads_as_prose",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// Whether the code-elision marker at this position reads as PROSE rather than a stand-in for omitted\n/// code (#125). `before` is every character preceding the marker. Beyond the original \"directly after a\n/// word character\" case (#3897), two more shapes are prose:\n///   * preceded (after skipping whitespace) by ordinary running-text punctuation (`/`, `;`, `,`, `.`,\n///     `:`, `)`, `]`, `%`) — an HTML-entity-heavy path example ending `&lt;project&gt;/…` reads as `/`\n///     immediately before the marker, not a word character (designer request #125, `WorkspaceCard`);\n///   * preceded by the `>` that CLOSES a sibling JSX element — `</Text>\\n…` (a message continuing after\n///     an interpolated element, designer request #125, `ConnectGithubCard`) or a self-closing `<Icon />…`.\n///     An `>` that OPENS an element (`<Card>…`) is deliberately excluded: that shape is the ellipsis\n///     standing in as the element's ONLY content, which is the actual sketch case #3897 established —\n///     see `looks_buildable_module_mirrors_the_ts_twin`'s `<Card>…</Card>` fixture.\npub fn ellipsis_reads_as_prose(before: &[char]) -> bool {\n    let mut j = before.len();\n    while j > 0 && before[j - 1].is_whitespace() {\n        j -= 1;\n    }\n    let Some(&c) = before.get(j.wrapping_sub(1)) else {\n        return false;\n    };\n    if c.is_alphanumeric() || matches!(c, '/' | ';' | ',' | '.' | ':' | ')' | ']' | '%') {\n        return true;\n    }\n    if c != '>' {\n        return false;\n    }\n    // Walk back to the tag's `<` — bounded, since a tag is short and this must never scan the whole file.\n    let start = j.saturating_sub(500);\n    let Some(rel) = before[start..j - 1].iter().rposition(|&ch| ch == '<') else {\n        return false;\n    };\n    let lt = start + rel;\n    let closing = before.get(lt + 1) == Some(&'/');\n    let self_closing = j >= 2 && before[j - 2] == '/';\n    closing || self_closing\n}\n",
+  "src": "crates/bsc-component/src/graph_health/ellipsis_reads_as_prose.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

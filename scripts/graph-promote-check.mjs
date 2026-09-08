@@ -22,10 +22,11 @@
  * the compiler, and the underlying verb names the ids.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { statSync } from "node:fs";
+import { join, sep } from "node:path";
 import { homedir } from "node:os";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
+import { loadStore } from "./lib/recordStore.mjs";
 
 const ROOT = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
 
@@ -225,6 +226,31 @@ export function lastRepoCommit(id, commits, recordAt, limit = 40) {
   return null;
 }
 
+/**
+ * Whether the verb's own report says it actually checked the store — the COVERAGE guard.
+ *
+ * `checked` is `tracked_ids(repo).len() + edge_ids.len()`, so `checked - checkedEdges` must equal the
+ * number of implementations in the merged committed store. Anything less is a check that verified a
+ * fraction of the seam and reported `ok: true` about the rest.
+ *
+ * THIS IS NOT HYPOTHETICAL, and it passed a full gate. `target/debug/bsc` was a ZERO-BYTE file (what a
+ * binary IS for the seconds it is being linked), so `pickUsable` correctly rejected it and fell through
+ * to the STALE staged `~/.base-studio-code/bin/bsc` — which predates the per-record split and reads only
+ * the store FILE. That file now holds no implementations, so the stale binary found `tracked: 0`,
+ * checked the 8 edges, and reported the repo store current. Rebuilt, the same check covered 1,734 and
+ * found real drift.
+ *
+ * A version handshake would NOT have caught it: the binary answered `version` perfectly well: it was
+ * current for its own build and simply older than the layout. What separates the two is how much it
+ * says it looked at.
+ */
+export function coverageShortfall(report, storeRecords) {
+  if (!report || typeof report.checked !== "number") return null;
+  const impls = report.checked - (report.checkedEdges ?? 0);
+  if (impls >= storeRecords) return null;
+  return { checked: impls, expected: storeRecords };
+}
+
 /** The repo-side attribution + drift shape for each drifted id, as printable lines. */
 export function diagnose(ids, io, opts = {}) {
   if (ids.length === 0) return "";
@@ -287,12 +313,55 @@ function impl(bsc, id) {
   }
 }
 
-/** One record out of the COMMITTED store on disk. */
+/** One record out of the COMMITTED store on disk — the store file MERGED with `graph/records/*.json`. */
 function repoRecord(root, id) {
   try {
-    return pick(JSON.parse(readFileSync(join(root, "graph", "algorithms.json"), "utf8")), id);
+    return pick(loadStore(join(root, "graph", "algorithms.json")), id);
   } catch {
     return null;
+  }
+}
+
+/**
+ * The commits that changed `id`'s OWN file, newest first — empty when the record has no file yet.
+ *
+ * This is the whole reason the per-record split is worth doing to THIS script. `lastRepoCommit` below
+ * exists because the monolith gave a record no history of its own: every commit touching any of 1,700
+ * records touched the same 27 MB file, so answering "who last changed this record" meant `git show`ing
+ * the whole store at up to 40 commits and diffing the record out of each. MEASURED as the dominant
+ * cost of a red run — 344 drifted ids made it a 32-minute spin (request #253).
+ *
+ * With `graph/records/<id>.json` the question is just `git log` on one small path, and the FIRST
+ * result is the answer: no walk, no diff, no cap. `epic-retire-json-ledgers-for-db-and-git-drivers`.
+ */
+function commitsTouchingRecordFile(root, id) {
+  try {
+    const out = execFileSync(
+      "git",
+      [
+        "log",
+        "--format=%h%x1f%an%x1f%ad%x1f%s",
+        "--date=short",
+        // MODIFICATIONS ONLY. Every record file was ADDED by the one commit that split the store, so
+        // without this every record blames that commit and the answer is useless — worse than the walk
+        // it replaces, which at least found the change. A record MODIFIED since the split has a real
+        // answer here; one that has not been touched falls through to the monolith walk below, which
+        // is where its history actually lives.
+        "--diff-filter=M",
+        "--",
+        `graph/records/${id}.json`,
+      ],
+      { cwd: root, encoding: "utf8", timeout: 20_000 },
+    );
+    return out
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        const [sha, author, date, subject] = l.split("\x1f");
+        return { sha, author, date, subject };
+      });
+  } catch {
+    return [];
   }
 }
 
@@ -316,19 +385,49 @@ function commitsTouchingStore(root) {
   }
 }
 
-/** One record as it stood at `sha`, or null when the file did not exist / could not be parsed. */
+/**
+ * One record as it stood at `sha`, or null when it did not exist there / could not be parsed.
+ *
+ * The record's OWN file first — one small `git show` rather than 27 MB — falling back to the monolith
+ * for a record that has not been split out (and for history from before the split).
+ */
 function recordAtCommit(root, sha, id) {
-  try {
-    const text = execFileSync("git", ["show", `${sha}:graph/algorithms.json`], {
+  const show = (path, budget) =>
+    execFileSync("git", ["show", `${sha}:${path}`], {
       cwd: root,
       encoding: "utf8",
       timeout: 20_000,
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: budget,
     });
-    return pick(JSON.parse(text), id);
+  try {
+    return JSON.parse(show(`graph/records/${id}.json`, 8 * 1024 * 1024));
   } catch {
-    return null;
+    // not split out at that commit — fall through to the whole store
   }
+  return pick(monolithAtCommit(root, sha, show), id);
+}
+
+/**
+ * The whole committed store as it stood at `sha`, MEMOIZED by sha for the life of the process.
+ *
+ * The walk is per-ID but the blob is not, and that asymmetry is the leg's known pathology: at 25 ids
+ * over a 40-commit window it was 1,000 `git show`s of a 27 MB file (request #253's 32-minute spin).
+ * One parse per commit serves every id — 40 instead of 1,000 — and the window is bounded, so the cache
+ * is bounded with it.
+ *
+ * `null` is CACHED too, so a commit from before the file existed is not re-fetched once per id.
+ */
+const MONOLITH_AT = new Map();
+function monolithAtCommit(root, sha, show) {
+  if (MONOLITH_AT.has(sha)) return MONOLITH_AT.get(sha);
+  let doc;
+  try {
+    doc = JSON.parse(show("graph/algorithms.json", 64 * 1024 * 1024));
+  } catch {
+    doc = null;
+  }
+  MONOLITH_AT.set(sha, doc);
+  return doc;
 }
 
 /** The `id` record out of a parsed store document. */
@@ -418,6 +517,46 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
   if (r.status === 0) {
     const out = String(r.stdout ?? "");
     process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
+    // A CLEAN VERDICT IS ONLY WORTH WHAT IT COVERED. See `coverageShortfall` — a stale `bsc` reading
+    // only the store file reports the seam current after checking 8 of 1,734.
+    const parse = (text) => {
+      try {
+        return JSON.parse(text.trim().split("\n").pop() ?? "");
+      } catch {
+        return null;
+      }
+    };
+    const storeRecords = () => {
+      try {
+        return (loadStore(join(ROOT, "graph", "algorithms.json")).implementations ?? []).length;
+      } catch {
+        return 0;
+      }
+    };
+    const expected = storeRecords();
+    const short = expected > 0 ? coverageShortfall(parse(out), expected) : null;
+    if (short) {
+      process.stdout.write(
+        `\ngraph: REFUSING a clean verdict — \`bsc graph promote --check\` covered ${short.checked} ` +
+          `implementation(s) of the ${short.expected} this checkout's committed store holds.\n` +
+          `  The binary at ${usable.path} disagrees with this script about what the store IS. The usual ` +
+          `cause is a stale one: records live one-per-file under \`graph/records/\` and a binary from ` +
+          `before that reads only \`graph/algorithms.json\`, which now holds none of them.\n` +
+          // NAME THE RIGHT REMEDY FOR THE PATH IT ACTUALLY USED. These are different commands, and a
+          // reader told to rebuild `target/debug/bsc` when the binary in play is the SHARED STAGED one
+          // will rebuild, see no change, and conclude the guard is broken. `pickUsable` falls through
+          // to the staged copy whenever this tree's own binary is missing or zero-byte — which is what
+          // a binary IS while it is being linked, and is how this leg came to run against a stale
+          // `bsc` without anyone noticing.
+          (usable.path.includes(`${sep}.base-studio-code${sep}bin${sep}`)
+            ? `  That is the SHARED STAGED binary, which every session on this box uses. Refresh it: npm run build:plan\n` +
+              `  (this tree's own target/debug/bsc was missing or zero-byte, so resolution fell through to it)\n`
+            : `  Rebuild it: cargo build -p bsc --bin bsc\n`),
+      );
+      // Exit 4 — distinct from 1 (real drift) and 3 (timeout), because this is neither: the seam was
+      // NOT verified, and a check that could not check must not read as a pass.
+      process.exit(4);
+    }
     process.exit(0);
   }
   // A genuine drift: non-zero exit carrying the JSON line the underlying verb emitted.
@@ -436,7 +575,14 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
       {
         runtime: (id) => impl(usable.path, id),
         repo: (id) => repoRecord(ROOT, id),
-        blame: (id) => lastRepoCommit(id, commits, (sha) => recordAtCommit(ROOT, sha, id)),
+        // A record that HAS its own file needs no walk at all: the newest commit on that path is the
+        // one that changed it. `lastRepoCommit` is the fallback for a record still inside the monolith,
+        // where every commit touches the same file and only a diff can say which one changed this id.
+        blame: (id) => {
+          const own = commitsTouchingRecordFile(ROOT, id);
+          if (own.length > 0) return { ...own[0], exhausted: false };
+          return lastRepoCommit(id, commits, (sha) => recordAtCommit(ROOT, sha, id));
+        },
       },
       diagOpts,
     ),

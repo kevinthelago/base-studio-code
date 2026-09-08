@@ -1,0 +1,11 @@
+{
+  "id": "bsc-lan-sense--eve--fits-one-datagram.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fits_one_datagram",
+  "src": "crates/bsc-lan-sense/src/eve/fits_one_datagram.rs",
+  "folder": "crates/bsc-lan-sense/src/eve",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether an event, once framed, fits inside one datagram's plaintext budget.\n///\n/// The bound that makes \"no packet can silence the sensor\" true. Called by the\n/// tests against deliberately maximal input; cheap enough to call in anger.\npub fn fits_one_datagram(event: &Event) -> bool {\n    bsc_lan_stream::frame::Frame::Delta(event.clone())\n        .encode()\n        .map(|b| b.len() <= MAX_PLAINTEXT_BYTES)\n        .unwrap_or(false)\n}\n"
+}

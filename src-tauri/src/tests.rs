@@ -119,19 +119,27 @@
         let mut units: std::collections::BTreeMap<String, SourceUnit> = Default::default();
         collect_rs_files(&dir, &dir, &mut units);
 
-        // The COMMITTED store, read the same way `graph-materialize/build.rs` reads it — directly,
-        // never through `bsc_graph`, which reconciles the packaged seed and would pull in records the
-        // build never compiles.
+        // The COMMITTED store, read the same way `graph-materialize/build.rs` reads it — through the
+        // MATERIALIZER ITSELF, never through `bsc_graph`, which reconciles the packaged seed and would
+        // pull in records the build never compiles.
+        //
+        // `load_merged_value` is what makes this the same population the compiler sees: records live
+        // one-per-file under `graph/records/` (`epic-retire-json-ledgers-for-db-and-git-drivers`), and
+        // a `read_to_string` of the store file alone would return an `implementations` array missing
+        // every split-out record. That does not FAIL here — it shrinks the population every source
+        // guard below walks, and they keep passing over whatever is left. Which is the exact failure
+        // the `min` floor argument two doc paragraphs up exists to catch, and it would catch it only
+        // after the collapse was total.
         let store_path = root.join("graph").join("algorithms.json");
-        let raw = std::fs::read_to_string(&store_path).unwrap_or_else(|e| {
-            panic!(
-                "cannot read the committed graph store at {} ({e}) — every source guard resolves its \
-                 modules through it, so an unreadable store means they are all walking a partial tree",
-                store_path.display(),
-            )
-        });
-        let store: serde_json::Value = serde_json::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", store_path.display()));
+        let store = graph_materialize::load_merged_value(&store_path)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "cannot read the committed graph store at {} ({e}) — every source guard resolves its \
+                     modules through it, so an unreadable store means they are all walking a partial tree",
+                    store_path.display(),
+                )
+            })
+            .unwrap_or_else(|| panic!("the committed graph store is missing at {}", store_path.display()));
         let impls = store
             .get("implementations")
             .and_then(|v| v.as_array())

@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--project--preview--cargo-package-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cargo_package_name",
+  "src": "src-tauri/src/project/preview/cargo_package_name.rs",
+  "folder": "src-tauri/src/project/preview",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The `name` from a Cargo.toml `[package]` table (naive line scan — no toml dep). `None` when absent.\npub(crate) fn cargo_package_name(text: &str) -> Option<String> {\n    let mut in_package = false;\n    for line in text.lines() {\n        let t = line.trim();\n        if t.starts_with('[') {\n            in_package = t == \"[package]\";\n            continue;\n        }\n        if in_package {\n            if let Some(rest) = t.strip_prefix(\"name\") {\n                if let Some(eq) = rest.trim_start().strip_prefix('=') {\n                    return Some(eq.trim().trim_matches('\"').to_string());\n                }\n            }\n        }\n    }\n    None\n}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--commons--lane-base.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lane_base",
+  "src": "src-tauri/src/fleet/commons/lane_base.rs",
+  "folder": "src-tauri/src/fleet/commons",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Which base (`commons` or `integration`) `id` names — `is_lane_stream(id)` must already be true.\npub(crate) fn lane_base(id: &str) -> &'static str {\n    if id == COMMONS_STREAM_ID || id.starts_with(\"commons--\") {\n        COMMONS_STREAM_ID\n    } else {\n        INTEGRATION_STREAM_ID\n    }\n}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--json-string.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "json_string",
+  "code": "/// Serialize `s` as a JSON string literal — the Rust twin of `JSON.stringify(<string>)` (quotes + escapes).\npub(crate) fn json_string(s: &str) -> String {\n    serde_json::to_string(s).unwrap_or_else(|_| format!(\"{s:?}\"))\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/json_string.rs",
+  "moduleVis": "private",
+  "composes": []
+}

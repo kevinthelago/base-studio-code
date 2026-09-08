@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--refresh-seed--dropped-exports.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dropped_exports",
+  "code": "//! `dropped_exports` — The export gate: which exports would the file's version drop that something actually imports?\n\nuse bsc_record::record_source::{exported_names, norm};\n\n/// The export gate: which exports would the file's version drop that something actually imports?\n/// `consumers_of` answers \"who imports this name from this specifier\".\npub fn dropped_exports(\n    seed_source: &str,\n    file_src: &str,\n    consumers_of: &dyn Fn(&str) -> Vec<String>,\n) -> Option<(Vec<String>, Vec<String>)> {\n    let (seed_ex, file_ex) = (exported_names(&norm(seed_source))?, exported_names(file_src)?);\n    let mut lost: Vec<String> = Vec::new();\n    let mut who: Vec<String> = Vec::new();\n    for n in seed_ex.difference(&file_ex) {\n        let c = consumers_of(n);\n        if !c.is_empty() {\n            lost.push(n.clone());\n            who.extend(c);\n        }\n    }\n    if lost.is_empty() {\n        return None;\n    }\n    who.sort();\n    who.dedup();\n    Some((lost, who))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/refresh_seed",
+  "src": "crates/bsc-ui/src/refresh_seed/dropped_exports.rs",
+  "moduleVis": "private",
+  "composes": []
+}

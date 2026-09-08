@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--sha256-hex.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sha256_hex",
+  "code": "//! `sha256_hex` — Lowercase hex sha256 of `bytes` — the store's one content-hash form.\n\nuse sha2::{Digest, Sha256};\n\n/// Lowercase hex sha256 of `bytes` — the store's one content-hash form.\npub fn sha256_hex(bytes: &[u8]) -> String {\n    Sha256::digest(bytes).iter().map(|b| format!(\"{b:02x}\")).collect()\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/sha256_hex.rs",
+  "moduleVis": "private",
+  "composes": []
+}

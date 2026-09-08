@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--fsx--safe-dir-segment.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "safe_dir_segment",
+  "src": "src-tauri/src/platform/fsx/safe_dir_segment.rs",
+  "folder": "src-tauri/src/platform/fsx",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--platform--fsx--map-slug.rs"
+  ],
+  "code": "use super::*;\n\n/// Slugify `name` into a single safe directory segment: keep every char `allow` accepts, replace the\n/// rest with `_`, and reject the result if it is empty, `.`, or `..` (so it can never escape its\n/// parent dir). The shared empty/`.`/`..` guard behind [`crate::extensions::mcp::mcp_install_dir`]\n/// (#1663). (The blueprint store's slug guard now lives in the `bsc-blueprint` crate, #1761.)\n/// `Err` carries a generic reason; callers map it to their own message.\npub(crate) fn safe_dir_segment(name: &str, allow: impl Fn(char) -> bool) -> Result<String, String> {\n    let safe = map_slug(name, allow, '_', None);\n    if safe.is_empty() || safe == \".\" || safe == \"..\" {\n        return Err(\"invalid directory segment\".into());\n    }\n    Ok(safe)\n}\n"
+}

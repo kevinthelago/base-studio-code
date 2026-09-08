@@ -1,0 +1,16 @@
+{
+  "id": "bsc-lan-sense--attest--attest.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "attest",
+  "src": "crates/bsc-lan-sense/src/attest/attest.rs",
+  "folder": "crates/bsc-lan-sense/src/attest",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-lan-sense--attest--describe.rs"
+  ],
+  "code": "use super::*;\n\n/// Flatten a local [`Posture`] into the wire [`AttestedPosture`].\n///\n/// Every arm is written out: no wildcard, so a new `Posture` variant fails to\n/// compile here rather than silently taking some neighbouring meaning on the\n/// wire.\npub fn attest(p: &Posture) -> AttestedPosture {\n    match p {\n        Posture::Sealed { loopback_listeners, rows_examined } => AttestedPosture::Sealed {\n            loopback_listeners: loopback_listeners.len() as u32,\n            rows_examined: *rows_examined as u32,\n        },\n        Posture::Exposed { reachable, rows_examined } => AttestedPosture::Exposed {\n            reachable: reachable.iter().map(describe).collect(),\n            rows_examined: *rows_examined as u32,\n        },\n        // The reason travels with it. A subscriber that only learns \"unknown\"\n        // cannot tell a permissions problem from a kernel format change, and\n        // those call for very different responses.\n        Posture::Unknown { reason } => AttestedPosture::Unknown { reason: reason.to_string() },\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(clippy::module_inception)]"
+  ]
+}

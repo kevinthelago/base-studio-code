@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--retire--colocated-tests.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "colocated_tests",
+  "code": "//! `colocated_tests` — The colocated test(s) for `rel` — files that must be KEPT, never deleted alongside the module.\n\n/// The colocated test(s) for `rel` — files that must be KEPT, never deleted alongside the module.\n///\n/// A record carries its tests as data, but nothing in the default gate RUNS carried tests. Deleting the\n/// colocated file therefore trades executed coverage for stored coverage with everything still green —\n/// it cost 31 assertions across the first two tranches. Its relative import is rewritten like any\n/// other's, after which it resolves to the emitted record and the gate verifies the module that ships.\npub fn colocated_tests(files: &[String], rel: &str) -> Vec<String> {\n    [\"test\", \"spec\"]\n        .iter()\n        .flat_map(|k| [format!(\"{rel}.{k}.ts\"), format!(\"{rel}.{k}.tsx\")])\n        .filter(|p| files.contains(p))\n        .collect()\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/retire",
+  "src": "crates/bsc-ui/src/retire/colocated_tests.rs",
+  "moduleVis": "private",
+  "composes": []
+}

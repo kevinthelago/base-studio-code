@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--session--launch--claude-project-transcripts-dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "claude_project_transcripts_dir",
+  "src": "src-tauri/src/session/launch/claude_project_transcripts_dir.rs",
+  "folder": "src-tauri/src/session/launch",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--session--launch--claude-project-dir-name.rs"
+  ],
+  "code": "use super::*;\n\n/// Claude Code's on-disk *transcripts directory* for a launch cwd:\n/// `~/.claude/projects/<claude_project_dir_name(cwd)>`, where each conversation is stored as a\n/// `<session>.jsonl`. The one construction of this path, shared by [`has_claude_history`] and\n/// [`crate::fleet::inspect::claude_transcript_path`]. Pure path assembly — callers keep their own\n/// empty-cwd guard (both bail before reading when `cwd` is blank).\npub(crate) fn claude_project_transcripts_dir(cwd: &str) -> std::path::PathBuf {\n    home_dir().join(\".claude\").join(\"projects\").join(claude_project_dir_name(cwd))\n}\n"
+}

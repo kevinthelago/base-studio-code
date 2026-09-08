@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--backing--normalize.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "normalize",
+  "code": "/// Normalize a path for comparison: backslashes to `/`, collapse `//`, drop a leading `./`.\n///\n/// Deliberately NOT case-folded and NOT canonicalized against the filesystem: the record's `src` is a\n/// repo-relative string that may name a file the caller does not have, and touching the disk would make\n/// a pure lookup fail differently on every machine.\npub fn normalize(path: &str) -> String {\n    let s = path.replace('\\\\', \"/\");\n    let s = s.trim_start_matches(\"./\");\n    let mut out = String::with_capacity(s.len());\n    let mut prev_slash = false;\n    for c in s.chars() {\n        if c == '/' && prev_slash {\n            continue;\n        }\n        prev_slash = c == '/';\n        out.push(c);\n    }\n    out.trim_end_matches('/').to_string()\n}\n",
+  "folder": "crates/bsc-component/src/backing",
+  "src": "crates/bsc-component/src/backing/normalize.rs",
+  "moduleVis": "private",
+  "composes": []
+}

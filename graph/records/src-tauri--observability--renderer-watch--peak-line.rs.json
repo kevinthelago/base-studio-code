@@ -1,0 +1,10 @@
+{
+  "id": "src-tauri--observability--renderer-watch--peak-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "peak_line",
+  "code": "/// The memory line appended to the fault detail.\n///\n/// Split out and pure so the ABSENT case is pinned by a test: an unreadable peak has to read as\n/// unknown, since a fault claiming the renderer died at 0 MB would be worse than one that says nothing.\npub fn peak_line(peak_mb: Option<u64>) -> String {\n    match peak_mb {\n        Some(mb) => format!(\n            \" Renderer peak memory before it died: {:.2} GB ({mb} MB). A figure in the tens of GB \\\n             means a runaway allocation — most likely a render loop — rather than an ordinary crash.\",\n            mb as f64 / 1024.0\n        ),\n        None => \" Renderer peak memory: unknown (could not read it from /proc).\".to_string(),\n    }\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn the_peak_reaches_the_fault_and_absent_never_becomes_zero() {\n        // The peak has to reach the fault, or the fault reads the same at 400 MB as at 27 GB.\n        let big = peak_line(Some(27_500));\n        assert!(big.contains(\"26.86 GB\"), \"{big}\");\n        assert!(big.contains(\"27500 MB\"), \"the raw figure too, for a reader doing their own arithmetic\");\n        assert!(big.contains(\"render loop\"), \"names the shape a huge number implies\");\n        // ABSENT MUST NOT BECOME ZERO. \"The renderer died at 0 MB\" is a false statement, and this\n        // fault exists to stop exactly that kind of confident-but-wrong record.\n        let none = peak_line(None);\n        assert!(none.contains(\"unknown\"), \"{none}\");\n        assert!(!none.contains(\"0.00 GB\"), \"an unreadable peak is not a measured zero: {none}\");\n    }\n}\n",
+  "folder": "src-tauri/src/observability/renderer_watch",
+  "src": "src-tauri/src/observability/renderer_watch/peak_line.rs",
+  "moduleVis": "private"
+}

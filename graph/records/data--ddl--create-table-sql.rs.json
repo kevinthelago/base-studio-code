@@ -1,0 +1,14 @@
+{
+  "id": "data--ddl--create-table-sql.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "create_table_sql",
+  "src": "crates/data/src/ddl/create_table_sql.rs",
+  "folder": "crates/data/src/ddl",
+  "moduleVis": "private",
+  "composes": [
+    "data--ddl--quote-ident.rs",
+    "data--ddl--column-type.rs"
+  ],
+  "code": "use super::*;\n\n/// `CREATE TABLE IF NOT EXISTS` for an entity. Columns are the entity's fields, in order.\npub fn create_table_sql(entity: &Entity) -> Result<String> {\n    if entity.fields.is_empty() {\n        return Err(DataError::Schema(format!(\"entity `{}` has no fields\", entity.key)));\n    }\n    let cols = entity\n        .fields\n        .iter()\n        .map(|f| Ok(format!(\"{} {}\", quote_ident(&f.key)?, column_type(f.ty))))\n        .collect::<Result<Vec<_>>>()?\n        .join(\", \");\n    Ok(format!(\n        \"CREATE TABLE IF NOT EXISTS {} ({cols})\",\n        quote_ident(&entity.key)?\n    ))\n}\n"
+}

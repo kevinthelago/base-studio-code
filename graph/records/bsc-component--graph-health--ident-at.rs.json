@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--ident-at.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ident_at",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// The JS identifier starting at `from` (empty when there isn't one) and the index just past it.\npub fn ident_at(b: &[char], from: usize) -> (String, usize) {\n    let is_start = |c: char| c.is_alphabetic() || c == '_' || c == '$';\n    let is_rest = |c: char| c.is_alphanumeric() || c == '_' || c == '$';\n    if from >= b.len() || !is_start(b[from]) {\n        return (String::new(), from);\n    }\n    let mut i = from;\n    while i < b.len() && is_rest(b[i]) {\n        i += 1;\n    }\n    (b[from..i].iter().collect(), i)\n}\n",
+  "src": "crates/bsc-component/src/graph_health/ident_at.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

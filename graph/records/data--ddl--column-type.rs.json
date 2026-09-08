@@ -1,0 +1,11 @@
+{
+  "id": "data--ddl--column-type.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "column_type",
+  "src": "crates/data/src/ddl/column_type.rs",
+  "folder": "crates/data/src/ddl",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The DuckDB column type for a logical field type.\npub fn column_type(ty: FieldType) -> &'static str {\n    match ty {\n        FieldType::String | FieldType::Ref | FieldType::Enum | FieldType::Date => \"VARCHAR\",\n        FieldType::Number => \"DOUBLE\",\n        FieldType::Money => \"DECIMAL(18,2)\",\n        FieldType::Bool => \"BOOLEAN\",\n    }\n}\n"
+}

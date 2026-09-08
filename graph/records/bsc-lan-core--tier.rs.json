@@ -1,0 +1,12 @@
+{
+  "id": "bsc-lan-core--tier.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tier",
+  "composes": [],
+  "code": "//! The action risk/approval tier.\n\nuse std::fmt;\n\n/// How much authorisation an [`crate::action::Action`] requires before it may\n/// execute, and how it is gated once it does.\n///\n/// * `Zero` -- read-only observation. Guest is a strict subset of this tier\n///   (see the policy engine contract); everything else is refused for guest.\n/// * `One` -- reversible, boundable actions. No principal-only gate, but\n///   still policy-checked, rate-limited and circuit-broken. A subset of\n///   these install revocable state on a target and therefore require a\n///   [`crate::ttl::Ttl`] via [`crate::action::TimeBoundedAction`] --\n///   see [`crate::action::Action::requires_ttl`].\n/// * `Two` -- principal-only. Requires the target typed or re-selected at\n///   approval time; never auto-approved.\n///\n/// There is no `Three`: the catalog has no destructive, no-inverse action\n/// (delete is explicitly not built -- disable is the only removal path),\n/// so a tier for it would be dead code with nothing to classify. Add it\n/// only alongside the first action that actually needs it.\n#[derive(\n    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,\n)]\npub enum Tier {\n    Zero,\n    One,\n    Two,\n}\n\nimpl fmt::Display for Tier {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        let s = match self {\n            Tier::Zero => \"tier0\",\n            Tier::One => \"tier1\",\n            Tier::Two => \"tier2\",\n        };\n        write!(f, \"{s}\")\n    }\n}\n",
+  "domain": "bsc-lan-core",
+  "src": "crates/bsc-lan-core/src/tier.rs",
+  "folder": "crates/bsc-lan-core/src",
+  "moduleVis": "pub"
+}

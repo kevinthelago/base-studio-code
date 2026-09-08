@@ -1,0 +1,12 @@
+{
+  "id": "logs--headroom--min-opt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "min_opt",
+  "code": "/// Keep the smaller of two optional readings, treating absent as \"no information\".\npub(crate) fn min_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {\n    match (a, b) {\n        (Some(x), Some(y)) => Some(x.min(y)),\n        (x, y) => x.or(y),\n    }\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/headroom",
+  "src": "crates/logs/src/headroom/min_opt.rs",
+  "moduleVis": "private",
+  "composes": []
+}

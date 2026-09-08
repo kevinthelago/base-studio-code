@@ -1,0 +1,11 @@
+{
+  "id": "llm--gemini--gemini-role.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "gemini_role",
+  "src": "crates/llm/src/gemini/gemini_role.rs",
+  "folder": "crates/llm/src/gemini",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Gemini roles are `user` / `model` (assistant). Anything else maps to `user`.\npub(crate) fn gemini_role(msg: &serde_json::Value) -> &'static str {\n    match msg.get(\"role\").and_then(|r| r.as_str()) {\n        Some(\"assistant\") | Some(\"model\") => \"model\",\n        _ => \"user\",\n    }\n}\n"
+}

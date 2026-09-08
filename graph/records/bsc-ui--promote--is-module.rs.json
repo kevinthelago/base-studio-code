@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--promote--is-module.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_module",
+  "code": "//! `is_module` — Is this `src/`-relative path a MODULE a record could stand for?\n\n/// Is this `src/`-relative path a MODULE a record could stand for?\n///\n/// `.d.ts` is AMBIENT TYPE INFORMATION, not a module. tsc reads it because it is INCLUDED, never because\n/// something imports it — so no resolver can substitute a record for it, and no record can carry its\n/// meaning. `src/vite-env.d.ts` matched `\\.ts$`, was harvested, promoted and retired; the whole typecheck\n/// then failed on `*.css` and `*?raw` side-effect imports, because the file declaring those wildcards was\n/// gone. NOTHING DOWNSTREAM COULD HAVE CAUGHT IT — there is no importer to break, which is exactly why it\n/// has to be excluded here.\npub fn is_module(name: &str) -> bool {\n    let is_ts = name.ends_with(\".ts\") || name.ends_with(\".tsx\");\n    let is_test = name.ends_with(\".test.ts\")\n        || name.ends_with(\".test.tsx\")\n        || name.ends_with(\".spec.ts\")\n        || name.ends_with(\".spec.tsx\");\n    is_ts && !is_test && !name.ends_with(\".d.ts\")\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/promote",
+  "src": "crates/bsc-ui/src/promote/is_module.rs",
+  "moduleVis": "private",
+  "composes": []
+}

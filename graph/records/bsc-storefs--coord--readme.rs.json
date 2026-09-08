@@ -1,0 +1,13 @@
+{
+  "id": "bsc-storefs--coord--readme.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "readme",
+  "src": "crates/bsc-storefs/src/coord/readme.rs",
+  "folder": "crates/bsc-storefs/src/coord",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-storefs--coord--parse.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn readme(events: usize, malformed: usize, generated_at: &str) -> String {\n    format!(\n        \"The coordination log, as files. Tab-separated: ts, pane, verb, message, actor.\\n\\\n         \\n\\\n         log                every event, chronological\\n\\\n         latest             the most recent {LATEST}\\n\\\n         by-pane/<pane>     that pane's events\\n\\\n         by-verb/<verb>     every event of that verb\\n\\\n         malformed          lines that did not parse ({malformed})\\n\\\n         \\n\\\n         Index names are SLUGGED — a pane id like design-studio:designer-react becomes\\n\\\n         design-studio-designer-react, because ':' and '/' cannot be one path segment.\\n\\\n         \\n\\\n         THIS IS A SNAPSHOT, NOT A LIVE VIEW.\\n\\\n         {events} event(s), projected at {generated_at}. It does not grow as the log does.\\n\"\n    )\n}\n"
+}

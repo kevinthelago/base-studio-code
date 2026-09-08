@@ -1,0 +1,11 @@
+{
+  "id": "llm--session-env--is-local.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_local",
+  "code": "/// Is this an OpenAI-compatible local endpoint?\npub(crate) fn is_local(provider: &str) -> bool {\n    provider == \"local\" || provider == \"ollama\"\n}\n",
+  "folder": "crates/llm/src/session_env",
+  "src": "crates/llm/src/session_env/is_local.rs",
+  "moduleVis": "private",
+  "composes": []
+}

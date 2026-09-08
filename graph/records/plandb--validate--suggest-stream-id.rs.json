@@ -1,0 +1,14 @@
+{
+  "id": "plandb--validate--suggest-stream-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "suggest_stream_id",
+  "composes": [
+    "plandb--validate--stream-id-char-ok.rs"
+  ],
+  "code": "//! `suggest_stream_id` — slug an id into the stream-id alphabet, per-method record of the validate module.\n\nuse super::stream_id_char_ok;\n\n/// Slug an id into the [`stream_id_char_ok`] alphabet — offered in a rejection as a concrete\n/// \"e.g. …\", never applied silently. Naming an id the author can paste is the difference between a\n/// rejection an LLM self-corrects from and one it retries verbatim.\npub(crate) fn suggest_stream_id(id: &str) -> String {\n    let mut out = String::with_capacity(id.len());\n    let mut last_dash = false;\n    for c in id.chars() {\n        let c = c.to_ascii_lowercase();\n        if stream_id_char_ok(c) && c != '-' {\n            out.push(c);\n            last_dash = false;\n        } else if !last_dash {\n            out.push('-');\n            last_dash = true;\n        }\n    }\n    let s = out.trim_matches('-').to_string();\n    if s.is_empty() { \"stream\".to_string() } else { s }\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/validate",
+  "src": "crates/plandb/src/validate/suggest_stream_id.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--launch--claude-model-flag.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "claude_model_flag",
+  "src": "src-tauri/src/session/launch/claude_model_flag.rs",
+  "folder": "src-tauri/src/session/launch",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude\n/// Code's `--model` flag accepts. Returns `None` for anything unrecognized, so the\n/// session falls back to Claude Code's own default and we never interpolate an\n/// arbitrary caller string into the shell command (the table only ever yields a\n/// fixed literal — no injection surface).\n///\n/// The table itself is [`bsc_util::MODEL_TIERS`], not a `match` here: the `bsc persona model` /\n/// `bsc teams model` verbs VALIDATE against the same list, so a tier a session is allowed to write\n/// is exactly a tier this launch can carry. It used to be a local match, which meant the CLIs had\n/// nothing to check against and would have needed a copy of their own.\npub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {\n    bsc_util::model_alias(model)\n}\n"
+}

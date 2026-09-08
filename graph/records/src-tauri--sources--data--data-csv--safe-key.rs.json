@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--sources--data--data-csv--safe-key.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "safe_key",
+  "src": "src-tauri/src/sources/data/data_csv/safe_key.rs",
+  "folder": "src-tauri/src/sources/data/data_csv",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Sanitize a raw column name into a safe SQL identifier (letters, digits, `_`).\n#[cfg(feature = \"source-stage\")]\npub(crate) fn safe_key(raw: &str) -> String {\n    let s: String = raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();\n    if s.is_empty() || s.starts_with(|c: char| c.is_ascii_digit()) {\n        format!(\"col_{s}\")\n    } else {\n        s.to_lowercase()\n    }\n}\n"
+}

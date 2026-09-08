@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--membership--is-zero.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_zero",
+  "code": "pub(crate) fn is_zero(v: &i64) -> bool {\n    *v == 0\n}\n",
+  "folder": "crates/bsc-fleet/src/membership",
+  "src": "crates/bsc-fleet/src/membership/is_zero.rs",
+  "moduleVis": "private",
+  "composes": []
+}

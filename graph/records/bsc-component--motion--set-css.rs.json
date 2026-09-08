@@ -1,0 +1,14 @@
+{
+  "id": "bsc-component--motion--set-css.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "set_css",
+  "composes": [
+    "bsc-component--motion--is-safe-prop.rs",
+    "bsc-component--motion--is-safe-value.rs"
+  ],
+  "code": "use serde_json::Value;\nuse super::*;\n\n/// STATIC declarations (`set`) applied on the rule body — each guarded like a keyframe declaration.\npub(crate) fn set_css(d: &Value) -> String {\n    let mut parts: Vec<String> = Vec::new();\n    if let Some(set) = d.get(\"set\").and_then(Value::as_object) {\n        for (prop, value) in set {\n            if is_safe_prop(prop) {\n                if let Some(vs) = value.as_str() {\n                    if is_safe_value(vs) {\n                        parts.push(format!(\"{prop}: {vs};\"));\n                    }\n                }\n            }\n        }\n    }\n    parts.join(\" \")\n}\n",
+  "folder": "crates/bsc-component/src/motion",
+  "src": "crates/bsc-component/src/motion/set_css.rs",
+  "moduleVis": "private"
+}

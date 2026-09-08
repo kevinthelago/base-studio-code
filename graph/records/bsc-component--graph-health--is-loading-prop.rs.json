@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--is-loading-prop.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_loading_prop",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// Is `(name, ty)` a LOADING-family boolean (`loading`/`busy`/`pending`/`isLoading`)? A data component with\n/// one can preview its loading/skeleton render (#3135). Mirrors `isLoadingProp` (componentPreview.ts).\npub fn is_loading_prop(name: &str, ty: &str) -> bool {\n    let t = ty.to_lowercase();\n    (t == \"boolean\" || t.contains(\"boolean\"))\n        && matches!(name.to_lowercase().as_str(), \"loading\" | \"busy\" | \"pending\" | \"isloading\")\n}\n",
+  "src": "crates/bsc-component/src/graph_health/is_loading_prop.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

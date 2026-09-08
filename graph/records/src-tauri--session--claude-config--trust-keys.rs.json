@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--session--claude-config--trust-keys.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "trust_keys",
+  "src": "src-tauri/src/session/claude_config/trust_keys.rs",
+  "folder": "src-tauri/src/session/claude_config",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--session--claude-config--claude-project-key.rs"
+  ],
+  "code": "use super::*;\n\n/// The `~/.claude.json` project keys to pre-trust for a session at `cwd`: the cwd itself, plus the\n/// `main_worktree` root when it differs (a linked git worktree's MAIN repo — the dir Claude Code\n/// actually keys folder-trust on). Deduped, cwd first. Pure (the git lookup is the caller's job).\npub(crate) fn trust_keys(cwd: &str, main_worktree: Option<&str>) -> Vec<String> {\n    let mut keys = vec![claude_project_key(cwd)];\n    if let Some(m) = main_worktree.filter(|m| !m.is_empty()) {\n        let mk = claude_project_key(m);\n        if !keys.contains(&mk) { keys.push(mk); }\n    }\n    keys\n}\n"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--migrate--promote-argv.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "promote_argv",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `promote` argv this tool delegates — the harvested ids, and NOTHING else.\n///\n/// A FUNCTION for the same reason [`impl_set_argv`] is one: `delegate` is a free function no test can\n/// capture, so the only way to pin what is SENT is to build the argv somewhere a test can read it.\n///\n/// `--id` is the whole guard. A bare `bsc graph promote` refreshes EVERY tracked record from the\n/// shared runtime store, which every session on the box is authoring into at once — so a migration\n/// that promoted bare would sweep other people's in-flight records into this branch's\n/// `graph/algorithms.json` and say nothing about it. It is invisible from the tool's output and from a\n/// line count; only a parsed diff by record id against the base commit shows it.\npub(crate) fn promote_argv(ids: &[String], root: &Path) -> Vec<String> {\n    [\"promote\", \"--id\", &ids.join(\",\"), \"--root\", &root.to_string_lossy()]\n        .iter()\n        .map(|s| (*s).to_string())\n        .collect()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/promote_argv.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "llm--openai--token-param.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "token_param",
+  "src": "crates/llm/src/openai/token_param.rs",
+  "folder": "crates/llm/src/openai",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The token-limit field this model expects. Newer OpenAI models (o-series and\n/// gpt-5-class) reject `max_tokens` and require `max_completion_tokens`; older\n/// models (gpt-4o, gpt-4, gpt-3.5, …) take `max_tokens`. Ollama's OpenAI-compatible\n/// endpoint (reused by the local provider) accepts `max_tokens` for its models too.\npub(crate) fn token_param(model: &str) -> &'static str {\n    let m = model.to_ascii_lowercase();\n    if m.starts_with(\"o1\") || m.starts_with(\"o3\") || m.starts_with(\"o4\") || m.starts_with(\"gpt-5\") {\n        \"max_completion_tokens\"\n    } else {\n        \"max_tokens\"\n    }\n}\n"
+}
