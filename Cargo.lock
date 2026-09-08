@@ -569,6 +569,7 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-graph-layout",
+ "bsc-graph-store",
  "bsc-imagine",
  "bsc-incident",
  "bsc-json-store",
@@ -1137,6 +1138,7 @@ dependencies = [
 name = "bsc-graph-store"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",
