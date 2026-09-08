@@ -1,0 +1,11 @@
+{
+  "id": "compliance--engine--scoped-requirements.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "scoped_requirements",
+  "src": "crates/compliance/src/engine/scoped_requirements.rs",
+  "folder": "crates/compliance/src/engine",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A standard's requirements, dropping data-typed ones that don't match the project's data types.\n/// An untyped requirement is always kept; when `data_types` is empty everything is kept.\npub(crate) fn scoped_requirements(s: &Standard, data_types: &[String]) -> Vec<Requirement> {\n    if data_types.is_empty() {\n        return s.requirements.clone();\n    }\n    let wanted: Vec<String> = data_types.iter().map(|d| d.trim().to_ascii_lowercase()).collect();\n    s.requirements\n        .iter()\n        .filter(|r| {\n            r.data_types.is_empty() || r.data_types.iter().any(|d| wanted.contains(&d.to_ascii_lowercase()))\n        })\n        .cloned()\n        .collect()\n}\n"
+}

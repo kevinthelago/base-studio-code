@@ -1,0 +1,11 @@
+{
+  "id": "bsc-ui--validate-value--referenced-vars.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "referenced_vars",
+  "src": "crates/bsc-ui/src/validate_value/referenced_vars.rs",
+  "folder": "crates/bsc-ui/src/validate_value",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Every `--custom-property` referenced in a value (for the closed grammar's known-token check).\npub(crate) fn referenced_vars(value: &str) -> Vec<String> {\n    value\n        .match_indices(\"--\")\n        .map(|(i, _)| {\n            value[i..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()\n        })\n        .filter(|s| s.len() > 2)\n        .collect()\n}\n"
+}

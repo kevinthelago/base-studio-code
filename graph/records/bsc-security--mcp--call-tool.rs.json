@@ -1,0 +1,11 @@
+{
+  "id": "bsc-security--mcp--call-tool.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "call_tool",
+  "src": "crates/bsc-security/src/mcp/call_tool.rs",
+  "folder": "crates/bsc-security/src/mcp",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Run one tool over the engine (the shared core wraps the result in `tool_text`/`tool_error`).\npub(crate) fn call_tool<S: VulnSource>(engine: &Engine<S>, name: &str, args: &Value) -> Result<Value, String> {\n    match name {\n        \"scan_lockfile\" => {\n            let path = args.get(\"path\").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or(\".\");\n            let packages = crate::lockfile::scan_path(std::path::Path::new(path))?;\n            let report = engine.scan(&packages)?;\n            serde_json::to_value(report).map_err(|e| e.to_string())\n        }\n        \"check_package\" => {\n            let eco = arg_str(args, \"ecosystem\")?;\n            let ecosystem = Ecosystem::parse(&eco).ok_or_else(|| format!(\"unknown ecosystem '{eco}'\"))?;\n            let name = arg_str(args, \"name\")?;\n            let version = args.get(\"version\").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(str::to_string);\n            let report = engine.check(&Package::new(ecosystem, name, version))?;\n            serde_json::to_value(report).map_err(|e| e.to_string())\n        }\n        \"get_advisory\" => {\n            let id = arg_str(args, \"id\")?;\n            match engine.get(&id)? {\n                Some(a) => serde_json::to_value(a).map_err(|e| e.to_string()),\n                None => Err(format!(\"advisory not found: {id}\")),\n            }\n        }\n        other => Err(format!(\"unknown tool '{other}'\")),\n    }\n}\n"
+}

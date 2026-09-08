@@ -4,7 +4,7 @@
   "role": "algorithm",
   "name": "director",
   "composes": [
-    "src-tauri--fleet--protocols.rs",
+    "src-tauri--fleet--protocols--mod.rs",
     "src-tauri--prelude.rs",
     "src-tauri--testutil.rs"
   ],

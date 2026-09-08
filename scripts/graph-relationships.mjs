@@ -7,7 +7,7 @@
 // resolves to an ANCESTOR is skipped (that is child→parent, a trivial inverse of the parent's own edge).
 // External-crate/std refs resolve to nothing. Validated: 21/21 observability parent→child, 93/94 hand-set.
 import fs from 'node:fs';
-import { loadStore } from './lib/recordStore.mjs';
+import { loadStore, writeStore } from './lib/recordStore.mjs';
 const STORE = process.env.GRAPH_STORE || 'graph/algorithms.json';
 const BASELINE = 'scripts/graph-relationships.baseline.json';
 const store = loadStore(STORE); // merges graph/records/*.json (retire-json migration)
@@ -128,6 +128,8 @@ else if (mode === '--baseline') { fs.writeFileSync(BASELINE, JSON.stringify(gaps
 else if (mode === '--apply') {
   let added = 0, changed = 0;
   for (const r of recs) { const der = derive(r); if (!der.size) continue; const existing = r.composes || []; const have = new Set(existing); const add = [...der].filter(x => !have.has(x)).sort(); if (add.length) { r.composes = [...existing, ...add]; added += add.length; changed++; } }
-  fs.writeFileSync(STORE, JSON.stringify(store, null, 2) + '\n');
+  // Through `writeStore`, not `writeFileSync`: the store is SPLIT, and writing the merged
+  // document straight back would put all 1,885 records into the monolith beside their own files.
+  writeStore(store, STORE);
   console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving, composes-only)`);
 }

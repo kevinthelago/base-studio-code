@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--sandbox--provision--sandbox-rootfs-tarball.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sandbox_rootfs_tarball",
+  "src": "src-tauri/src/session/sandbox/provision/sandbox_rootfs_tarball.rs",
+  "folder": "src-tauri/src/session/sandbox/provision",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The bundled rootfs tarball the app imports. Built by `tooling/wsl-sandbox/build-rootfs.sh` and\n/// staged here (installer bundling is a packaging follow-up).\npub(crate) fn sandbox_rootfs_tarball() -> std::path::PathBuf {\n    crate::platform::paths::bsc_base_dir().join(\"wsl\").join(\"bsc-agent-sandbox.tar\")\n}\n"
+}

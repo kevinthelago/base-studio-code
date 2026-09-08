@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--features--field.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "field",
+  "src": "crates/bsc-graph/src/features/field.rs",
+  "folder": "crates/bsc-graph/src/features",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn field<'a>(v: &'a Value, k: &str) -> &'a str {\n    v.get(k).and_then(Value::as_str).unwrap_or(\"\").trim()\n}\n"
+}

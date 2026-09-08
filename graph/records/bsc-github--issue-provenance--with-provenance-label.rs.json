@@ -1,0 +1,11 @@
+{
+  "id": "bsc-github--issue-provenance--with-provenance-label.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "with_provenance_label",
+  "src": "crates/bsc-github/src/issue_provenance/with_provenance_label.rs",
+  "folder": "crates/bsc-github/src/issue_provenance",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Add the provenance label to a plan issue's labels (idempotent).\n///\n/// APPENDS rather than inserting, and preserves the caller's order including any duplicates already\n/// there. A set-union port passes a membership assertion and silently reorders the labels that reach\n/// the GitHub API.\npub fn with_provenance_label(labels: &[String]) -> Vec<String> {\n    let mut out = labels.to_vec();\n    if !out.iter().any(|l| l == BSC_ISSUE_LABEL) {\n        out.push(BSC_ISSUE_LABEL.to_string());\n    }\n    out\n}\n"
+}

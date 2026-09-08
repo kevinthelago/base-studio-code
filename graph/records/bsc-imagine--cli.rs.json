@@ -9,7 +9,6 @@
   "moduleVis": "pub",
   "composes": [
     "bsc-imagine--lib.rs",
-    "bsc-imagine--store--mod.rs",
-    "bsc-imagine--store.rs"
+    "bsc-imagine--store--mod.rs"
   ]
 }

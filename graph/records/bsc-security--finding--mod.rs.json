@@ -4,7 +4,7 @@
   "role": "algorithm",
   "name": "finding",
   "composes": [
-    "bsc-security--types.rs",
+    "bsc-security--types--mod.rs",
     "bsc-security--finding--redact.rs",
     "bsc-security--finding--rank.rs"
   ],

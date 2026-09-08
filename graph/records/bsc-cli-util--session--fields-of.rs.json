@@ -1,0 +1,11 @@
+{
+  "id": "bsc-cli-util--session--fields-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fields_of",
+  "src": "crates/bsc-cli-util/src/session/fields_of.rs",
+  "folder": "crates/bsc-cli-util/src/session",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Pull a doc's fields into the flat `(field, value)` shape the merge works in.\npub(crate) fn fields_of(doc: &SessionDoc) -> Vec<(&'static str, String)> {\n    let mut out: Vec<(&'static str, String)> = Vec::new();\n    let mut push = |k: &'static str, v: Option<String>| {\n        if let Some(v) = v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {\n            out.push((k, v));\n        }\n    };\n    push(\"provider\", doc.provider.clone());\n    push(\"model\", doc.model.clone());\n    push(\"baseUrl\", doc.base_url.clone());\n    push(\"numCtx\", doc.num_ctx.map(|n| n.to_string()));\n    push(\"projectKey\", doc.project_key.clone());\n    push(\"planDb\", doc.plan_db.clone());\n    push(\"role\", doc.role.clone());\n    push(\"stream\", doc.stream.clone());\n    // Whitespace-joined, matching `$BSC_SCOPE_GLOBS`'s own shape so the two are interchangeable.\n    push(\"writeScope\", doc.write_scope.as_ref().map(|g| g.join(\" \")));\n    out\n}\n"
+}

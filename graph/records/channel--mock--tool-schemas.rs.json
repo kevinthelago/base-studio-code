@@ -1,0 +1,11 @@
+{
+  "id": "channel--mock--tool-schemas.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tool_schemas",
+  "src": "crates/channel/src/mock/tool_schemas.rs",
+  "folder": "crates/channel/src/mock",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The channel tool catalog — `{ name, description, inputSchema }` for the four channel actions. Pure;\n/// consulted with no live state (the handshake + `tools/list` work before any send).\npub fn tool_schemas() -> Value {\n    json!([\n        {\n            \"name\": \"send_email\",\n            \"description\": \"Record an email send (MOCK — no real delivery). Returns a receipt id.\",\n            \"inputSchema\": { \"type\": \"object\", \"required\": [\"to\", \"subject\", \"body\"], \"properties\": {\n                \"to\": { \"type\": \"string\", \"description\": \"recipient address\" },\n                \"subject\": { \"type\": \"string\" },\n                \"body\": { \"type\": \"string\", \"description\": \"the email body (HTML or text)\" }\n            } }\n        },\n        {\n            \"name\": \"post\",\n            \"description\": \"Record a social post (MOCK — no real publish). Returns a receipt id.\",\n            \"inputSchema\": { \"type\": \"object\", \"required\": [\"text\"], \"properties\": {\n                \"text\": { \"type\": \"string\" },\n                \"channel\": { \"type\": \"string\", \"description\": \"optional target channel handle\" }\n            } }\n        },\n        {\n            \"name\": \"schedule\",\n            \"description\": \"Record a send/post scheduled for a future time (MOCK). Returns a receipt id.\",\n            \"inputSchema\": { \"type\": \"object\", \"required\": [\"when\", \"payload\"], \"properties\": {\n                \"when\": { \"type\": \"string\", \"description\": \"ISO-8601 time to send at\" },\n                \"payload\": { \"type\": \"string\", \"description\": \"the content to send\" },\n                \"channel\": { \"type\": \"string\" }\n            } }\n        },\n        {\n            \"name\": \"get_metrics\",\n            \"description\": \"Read back recorded-call metrics: total sends + per-tool counts.\",\n            \"inputSchema\": { \"type\": \"object\", \"properties\": {} }\n        }\n    ])\n}\n"
+}

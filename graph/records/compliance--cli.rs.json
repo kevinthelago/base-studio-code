@@ -4,7 +4,7 @@
   "role": "algorithm",
   "name": "cli",
   "composes": [
-    "compliance--engine.rs",
+    "compliance--engine--mod.rs",
     "compliance--store.rs",
     "compliance--types.rs"
   ],

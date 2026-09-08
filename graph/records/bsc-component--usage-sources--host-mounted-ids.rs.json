@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--usage-sources--host-mounted-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "host_mounted_ids",
+  "src": "crates/bsc-component/src/usage_sources/host_mounted_ids.rs",
+  "folder": "crates/bsc-component/src/usage_sources",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Every `id=\"…\"` a `<GraphComponent id=\"…\">` host-mount literal names in `source` — the literal-string\n/// attribute the runtime mounts a graph page BY (`GraphComponent.tsx`, `id` is a `string`, never a\n/// variable at any real call site). Deliberately narrow: `id` must be the tag's FIRST attribute (every\n/// site measured for #3888 writes it that way) — a loose \"any `id=` anywhere after the tag name\" scan\n/// would also catch an unrelated `id` on a DIFFERENT element nested inside a later prop\n/// (`fallback={<Other id=\"x\"/>}`), over-crediting `x` as host-mounted when nothing mounts it that way.\npub(crate) fn host_mounted_ids(source: &str) -> Vec<String> {\n    const TAG: &str = \"<GraphComponent\";\n    let mut out = Vec::new();\n    let mut from = 0usize;\n    while let Some(rel) = source[from..].find(TAG) {\n        let after_tag = from + rel + TAG.len();\n        let rest = &source[after_tag..];\n        let trimmed = rest.trim_start();\n        if let Some(id_rest) = trimmed.strip_prefix(\"id\") {\n            let id_rest = id_rest.trim_start();\n            if let Some(eq_rest) = id_rest.strip_prefix('=') {\n                let eq_rest = eq_rest.trim_start();\n                let mut chars = eq_rest.char_indices();\n                if let Some((_, quote @ ('\"' | '\\''))) = chars.next() {\n                    let body = &eq_rest[quote.len_utf8()..];\n                    if let Some(end) = body.find(quote) {\n                        out.push(body[..end].to_string());\n                    }\n                }\n            }\n        }\n        from = after_tag;\n    }\n    out\n}\n"
+}

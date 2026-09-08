@@ -6,7 +6,7 @@
   "composes": [
     "src-tauri--platform--process.rs",
     "src-tauri--session--sandbox--bridge--mod.rs",
-    "src-tauri--session--sandbox--provision.rs",
+    "src-tauri--session--sandbox--provision--mod.rs",
     "src-tauri--session--sandbox--readiness.rs",
     "src-tauri--session--sandbox--users.rs",
     "src-tauri--platform--errs.rs"

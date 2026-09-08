@@ -6,7 +6,6 @@
   "composes": [
     "src-tauri--console--pty--env.rs",
     "src-tauri--console--pty--job.rs",
-    "src-tauri--console--pty--launch.rs",
     "src-tauri--console--pty--pump.rs",
     "src-tauri--mobile--tunnel--mod.rs",
     "src-tauri--observability--perf--mod.rs",
@@ -16,7 +15,6 @@
     "src-tauri--session--mod.rs",
     "src-tauri--testutil.rs",
     "src-tauri--platform--paths--nearest-existing-ancestor.rs",
-    "src-tauri--session--launch.rs",
     "src-tauri--console--pty--launch--mod.rs",
     "src-tauri--console--pty--launch--build-bash-init-line.rs",
     "src-tauri--console--pty--launch--plan-launch.rs"

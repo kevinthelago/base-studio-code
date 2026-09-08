@@ -1,0 +1,11 @@
+{
+  "id": "channel--mock--call-tool.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "call_tool",
+  "src": "crates/channel/src/mock/call_tool.rs",
+  "folder": "crates/channel/src/mock",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Run one channel tool against the recorder. Required-argument validation reuses the shared\n/// `arg_str`; an unknown tool is an `Err` (the core turns it into an `isError` payload).\npub fn call_tool(rec: &Recorder, name: &str, args: &Value) -> Result<Value, String> {\n    match name {\n        \"send_email\" => {\n            arg_str(args, \"to\")?;\n            arg_str(args, \"subject\")?;\n            arg_str(args, \"body\")?;\n            rec.record(\"send_email\", args)\n        }\n        \"post\" => {\n            arg_str(args, \"text\")?;\n            rec.record(\"post\", args)\n        }\n        \"schedule\" => {\n            arg_str(args, \"when\")?;\n            arg_str(args, \"payload\")?;\n            rec.record(\"schedule\", args)\n        }\n        \"get_metrics\" => rec.metrics(),\n        other => Err(format!(\"unknown tool '{other}'\")),\n    }\n}\n"
+}
