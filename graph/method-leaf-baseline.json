@@ -8,6 +8,7 @@
   "bsc-graph--features.rs": 2,
   "bsc-graph--impl-refresh.rs": 2,
   "bsc-graph--lib.rs": 27,
+  "bsc-graph-store--lib.rs": 2,
   "bsc-json-store--lib.rs": 2,
   "bsc-lan-stream--envelope.rs": 3,
   "bsc-mem--app.rs": 2,

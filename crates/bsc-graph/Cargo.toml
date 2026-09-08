@@ -56,6 +56,10 @@ tree-sitter-rust = "0.24"
 # those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be invisible
 # precisely where it matters.
 graph-materialize = { path = "../graph-materialize" }
+# THE DATABASE the records are moving into (`epic-retire-json-ledgers-for-db-and-git-drivers`).
+# `bsc graph store import|db` reaches it from here; the JSON ledgers stay readable until every reader
+# has moved, because an import that cannot be checked against its source is not one anyone will trust.
+bsc-graph-store = { path = "../bsc-graph-store" }
 
 [build-dependencies]
 # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.

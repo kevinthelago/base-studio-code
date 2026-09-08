@@ -938,6 +938,55 @@ no reviewer verdict, and no notes, which is the state this repo was in before th
 Every migrated item keeps its old GitHub number in `ghNumber` as a **silent back-link** — the trail
 survives and a future `bsc plan sync` can reconcile, but nothing writes to GitHub in the meantime.
 
+### The branch is TWO things now — a git branch and a LANE
+
+Records are **93% of this source** (1,731 records against 124 files), and they no longer live in git.
+They live in the record ledger (`~/.base-studio-code/knowledge/graph.db`,
+`epic-retire-json-ledgers-for-db-and-git-drivers`), so a work item needs isolation in **both** places:
+
+```
+<ref>  →  a git BRANCH   for the 124 files, the manifests, the scripts, the docs
+<ref>  →  a LANE         for the records — everything the crates and the app compile from
+```
+
+**Same name for both**, which keeps the rule that one ref reaches the plan row, the branch, the
+worktree and now the lane. A session binds its lane with `$BSC_GRAPH_LANE`, set at launch exactly as
+`$BSC_PLAN_DB` and `$BSC_AUDIT_PANE` already are — a worker does not have to remember which lane it is
+in, for the same reason it does not have to remember which plan store it writes.
+
+**GIT BRANCHES NEVER ISOLATED RECORDS**, and that is worth being clear about rather than presenting
+lanes as a loss. Every worktree has always shared one runtime store; the 304 drifted records were nine
+sessions writing one file, and `graph-promote-check` existed only to police the gap between that and
+the per-worktree committed copy. Lanes are the first isolation records have ever had.
+
+**A lane is COPY-ON-WRITE and costs almost nothing.** It holds rows only for records it writes;
+everything else reads through to `main`. MEASURED over this repo's last 40 merges, a slice touches a
+**median of 4 records** — so a lane is four rows against 2,529, and "does branching duplicate the
+store" answers itself.
+
+```bash
+bsc graph lane list                      # every lane, and which one you are bound to
+bsc graph lane diff                      # what your lane changed, and whether main moved under it
+bsc graph lane conflicts                 # the records main moved under — base/ours/theirs, by id
+bsc graph lane rebase <id>               # "I have looked at both sides; mine still stands"
+bsc graph lane land                      # dry by default
+bsc graph lane land --apply              # applies the WHOLE lane to main in one transaction
+```
+
+**A conflict is one RECORD, not a file.** `lane wrote x.rs from main rev 5, main is at rev 7` — base,
+ours and theirs are all three still in the ledger, so resolving is a decision you can see rather than a
+merge you have to referee. Two lanes touching different records both land clean, which is the property
+the whole migration exists for.
+
+**Landing is all-or-nothing.** One contested record blocks the whole lane and applies nothing — half a
+slice on main is a state nobody asked for and nobody is watching. Landing does not delete the lane
+either: what was landed and from where stays answerable afterwards.
+
+**What this REMOVES.** `bsc graph promote` (runtime→repo), `bsc graph reseed` (seed→runtime),
+`graph-promote-check` (a whole gate leg that existed only to police drift), `bsc graph store
+split|merge`, "a record edit is four writes", and the 304-record drift — structurally, not by
+discipline.
+
 ### Branch strategy — one branch per work item, 1:1
 
 ```

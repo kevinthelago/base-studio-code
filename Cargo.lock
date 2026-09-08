@@ -569,6 +569,7 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-graph-layout",
+ "bsc-graph-store",
  "bsc-imagine",
  "bsc-incident",
  "bsc-json-store",
@@ -1114,6 +1115,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-data",
+ "bsc-graph-store",
  "bsc-record",
  "bsc-runtime",
  "bsc-util",
@@ -1129,6 +1131,18 @@ dependencies = [
 name = "bsc-graph-layout"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-graph-store"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 

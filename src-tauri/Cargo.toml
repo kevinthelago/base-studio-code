@@ -193,6 +193,10 @@ llm = { path = "../crates/llm", package = "bsc-llm" }
 # TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from
 # `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list.
 bsc-graph = { path = "../crates/bsc-graph" }
+# The record LEDGER, queried directly by the four graph commands — the page's index, the resolver's
+# feed, one record's source, and the change signature are four different questions, and a database can
+# answer each without materialising the others.
+bsc-graph-store = { path = "../crates/bsc-graph-store" }
 # `vendored::sha256_hex` — the ONE content-hash form in this workspace, for `graph_sig`. Already in this
 # crate's tree transitively (bsc-graph depends on it), so the direct edge costs nothing at build time
 # and buys not having a second spelling of "the hash of this thing" that can drift from the first.
