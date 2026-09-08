@@ -22,10 +22,11 @@
  * the compiler, and the underlying verb names the ids.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
+import { loadStore } from "./lib/recordStore.mjs";
 
 const ROOT = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
 
@@ -287,12 +288,43 @@ function impl(bsc, id) {
   }
 }
 
-/** One record out of the COMMITTED store on disk. */
+/** One record out of the COMMITTED store on disk — the store file MERGED with `graph/records/*.json`. */
 function repoRecord(root, id) {
   try {
-    return pick(JSON.parse(readFileSync(join(root, "graph", "algorithms.json"), "utf8")), id);
+    return pick(loadStore(join(root, "graph", "algorithms.json")), id);
   } catch {
     return null;
+  }
+}
+
+/**
+ * The commits that changed `id`'s OWN file, newest first — empty when the record has no file yet.
+ *
+ * This is the whole reason the per-record split is worth doing to THIS script. `lastRepoCommit` below
+ * exists because the monolith gave a record no history of its own: every commit touching any of 1,700
+ * records touched the same 27 MB file, so answering "who last changed this record" meant `git show`ing
+ * the whole store at up to 40 commits and diffing the record out of each. MEASURED as the dominant
+ * cost of a red run — 344 drifted ids made it a 32-minute spin (request #253).
+ *
+ * With `graph/records/<id>.json` the question is just `git log` on one small path, and the FIRST
+ * result is the answer: no walk, no diff, no cap. `epic-retire-json-ledgers-for-db-and-git-drivers`.
+ */
+function commitsTouchingRecordFile(root, id) {
+  try {
+    const out = execFileSync(
+      "git",
+      ["log", "--format=%h%x1f%an%x1f%ad%x1f%s", "--date=short", "--", `graph/records/${id}.json`],
+      { cwd: root, encoding: "utf8", timeout: 20_000 },
+    );
+    return out
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        const [sha, author, date, subject] = l.split("\x1f");
+        return { sha, author, date, subject };
+      });
+  } catch {
+    return [];
   }
 }
 
@@ -316,16 +348,27 @@ function commitsTouchingStore(root) {
   }
 }
 
-/** One record as it stood at `sha`, or null when the file did not exist / could not be parsed. */
+/**
+ * One record as it stood at `sha`, or null when it did not exist there / could not be parsed.
+ *
+ * The record's OWN file first — one small `git show` rather than 27 MB — falling back to the monolith
+ * for a record that has not been split out (and for history from before the split).
+ */
 function recordAtCommit(root, sha, id) {
-  try {
-    const text = execFileSync("git", ["show", `${sha}:graph/algorithms.json`], {
+  const show = (path, budget) =>
+    execFileSync("git", ["show", `${sha}:${path}`], {
       cwd: root,
       encoding: "utf8",
       timeout: 20_000,
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: budget,
     });
-    return pick(JSON.parse(text), id);
+  try {
+    return JSON.parse(show(`graph/records/${id}.json`, 8 * 1024 * 1024));
+  } catch {
+    // not split out at that commit — fall through to the whole store
+  }
+  try {
+    return pick(JSON.parse(show("graph/algorithms.json", 64 * 1024 * 1024)), id);
   } catch {
     return null;
   }
@@ -436,7 +479,14 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
       {
         runtime: (id) => impl(usable.path, id),
         repo: (id) => repoRecord(ROOT, id),
-        blame: (id) => lastRepoCommit(id, commits, (sha) => recordAtCommit(ROOT, sha, id)),
+        // A record that HAS its own file needs no walk at all: the newest commit on that path is the
+        // one that changed it. `lastRepoCommit` is the fallback for a record still inside the monolith,
+        // where every commit touches the same file and only a diff can say which one changed this id.
+        blame: (id) => {
+          const own = commitsTouchingRecordFile(ROOT, id);
+          if (own.length > 0) return { ...own[0], exhausted: false };
+          return lastRepoCommit(id, commits, (sha) => recordAtCommit(ROOT, sha, id));
+        },
       },
       diagOpts,
     ),

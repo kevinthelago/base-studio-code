@@ -11,8 +11,10 @@
 // This is the same shape as the Rust tests that read the frontend's wire fixtures by filename: one
 // side reads the other's source rather than a third copy being introduced to compare against.
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+// The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`) — the store is a file
+// PLUS `graph/records/<id>.json` per record, and `bsc-session--lib.rs` may be in either.
+import { loadStore } from "../../../../scripts/lib/recordStore.mjs";
 import { STUDIO_SESSIONS, STUDIO_IDS } from "@/features/studio-sessions";
 
 /** The committed graph store, resolved from this file rather than the cwd so it works from a worktree
@@ -29,7 +31,7 @@ const GRAPH_STORE = resolve(__dirname, "../../../../graph/algorithms.json");
 /** The Rust crate root's source, out of the record that holds it. Keyed on `src` rather than on the
  *  record id, because `src` is the path this test used to open and is what says "the same file". */
 function rustSource(): string {
-  const store = JSON.parse(readFileSync(GRAPH_STORE, "utf8")) as {
+  const store = loadStore(GRAPH_STORE) as {
     implementations: { src?: string; code?: string }[];
   };
   const rec = store.implementations.find((i) => i.src === "crates/bsc-session/src/lib.rs");

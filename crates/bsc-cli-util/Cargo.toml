@@ -23,3 +23,12 @@ serde_json = "1"
 # The vendored-file provenance stamp (#4192) — ONE content-hash form shared by every `emit`
 # surface, so `bsc ui emit` and `bsc graph emit` cannot drift into two look-alike contracts.
 sha2 = "0.11"
+
+[dev-dependencies]
+# The MATERIALIZER, for its merged-store loader ONLY. The committed graph store is one file plus
+# `graph/records/<id>.json` per record (`epic-retire-json-ledgers-for-db-and-git-drivers`), and the
+# tree-wide source guard in this crate must see every record — a reader that parses the store file
+# alone reports a shrunken population and passes over what is left. `graph_materialize` is what the
+# BUILD reads, so going through it is what stops this guard and the compiler disagreeing about which
+# records exist. Dev-only: not propagated to anything that links this crate.
+graph-materialize = { path = "../graph-materialize" }

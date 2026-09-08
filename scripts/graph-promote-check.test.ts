@@ -307,21 +307,37 @@ describe("graph-promote-check diagnosis", () => {
 // So this spawns the module as a PROCESS against a stub `bsc`. It is the only shape that can
 // observe the declaration order the CLI actually uses.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** A checkout-shaped temp dir: the module, its one lib import, a stub `bsc`, and a repo store. */
+/**
+ * Stage the module and EVERY `./lib/*.mjs` it imports into `root/scripts/`.
+ *
+ * DERIVED from the module's own import statements rather than listed here. The list was hand-written
+ * and one entry long, so adding a second lib import (`recordStore.mjs`, when the committed store split
+ * into per-record files) made both CLI tests fail with `ERR_MODULE_NOT_FOUND` — a staging gap wearing
+ * a module bug's clothes. A list that has to be kept in step with an import statement will not be.
+ */
+function stageModule(root: string): string[] {
+  const src = readFileSync(join(HERE, "graph-promote-check.mjs"), "utf8");
+  const libs = [...src.matchAll(/from "\.\/lib\/([\w.-]+\.mjs)"/g)].map((m) => m[1]);
+  expect(libs.length, "the module imports at least one ./lib module, so this staging is real").toBeGreaterThan(0);
+  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
+  for (const lib of libs) copyFileSync(join(HERE, "lib", lib), join(root, "scripts", "lib", lib));
+  return libs;
+}
+
+/** A checkout-shaped temp dir: the module, every lib module it imports, a stub `bsc`, and a repo store. */
 function stubCheckout(): string {
   const root = mkdtempSync(join(tmpdir(), "promote-check-cli-"));
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });
-  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
-  copyFileSync(join(HERE, "lib", "bscBinary.mjs"), join(root, "scripts", "lib", "bscBinary.mjs"));
+  stageModule(root);
 
   // BOTH copies must be READABLE or `shapeOf` returns null before it ever touches `STAMPS` — the
   // early return would make this test pass against the unfixed module, which is the whole trap.
@@ -399,8 +415,7 @@ function stubSlowCheckout(): string {
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });
-  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
-  copyFileSync(join(HERE, "lib", "bscBinary.mjs"), join(root, "scripts", "lib", "bscBinary.mjs"));
+  stageModule(root);
 
   const bsc = join(root, "target", "debug", "bsc");
   writeFileSync(

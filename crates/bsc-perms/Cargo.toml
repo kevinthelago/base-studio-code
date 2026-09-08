@@ -35,3 +35,13 @@ serde_json = "1"
 # THE SHARED CRATE ROOT — this crate owns no source file at all. See
 # crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
 path = "../graph-materialize/crate_root.rs"
+
+[dev-dependencies]
+# The MATERIALIZER, for its merged-store loader ONLY. `the_field_names_match_the_consumer` reads
+# `bsc-agent`'s permissions record out of the committed graph store, which is one file plus
+# `graph/records/<id>.json` per record (`epic-retire-json-ledgers-for-db-and-git-drivers`) — parsing
+# the store file alone would report that record "missing from the graph store" while it sits in its
+# own file. `graph_materialize` is what the BUILD reads, so going through it is what stops this test
+# and the compiler disagreeing about which records exist. Dev-only: not propagated to anything that
+# links this crate.
+graph-materialize = { path = "../graph-materialize" }
