@@ -111,6 +111,11 @@ mod tests;
 #[cfg(test)]
 mod sqlite_read_tests;
 
+// Root discovery is separate from the store — `graph/store.toml` marks the root and names what to
+// read, so retiring the store cannot take root resolution down with it.
+#[cfg(test)]
+mod root_marker_tests;
+
 // The integration-test half — a crate's `tests/*.rs` targets, materialized from the EDGE tier
 // (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Its own module because it asserts its own
 // selection rule, output directory and shared root file, and shares no fixture with `tests`.
