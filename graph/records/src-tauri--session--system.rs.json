@@ -20,6 +20,8 @@
     }
   ],
   "crateDeps": [
+    "bsc_graph",
+    "bsc_json_store",
     "bsc_session",
     "log",
     "serde",
