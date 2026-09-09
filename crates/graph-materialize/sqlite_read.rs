@@ -372,19 +372,28 @@ pub fn read_lane(db_path: &std::path::Path, lane: &str) -> Result<Vec<serde_json
     };
     let (i_id, i_lane, i_rev, i_json) = (idx("id")?, idx("lane")?, idx("rev")?, idx("json")?);
 
-    let mut best: std::collections::HashMap<String, (i64, String)> = std::collections::HashMap::new();
+    // A NULL `json` is a TOMBSTONE, not a row to skip — and getting that wrong resurrects the dead.
+    //
+    // The ledger is append-only, so a record is not deleted by removing rows: a new revision is added
+    // whose body is NULL, carrying the reason ("superseded by `bsc-util--deny--mod.rs` — both claimed
+    // module `deny`"). MEASURED against the live ledger 2026-09-09: 198 ids on `main` have exactly that
+    // as their newest revision. An earlier version of this loop skipped NULL rows, which meant the
+    // tombstone was ignored and the PREVIOUS revision won — so all 198 came back from the dead and the
+    // materializer refused with `two records claim module …`. The store had already reconciled itself;
+    // the reader was the thing that was wrong.
+    //
+    // So the newest revision is chosen over EVERY row, tombstones included, and an id whose winner is a
+    // tombstone is omitted entirely.
+    let mut best: std::collections::HashMap<String, (i64, Option<String>)> = std::collections::HashMap::new();
     for row in rows {
         if row.get(i_lane).and_then(Val::as_text) != Some(lane) {
             continue;
         }
-        let (id, rev, json) = match (
-            row.get(i_id).and_then(Val::as_text),
-            row.get(i_rev).and_then(Val::as_int),
-            row.get(i_json).and_then(Val::as_text),
-        ) {
-            (Some(i), Some(r), Some(j)) => (i.to_string(), r, j.to_string()),
+        let (id, rev) = match (row.get(i_id).and_then(Val::as_text), row.get(i_rev).and_then(Val::as_int)) {
+            (Some(i), Some(r)) => (i.to_string(), r),
             _ => continue,
         };
+        let json = row.get(i_json).and_then(Val::as_text).map(str::to_string);
         match best.get(&id) {
             Some((have, _)) if *have >= rev => {}
             _ => {
@@ -392,6 +401,7 @@ pub fn read_lane(db_path: &std::path::Path, lane: &str) -> Result<Vec<serde_json
             }
         }
     }
+    best.retain(|_, (_, json)| json.is_some());
 
     // Sorted by id so the emitted store is DETERMINISTIC — the JSON path sorts its record files, and
     // a build whose output depends on hash-map order is a build that cannot be diffed.
@@ -399,7 +409,7 @@ pub fn read_lane(db_path: &std::path::Path, lane: &str) -> Result<Vec<serde_json
     ids.sort();
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        let (_, json) = &best[id];
+        let json = best[id].1.as_deref().expect("tombstones were retained out above");
         out.push(
             serde_json::from_str(json)
                 .map_err(|e| format!("record `{id}` on lane `{lane}` holds invalid JSON: {e}"))?,
