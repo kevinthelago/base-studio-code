@@ -628,6 +628,20 @@ pub fn emit_into(
     // file-per-record layout (mirroring `src-tauri/data/components/**`) that retires the 27 MB
     // monolith (`epic-retire-json-ledgers-for-db-and-git-drivers`). A no-op until records are split
     // out, so this is transition-safe: a record lives in exactly one place at a time.
+    // WATCH THE DATABASE WHEN IT IS THE SOURCE, or a record edit never reaches the compiler.
+    //
+    // The JSON path watches the record FILES below; the DB path had nothing, so changing the ledger
+    // left every crate's cached build-script output in place. MEASURED: a `store import --refresh`
+    // that moved 1,160 records was followed by a workspace check still failing on the PRE-refresh
+    // bodies, which reads as "the reader is broken" rather than "nothing rebuilt".
+    //
+    // The whole file, not per-record: the ledger is one file and cargo can only watch paths. That is
+    // coarser than the per-record watching the JSON path does — any record edit rebuilds every
+    // materialized crate — and it is the honest cost of a single-file store, recorded here rather
+    // than discovered later.
+    if let Some(db) = record_db_override() {
+        println!("cargo:rerun-if-changed={}", db.display());
+    }
     let raw = load_merged_store(&plan.store_path)?;
     if let Some(dir) = records_dir_beside(&plan.store_path) {
         if dir.is_dir() {

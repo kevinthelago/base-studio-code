@@ -205,3 +205,22 @@ fn real_ledger_reads_end_to_end() {
         assert!(r.get("id").is_some(), "and carries an id: {r:?}");
     }
 }
+
+/// A TOMBSTONE DELETES, and does not merely get skipped.
+///
+/// The ledger is append-only: a record is removed by adding a newer revision whose body is NULL,
+/// carrying the reason. An earlier reader skipped NULL rows, so the tombstone was ignored and the
+/// PREVIOUS revision won — MEASURED on the live ledger, that resurrected all 198 records the store had
+/// already retired, and the materializer refused with `two records claim module …`. The store was
+/// right and the reader was wrong, which is exactly the failure a fixture-only suite cannot see.
+#[test]
+fn a_tombstone_removes_the_id_rather_than_falling_back_to_the_previous_revision() {
+    let got = read_lane(&fixture("ledger.db"), "main").expect("read");
+    assert!(
+        !got.iter().any(|r| r["id"] == "dead.rs"),
+        "dead.rs has a NULL-bodied rev 2; rev 1 must NOT win: {:?}",
+        got.iter().filter(|r| r["id"] == "dead.rs").collect::<Vec<_>>()
+    );
+    // And the tombstone must not take its neighbours with it.
+    assert!(got.iter().any(|r| r["id"] == "alpha.rs"), "live records are unaffected");
+}
