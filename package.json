@@ -34,6 +34,7 @@
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "emit:records": "node scripts/emit-records.mjs",
     "emit:manifests": "node scripts/emit-manifests.mjs",
+    "prepare": "node scripts/emit-manifests.mjs",
     "dev-boot-check": "node scripts/dev-boot-check.mjs",
     "retirement-candidates": "node scripts/retirement-candidates.mjs",
     "bsc:doctor": "b=target/debug/bsc; [ -s \"$b\" ] || b=target/release/bsc; [ -s \"$b\" ] || b=\"$HOME/.base-studio-code/bin/bsc\"; \"$b\" self doctor --root .",

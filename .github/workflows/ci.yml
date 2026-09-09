@@ -227,6 +227,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # The crate manifests are GENERATED from `graph/manifests/` and are not tracked, so a fresh
+      # checkout has NONE and every cargo step below would fail naming a missing file rather than a
+      # missing build step. Node is preinstalled on the runners, and this job has no npm install to
+      # hang the `prepare` hook off. Idempotent.
+      - name: Materialize the crate manifests
+        run: node scripts/emit-manifests.mjs
       - name: Check
         run: cargo check --workspace
 
