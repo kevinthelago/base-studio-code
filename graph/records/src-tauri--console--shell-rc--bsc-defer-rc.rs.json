@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--console--shell-rc--bsc-defer-rc.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "bsc_defer_rc",
+  "src": "src-tauri/src/console/shell_rc/bsc_defer_rc.rs",
+  "folder": "src-tauri/src/console/shell_rc",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--console--shell-rc--one-line-sq.rs"
+  ],
+  "code": "use super::*;\n\n/// The `bsc-defer` Stop hook (#369, rebuilt in #4021) — **NO LONGER ATTACHED TO ANY SESSION**\n/// (#session-stop-is-honoured). `sessionLaunch` stopped installing it: refusing a worker's Stop meant a\n/// session could not end, and the measured result was one worker bouncing 66 times on a ~90s cadence.\n/// The fragment and `bsc hook stop-defer` are kept rather than deleted so the decision stays legible\n/// and the behaviour is one line away if it is ever wanted deliberately — but nothing installs it, and\n/// re-attaching it re-creates a session that cannot stop. Resuming a finished session is the user's\n/// click now.\n///\n/// Historical description follows.\n///\n/// Fires when a fleet WORKER tries to end its turn.\n///\n/// It is now a ONE-LINE wrapper around `bsc hook stop-defer`, for the reason `bsc-deny` already gives:\n/// the decision is backed by the binary rather than fragile shell JSON-parsing. And this decision needs\n/// real inputs — it reads the stream's open issues from plan.db, checks whether the pane is already\n/// blocked on a human, and keeps a bounce counter. None of that belongs in a `case` statement.\n///\n/// What CHANGED behaviourally: the old wrapper bounced exactly ONCE (`stop_hook_active`) and then let\n/// the worker stop forever. Measured cost: 20 panes idle with work outstanding, unreachable by anything\n/// in the app. The hook now bounces while work remains, and only releases a worker that is finished,\n/// parked on a person, or genuinely stuck (and it announces that last one). See `crates/bsc/src/defer.rs`.\n///\n/// The DIRECTIVE prose stays externalized + config-overridable (#2145) and is passed through as env,\n/// since the binary cannot resolve the user's config dir. Both directives are JSON/shell constrained\n/// the same way as before: single line, no raw `'` (they are single-quoted here).\npub(crate) fn bsc_defer_rc() -> String {\n    let keep = one_line_sq(&crate::platform::config::load_str(\"fleet/defer-directive.md\"));\n    let stuck = one_line_sq(&crate::platform::config::load_str(\"fleet/defer-stuck-directive.md\"));\n    format!(\"bsc-defer() {{ BSC_DEFER_DIRECTIVE='{keep}' BSC_DEFER_STUCK='{stuck}' bsc hook stop-defer; }}\\n\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

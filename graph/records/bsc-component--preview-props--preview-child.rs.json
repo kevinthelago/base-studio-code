@@ -1,0 +1,14 @@
+{
+  "id": "bsc-component--preview-props--preview-child.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "preview_child",
+  "src": "crates/bsc-component/src/preview_props/preview_child.rs",
+  "folder": "crates/bsc-component/src/preview_props",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The child text (`JSON.stringify(prettyName(name))`) when the component declares a `children` prop,\n/// else JSON `null`. Mirrors `previewChild` (componentPreview.ts).\npub(crate) fn preview_child(comp_name: &str, props: &[Prop]) -> Value {\n    if props.iter().any(|p| p.name == \"children\") {\n        Value::String(json_string(&pretty_name(comp_name)))\n    } else {\n        Value::Null\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

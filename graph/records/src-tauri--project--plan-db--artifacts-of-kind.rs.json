@@ -1,0 +1,17 @@
+{
+  "id": "src-tauri--project--plan-db--artifacts-of-kind.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "artifacts_of_kind",
+  "src": "src-tauri/src/project/plan_db/artifacts_of_kind.rs",
+  "folder": "src-tauri/src/project/plan_db",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--project--plan-db--db-path.rs",
+    "src-tauri--project--plan-db--open.rs"
+  ],
+  "code": "use super::*;\n\n/// Plan.db artifacts of `kind` (#2997 A2) as `(name, content)` pairs — the DB-backed source for\n/// planner-authored content (discovery/section/contract/kickoff) as it migrates OFF hub files, so the\n/// hub becomes a pure projection. Empty when there's no plan.db (never MATERIALIZES one — mirrors\n/// [`fleet_for`]); best-effort on any read error. See [`plandb`]'s `artifact_list`.\npub(crate) fn artifacts_of_kind(project_key: &str, kind: &str) -> Vec<(String, String)> {\n    if !db_path(project_key).exists() {\n        return Vec::new();\n    }\n    open(project_key)\n        .ok()\n        .and_then(|s| s.artifact_list(Some(kind)).ok())\n        .map(|arts| arts.into_iter().map(|a| (a.name, a.content)).collect())\n        .unwrap_or_default()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

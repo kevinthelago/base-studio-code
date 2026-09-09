@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--shot--rect-from-css.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rect_from_css",
+  "src": "src-tauri/src/shot/rect_from_css.rs",
+  "folder": "src-tauri/src/shot",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A `getBoundingClientRect()` (CSS px, possibly fractional or negative) as the integer crop [`Rect`].\n///\n/// Floors the origin and ceils the size so a fractional box never loses a pixel it partially covers —\n/// the same rounding the frontend applies when registering the `preview` rect. A negative origin (a\n/// frame scrolled above/left of the viewport) clamps to 0 rather than wrapping through `as u32`.\npub(crate) fn rect_from_css([x, y, w, h]: [f64; 4], component: &str) -> Result<Rect, String> {\n    // `is_finite` FIRST so a NaN dimension errors rather than slipping through a `<=` comparison\n    // (every comparison against NaN is false, so a bare `w <= 0.0` would treat NaN as a valid size).\n    if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {\n        return Err(format!(\n            \"'{component}' reports a zero-size rect ({w}x{h}) — it is mounted but not laid out yet\"\n        ));\n    }\n    Ok(Rect {\n        x: x.max(0.0).floor() as u32,\n        y: y.max(0.0).floor() as u32,\n        w: w.ceil() as u32,\n        h: h.ceil() as u32,\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

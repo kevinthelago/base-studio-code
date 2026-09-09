@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--planner--workspace--build-github-context-md.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_github_context_md",
+  "src": "src-tauri/src/planner/workspace/build_github_context_md.rs",
+  "folder": "src-tauri/src/planner/workspace",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--workspace--render-repo-items.rs"
+  ],
+  "code": "use super::*;\n\n/// Assemble `github_context.md`: the authenticated-user block (when a login is known), the linked\n/// repositories, and the useful read-only `gh` commands — so the planner needn't run `gh api user`.\npub(crate) fn build_github_context_md(\n    github_login: &str,\n    github_name: &str,\n    repo_full_names: &[String],\n    project_key: &str,\n) -> String {\n    let mut md = String::from(\"# GitHub Context\\n\\n\");\n    if !github_login.is_empty() {\n        md.push_str(\"## Authenticated user\\n\\n\");\n        md.push_str(&format!(\"- **Login**: `{}`\\n\", github_login));\n        if !github_name.is_empty() {\n            md.push_str(&format!(\"- **Name**: {}\\n\", github_name));\n        }\n        md.push_str(&format!(\"- **Profile**: https://github.com/{}\\n\\n\", github_login));\n    }\n    if !repo_full_names.is_empty() {\n        md.push_str(\"## Linked repositories\\n\\n\");\n        md.push_str(&render_repo_items(repo_full_names, project_key, &github_repo_item()));\n        md.push('\\n');\n    }\n    md.push_str(&format!(\"{}\\n\", github_useful_commands().trim_end()));\n    md\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

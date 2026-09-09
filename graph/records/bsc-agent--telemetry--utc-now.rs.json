@@ -1,0 +1,15 @@
+{
+  "id": "bsc-agent--telemetry--utc-now.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "utc_now",
+  "src": "crates/bsc-agent/src/telemetry/utc_now.rs",
+  "folder": "crates/bsc-agent/src/telemetry",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn utc_now() -> String {\n    // Shared civil-date formatter (#1646), so audit/cost timestamps match the `bsc-*` helpers'\n    // `date -u +%Y-%m-%dT%H:%M:%SZ` output.\n    bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms())\n}\n",
+  "feature": "console",
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

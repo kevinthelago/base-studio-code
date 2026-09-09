@@ -5,7 +5,7 @@
   "name": "cli",
   "composes": [
     "bsc-disk--gc.rs",
-    "bsc-disk--link.rs",
+    "bsc-disk--link--mod.rs",
     "bsc-disk--pool--mod.rs",
     "bsc-disk--root.rs",
     "bsc-disk--sweep.rs",

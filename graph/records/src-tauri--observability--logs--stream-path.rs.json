@@ -1,0 +1,18 @@
+{
+  "id": "src-tauri--observability--logs--stream-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stream_path",
+  "src": "src-tauri/src/observability/logs/stream_path.rs",
+  "folder": "src-tauri/src/observability/logs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Resolve a stream key to its on-disk path. The app log lives in Tauri's log dir; `perf.db` and\n/// the TSVs live under `~/.base-studio-code/`. The TSV filenames come from the shared\n/// `bsc_util::LOG_STREAMS` registry. Returns `None` for unknown/excluded keys.\npub(crate) fn stream_path(app: &tauri::AppHandle, stream: &str) -> Option<PathBuf> {\n    match stream {\n        \"app\" => app.path().app_log_dir().ok().map(|d| d.join(\"base-studio-code.log\")),\n        \"perf\" => Some(crate::perf_db()),\n        other => bsc_util::LOG_STREAMS\n            .iter()\n            .find(|s| s.key == other)\n            .map(|s| bsc_base_dir().join(s.filename)),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util",
+    "tauri"
+  ]
+}

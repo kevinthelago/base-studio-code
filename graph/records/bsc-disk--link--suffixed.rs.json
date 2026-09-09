@@ -1,0 +1,14 @@
+{
+  "id": "bsc-disk--link--suffixed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "suffixed",
+  "src": "crates/bsc-disk/src/link/suffixed.rs",
+  "folder": "crates/bsc-disk/src/link",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `path` with `suffix` APPENDED to the whole filename, extension included.\npub(crate) fn suffixed(path: &Path, suffix: &str) -> PathBuf {\n    let mut name = path.file_name().unwrap_or_default().to_os_string();\n    name.push(suffix);\n    path.with_file_name(name)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

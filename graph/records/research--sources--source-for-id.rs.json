@@ -1,0 +1,14 @@
+{
+  "id": "research--sources--source-for-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "source_for_id",
+  "src": "crates/research/src/sources/source_for_id.rs",
+  "folder": "crates/research/src/sources",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Which source a canonical id belongs to, by scheme prefix.\npub fn source_for_id(id: &str) -> Option<Source> {\n    let id = id.trim();\n    if id.starts_with(\"arxiv:\") {\n        Some(Source::Arxiv)\n    } else if id.starts_with(\"pmid:\") || id.starts_with(\"pmcid:\") {\n        Some(Source::Pubmed)\n    } else if id.starts_with(\"s2:\") {\n        Some(Source::SemanticScholar)\n    } else if id.starts_with(\"wikipedia:\") {\n        Some(Source::Wikipedia)\n    } else if id.starts_with(\"doi:\") {\n        // DOIs are resolved via Crossref (richest metadata + reference list).\n        Some(Source::Crossref)\n    } else {\n        None\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

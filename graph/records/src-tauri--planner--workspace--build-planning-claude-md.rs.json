@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--planner--workspace--build-planning-claude-md.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_planning_claude_md",
+  "src": "src-tauri/src/planner/workspace/build_planning_claude_md.rs",
+  "folder": "src-tauri/src/planner/workspace",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--workspace--render-repo-items.rs"
+  ],
+  "code": "use super::*;\n\n/// Assemble the planner `CLAUDE.md`: the orientation-specific INTRO + shared PROCESS block, the\n/// anti-injection framing (#1107, every spec), the enabled-stages scope (#512/#542), and — for\n/// existing projects — the linked-repositories section.\n#[allow(clippy::too_many_arguments)]\npub(crate) fn build_planning_claude_md(\n    is_existing: bool,\n    project_name: &str,\n    project_number: u32,\n    pitch: &str,\n    enabled_stages: &[String],\n    repo_full_names: &[String],\n    project_key: &str,\n) -> String {\n    let mut md = if is_existing {\n        format!(\n            \"{}{}\",\n            planning_existing_intro()\n                .replace(\"{PROJECT_NAME}\", project_name)\n                .replace(\"{PROJECT_NUMBER}\", &project_number.to_string()),\n            planning_process_md(),\n        )\n    } else {\n        format!(\"{}{}\", planning_new_intro().replace(\"{PITCH}\", pitch), planning_process_md())\n    };\n\n    // Anti prompt-injection framing (#1107) — the planner reads untrusted repo + web content and\n    // emits trusted fleet instruction, so it must treat all reviewed content as data.\n    md.push_str(&planner_injection_resistance_md());\n\n    // Modular planning stages (#512/#542): the enabled stages as the authoritative scope (disabled\n    // stages declared out of scope). Empty ⇒ no change (all-stages default).\n    let stages_md = build_active_stages_md(enabled_stages);\n    if !stages_md.is_empty() {\n        md.push_str(&stages_md);\n    }\n\n    // Linked repos section for existing projects (always, even when empty, so Claude knows the state).\n    if is_existing {\n        md.push_str(\"\\n## Linked repositories\\n\\n\");\n        if repo_full_names.is_empty() {\n            md.push_str(\"No repositories are currently linked to this project.\\n\");\n        } else {\n            md.push_str(&render_repo_items(repo_full_names, project_key, &linked_repo_item()));\n        }\n    }\n    md\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

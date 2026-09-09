@@ -1,0 +1,16 @@
+{
+  "id": "bsc-fleet--doctor--member-dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "member_dir",
+  "src": "crates/bsc-fleet/src/doctor/member_dir.rs",
+  "folder": "crates/bsc-fleet/src/doctor",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fleet--doctor--hub-dir.rs"
+  ],
+  "code": "use super::*;\n\n/// A member's OWN directory: a stream's worktree, or — for the director and triage panes, which own\n/// no stream — the project hub itself.\n///\n/// `find_worktree` refuses an empty stream because there is no `--<stream>` suffix to match, which is\n/// correct for what it does and wrong as the only way to locate a member. `membership::Member::stream`\n/// is documented blank for the director and for triage panes, so routing every member through\n/// `find_worktree` alone hands `read_facts` a `None` — and `read_facts` opens with `let dir =\n/// worktree?`, so it returns before touching the disk. The result is not a missing check but an\n/// INVISIBLE one: `caged-floor`, `no-gate` and worktree-presence all silently do not run for the pane\n/// running at the project hub, and the report reads clean rather than absent. That is the same\n/// \"wrong in the safe-looking direction\" this module was written to catch, inside this module.\npub fn member_dir(base: &Path, project_key: &str, stream: &str) -> Option<std::path::PathBuf> {\n    if stream.is_empty() {\n        return Some(hub_dir(base, project_key));\n    }\n    find_worktree(base, project_key, stream)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

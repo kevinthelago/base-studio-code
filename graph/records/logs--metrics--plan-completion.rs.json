@@ -1,0 +1,17 @@
+{
+  "id": "logs--metrics--plan-completion.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_completion",
+  "src": "crates/logs/src/metrics/plan_completion.rs",
+  "folder": "crates/logs/src/metrics",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `(done, total)` issue counts from the project hub's `plan.db`, or `None` when it is absent /\n/// unreadable. `done` = `complete` + `verified` (the two terminal-success statuses).\npub(crate) fn plan_completion(base_dir: &Path, project: &str) -> Option<(u64, u64)> {\n    let db = base_dir.join(\"projects\").join(project).join(\"plan.db\");\n    if !db.exists() {\n        return None;\n    }\n    let store = plandb::Store::open(&db).ok()?;\n    let issues = store.list_summary(None, None, None, None).ok()?;\n    let total = issues.len() as u64;\n    let done = issues.iter().filter(|i| i.status == \"complete\" || i.status == \"verified\").count() as u64;\n    Some((done, total))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "plandb"
+  ]
+}

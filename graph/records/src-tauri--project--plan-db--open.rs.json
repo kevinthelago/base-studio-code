@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--project--plan-db--open.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "open",
+  "src": "src-tauri/src/project/plan_db/open.rs",
+  "folder": "src-tauri/src/project/plan_db",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--project--plan-db--db-path.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn open(project_key: &str) -> Result<Store, String> {\n    Store::open(&db_path(project_key)).str_err()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

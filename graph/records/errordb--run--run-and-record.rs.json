@@ -1,0 +1,14 @@
+{
+  "id": "errordb--run--run-and-record.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "run_and_record",
+  "src": "crates/errordb/src/run/run_and_record.rs",
+  "folder": "crates/errordb/src/run",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Run `cmd`, apply [`decide`] against the store at `db`, and exit with the child's own code.\n///\n/// Never returns on success — the exit is the point, and it is done here rather than by returning a\n/// code because the CLI frame maps every `Err` to 1, which would erase the distinction between cargo's\n/// 101, a missing binary's 127 and an ordinary failure. It returns `Err` only for a failure to START\n/// the child, which is the caller's error rather than the child's.\npub fn run_and_record(\n    cmd: &[String],\n    db: Option<&std::path::Path>,\n    stage: &str,\n    source: &str,\n    level: &str,\n    now_ms: i64,\n) -> Result<std::convert::Infallible, String> {\n    run_with(cmd, db, stage, source, level, now_ms, false)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

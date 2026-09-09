@@ -8,5 +8,7 @@
   "folder": "crates/bsc-ui/src/kit",
   "src": "crates/bsc-ui/src/kit/packaged_artifact.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [
+    "bsc-ui--kit--packaged-kit-json.rs"
+  ]
 }

@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--planner--workspace--render-repo-items.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_repo_items",
+  "src": "src-tauri/src/planner/workspace/render_repo_items.rs",
+  "folder": "src-tauri/src/planner/workspace",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// One markdown bullet per linked repo: `template` (`linked_repo_item()` / `github_repo_item()`) with\n/// `{full_name}`/`{local_path}` substituted, each `.trim_end()` + a trailing newline, concatenated.\n/// Empty repos ⇒ `\"\"`. The one copy of the loop the planner `CLAUDE.md` and `github_context.md` share.\npub(crate) fn render_repo_items(repos: &[String], project_key: &str, template: &str) -> String {\n    let mut out = String::new();\n    for full_name in repos {\n        let local_path = repo_dir(project_key, full_name);\n        out.push_str(&format!(\n            \"{}\\n\",\n            template\n                .replace(\"{full_name}\", full_name)\n                .replace(\"{local_path}\", &local_path.display().to_string())\n                .trim_end(),\n        ));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

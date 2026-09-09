@@ -1,0 +1,17 @@
+{
+  "id": "bsc-disk--link--sync-mtime.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sync_mtime",
+  "src": "crates/bsc-disk/src/link/sync_mtime.rs",
+  "folder": "crates/bsc-disk/src/link",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Push the shared inode's mtime to the newest in its group.\n///\n/// WITHOUT THIS, DEDUP COSTS A FULL REBUILD PER TREE AND UNDOES ITSELF. Hard links share metadata,\n/// so a linked artifact adopts the CANONICAL copy's mtime — which in every non-canonical tree reads\n/// as an output older than cargo recorded, so cargo rebuilds it. Measured on the first real run: 189\n/// and 190 crates recompiled (~150s each) in the two non-canonical trees, while the canonical tree\n/// recompiled 0. Those rebuilds then write fresh artifacts and break the links, so the reclaimed\n/// space comes back.\n///\n/// Cargo's staleness test is directional — it rebuilds when an output is OLDER than expected, never\n/// when it is newer. So moving the single shared inode to the group's NEWEST mtime satisfies every\n/// tree at once, and is the one metadata change a shared inode permits.\npub(crate) fn sync_mtime(path: &Path, mtime_ms: f64) {\n    let ft = filetime::FileTime::from_unix_time(\n        (mtime_ms / 1000.0).floor() as i64,\n        ((mtime_ms.rem_euclid(1000.0)) * 1_000_000.0) as u32,\n    );\n    // Best-effort: the worst case is exactly the rebuild this avoids.\n    let _ = filetime::set_file_mtime(path, ft);\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "filetime"
+  ]
+}

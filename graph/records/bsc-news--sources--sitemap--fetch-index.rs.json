@@ -1,0 +1,16 @@
+{
+  "id": "bsc-news--sources--sitemap--fetch-index.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fetch_index",
+  "src": "crates/bsc-news/src/sources/sitemap/fetch_index.rs",
+  "folder": "crates/bsc-news/src/sources/sitemap",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-news--sources--sitemap--fetch.rs"
+  ],
+  "code": "use super::*;\n\n/// Fetch a sitemap index and then its first `max_children` child sitemaps.\n///\n/// Bounded on purpose: Reuters' index names dozens of paginated children and the newest articles\n/// are in the first. Walking all of them would multiply one outlet's poll cost by an order of\n/// magnitude for pages the brief will never reach.\npub fn fetch_index(http: &Http, url: &str, max_children: usize) -> Result<Vec<FeedItem>, String> {\n    let children = parse_index(&http.get_text(url)?)?;\n    let mut items = Vec::new();\n    let mut last_err = None;\n    for child in children.iter().take(max_children) {\n        match fetch(http, child) {\n            Ok(mut got) => items.append(&mut got),\n            // One dead child must not cost the outlet's whole poll — but if every child failed the\n            // caller deserves the error rather than a silent empty list.\n            Err(e) => last_err = Some(e),\n        }\n    }\n    match last_err {\n        Some(e) if items.is_empty() => Err(e),\n        _ => Ok(items),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

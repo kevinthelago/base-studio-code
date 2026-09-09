@@ -1,0 +1,17 @@
+{
+  "id": "bsc-ui--backing-reconcile--stmt-set.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stmt_set",
+  "src": "crates/bsc-ui/src/backing_reconcile/stmt_set.rs",
+  "folder": "crates/bsc-ui/src/backing_reconcile",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The comparison unit for a REGION: statements, not lines.\n///\n/// WHY NOT LINES. Two things that are not content differences were being counted as content —\n/// REFORMATTING (`collapsiblecard` collapses its props interface onto one line where the file spreads it\n/// over twelve) and COMMENTS (the file's JSDoc is documentation; a record dropping it is not drift).\n/// `export` is stripped for the same reason: a record MUST export what it renders, while a file is free to\n/// keep the same function private — `infochip` is byte-identical apart from that keyword.\npub fn stmt_set(src: &str) -> HashSet<String> {\n    static BLOCK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    static LINE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    static WS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    let block = BLOCK.get_or_init(|| regex::Regex::new(r\"(?s)/\\*.*?\\*/\").expect(\"block\"));\n    // `(^|[^:])//…` — the `[^:]` keeps a `://` inside a URL from being read as a comment.\n    let line = LINE.get_or_init(|| regex::Regex::new(r\"(?m)(^|[^:])//[^\\n]*\").expect(\"line\"));\n    let ws = WS.get_or_init(|| regex::Regex::new(r\"\\s+\").expect(\"ws\"));\n\n    let no_comments = line.replace_all(&block.replace_all(src, \" \"), \"$1\").into_owned();\n    no_comments\n        .split(['\\n', ';'])\n        .map(|piece| {\n            let t = ws.replace_all(piece.trim(), \" \").into_owned();\n            t.strip_prefix(\"export \").map(str::to_string).unwrap_or(t)\n        })\n        .filter(|t| t.chars().count() > 12)\n        .collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "regex"
+  ]
+}

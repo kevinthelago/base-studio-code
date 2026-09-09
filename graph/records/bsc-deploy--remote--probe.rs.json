@@ -1,0 +1,14 @@
+{
+  "id": "bsc-deploy--remote--probe.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "probe",
+  "src": "crates/bsc-deploy/src/remote/probe.rs",
+  "folder": "crates/bsc-deploy/src/remote",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The probe: RUN the binary that `current` now points at, on the device.\n///\n/// This is the only step that can tell you the deploy actually worked. A symlink swap always succeeds;\n/// executing the result is what catches an architecture mismatch, a glibc that is too old, and a\n/// transfer that verified but landed on a full disk.\npub fn probe(device: &Device, name: &str) -> (bool, String) {\n    match ssh(device, &probe_script(name)) {\n        // The script always exits 0 and REPORTS the binary's status in its output, so a non-zero\n        // binary and an unreachable device stay distinguishable — they need different words.\n        Ok(out) => read_probe(&out),\n        Err(e) => (false, format!(\"could not reach the device to probe it: {e}\")),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

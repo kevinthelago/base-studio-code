@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--render--tsv.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tsv",
+  "src": "crates/plandb/src/cli/render/tsv.rs",
+  "folder": "crates/plandb/src/cli/render",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Sanitize one cell for TSV output: collapse the delimiters (tab / newline / CR) to a single space\n/// so a free-text title or body can't break the one-row-per-issue table.\npub(crate) fn tsv(s: &str) -> String {\n    s.replace(['\\t', '\\n', '\\r'], \" \")\n}\n"
+}

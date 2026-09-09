@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--platform--shell--shell-pref-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "shell_pref_path",
+  "src": "src-tauri/src/platform/shell/shell_pref_path.rs",
+  "folder": "src-tauri/src/platform/shell",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// On-disk path of the persisted shell preference.\npub(crate) fn shell_pref_path() -> std::path::PathBuf {\n    bsc_base_dir().join(\"shell.pref\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

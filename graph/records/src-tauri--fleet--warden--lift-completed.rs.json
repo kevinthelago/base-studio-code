@@ -1,0 +1,17 @@
+{
+  "id": "src-tauri--fleet--warden--lift-completed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lift_completed",
+  "src": "src-tauri/src/fleet/warden/lift_completed.rs",
+  "folder": "src-tauri/src/fleet/warden",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Lift any quarantine standing on a worker whose owned issues are all complete.\n///\n/// A worker in MAINTENANCE (#1957) has finished building; its post-completion activity is expected,\n/// not drift, so holding it quarantined punishes it for work it is no longer doing. Returns who was\n/// lifted — split out of [`tick`] so it is reachable without an `AppHandle`, which is the only reason\n/// the behaviour is testable at all.\npub(crate) fn lift_completed(report: &FleetReport) -> Vec<String> {\n    let mut lifted = Vec::new();\n    for pane in &report.completed {\n        if clear_quarantine(pane) {\n            log::info!(\"[warden] lifted quarantine for {pane} — its issues are complete (in maintenance)\");\n            lifted.push(pane.clone());\n        }\n    }\n    lifted\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "log"
+  ]
+}

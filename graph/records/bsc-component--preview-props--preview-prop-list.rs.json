@@ -1,0 +1,16 @@
+{
+  "id": "bsc-component--preview-props--preview-prop-list.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "preview_prop_list",
+  "src": "crates/bsc-component/src/preview_props/preview_prop_list.rs",
+  "folder": "crates/bsc-component/src/preview_props",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-component--preview-props--sample-prop-value.rs"
+  ],
+  "code": "use super::*;\n\n/// The props (name + sampled JS-source value) the bootstrap passes in `state`, in schema order — each\n/// non-`children` prop that samples to a non-`null` value. Mirrors `previewPropList` (componentPreview.ts).\npub(crate) fn preview_prop_list(props: &[Prop], state: &str, defaulted: &HashSet<String>) -> Value {\n    let mut out: Vec<Value> = Vec::new();\n    for p in props {\n        if p.name == \"children\" {\n            continue;\n        }\n        if let Some(v) = sample_prop_value(&p.name, &p.ty, p.req, state, defaulted.contains(&p.name)) {\n            out.push(json!({ \"name\": p.name, \"value\": v }));\n        }\n    }\n    Value::Array(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

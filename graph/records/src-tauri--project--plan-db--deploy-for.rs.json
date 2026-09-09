@@ -1,0 +1,20 @@
+{
+  "id": "src-tauri--project--plan-db--deploy-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "deploy_for",
+  "src": "src-tauri/src/project/plan_db/deploy_for.rs",
+  "folder": "src-tauri/src/project/plan_db",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--project--plan-db--db-path.rs",
+    "src-tauri--project--plan-db--open.rs"
+  ],
+  "code": "use super::*;\n\n/// The project's deploy config blob from plan.db, or None. Like [`fleet_for`] this does NOT create a\n/// db — the fleet launch probes every project, so it must never materialize an empty store.\npub(crate) fn deploy_for(project_key: &str) -> Option<serde_json::Value> {\n    if !db_path(project_key).exists() {\n        return None;\n    }\n    open(project_key).ok().and_then(|s| s.deploy_get().ok().flatten())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-sound--release--packaged-artifact.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "packaged_artifact",
+  "src": "crates/bsc-sound/src/release/packaged_artifact.rs",
+  "folder": "crates/bsc-sound/src/release",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The packaged artifact's canonical (LF) bytes.\npub(crate) fn packaged_artifact() -> String {\n    PACKAGED_KIT_JSON.replace(\"\\r\\n\", \"\\n\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

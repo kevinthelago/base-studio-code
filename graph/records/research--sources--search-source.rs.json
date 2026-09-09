@@ -1,0 +1,14 @@
+{
+  "id": "research--sources--search-source.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "search_source",
+  "src": "crates/research/src/sources/search_source.rs",
+  "folder": "crates/research/src/sources",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Run a search against one source, returning normalized papers (best-effort: an error from one\n/// source is the caller's to log + skip so a single flaky upstream doesn't fail the whole fan-out).\npub fn search_source(http: &Http, source: Source, query: &SearchQuery) -> Result<Vec<Paper>, String> {\n    match source {\n        Source::Arxiv => arxiv::search(http, query),\n        Source::SemanticScholar => semantic_scholar::search(http, query),\n        Source::Pubmed => pubmed::search(http, query),\n        Source::Crossref => crossref::search(http, query),\n        Source::Wikipedia => wikipedia::search(http, query),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

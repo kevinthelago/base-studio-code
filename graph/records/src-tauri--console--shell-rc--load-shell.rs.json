@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--console--shell-rc--load-shell.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "load_shell",
+  "src": "src-tauri/src/console/shell_rc/load_shell.rs",
+  "folder": "src-tauri/src/console/shell_rc",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Load an externalized `bsc-*` shell fragment from `data/shell/<name>` (config-dir-overridable, #2027).\n/// Normalizes CRLF→LF and GUARANTEES the #296 trailing-newline glue contract, so a Windows-edited config\n/// override can neither inject `\\r` into sourced bash nor drop the terminating newline that keeps each\n/// helper on its own line in the concatenated rc. The embedded seed is LF (pinned in `.gitattributes`),\n/// so for the shipped artifact both fixups are no-ops and the body stays byte-identical to the old inline\n/// string-literal constants.\npub(crate) fn load_shell(name: &str) -> String {\n    let mut s = crate::platform::config::load_str(&format!(\"shell/{name}\")).replace('\\r', \"\");\n    if !s.ends_with('\\n') {\n        s.push('\\n');\n    }\n    s\n}\n"
+}

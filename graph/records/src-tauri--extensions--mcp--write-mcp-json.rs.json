@@ -1,0 +1,17 @@
+{
+  "id": "src-tauri--extensions--mcp--write-mcp-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "write_mcp_json",
+  "src": "src-tauri/src/extensions/mcp/write_mcp_json.rs",
+  "folder": "src-tauri/src/extensions/mcp",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Merge the resolved MCP servers into `<cwd>/.mcp.json` by name (preserving any\n/// repo-authored entries). Skips entirely when there are none and no file exists.\n/// `enabledMcpjsonServers` in settings.json gates which are actually active.\npub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Result<(), String> {\n    let path = root.join(\".mcp.json\");\n    if mcp_servers.is_empty() && !path.exists() { return Ok(()); }\n    let mut doc = crate::platform::fsx::read_json_object_or_default(&path);\n    let servers = doc.as_object_mut().unwrap()\n        .entry(\"mcpServers\").or_insert_with(|| serde_json::json!({}));\n    crate::platform::fsx::ensure_object(servers);\n    let smap = servers.as_object_mut().unwrap();\n    for m in mcp_servers {\n        smap.insert(m.name.clone(), mcp_server_value(m));\n    }\n    crate::platform::fsx::atomic_write_json(&path, &doc).str_err()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}
