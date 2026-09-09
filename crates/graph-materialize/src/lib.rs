@@ -92,6 +92,7 @@
 // implementation, two entry points. They use `//` and never `//!` for exactly the E0753 reason above.
 include!("../plan.rs");
 include!("../emit.rs");
+include!("../sqlite_read.rs");
 
 // The manifest as a RECORD, and the driver that builds and tests a crate from records with cargo out
 // of the loop (`a-crate-builds-and-tests-from-the-database`). They live under `src/` rather than beside
@@ -102,6 +103,13 @@ pub mod manifest;
 
 #[cfg(test)]
 mod tests;
+
+// The pure-Rust SQLite reader's differential guard — fixtures WRITTEN by the real engine through the
+// `rusqlite` dev-dependency and READ by `sqlite_read.rs`, so the two implementations have to agree.
+// Its own module because it shares no fixture with `tests` and asserts a refusal (WAL) rather than an
+// output.
+#[cfg(test)]
+mod sqlite_read_tests;
 
 // The integration-test half — a crate's `tests/*.rs` targets, materialized from the EDGE tier
 // (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Its own module because it asserts its own

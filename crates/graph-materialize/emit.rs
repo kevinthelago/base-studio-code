@@ -496,7 +496,59 @@ pub fn records_dir_beside(store_path: &Path) -> Option<PathBuf> {
 ///
 /// Returns merged JSON TEXT rather than a `Value` because the materializer's consumers re-parse
 /// `raw` anyway; [`load_merged_value`] is the parsed twin for callers that want the document.
+/// The record DATABASE to read instead of the JSON store, when one is named.
+///
+/// `BSC_MATERIALIZE_FROM_DB` is an OPT-IN and takes a path, so both readers can run against the same
+/// tree and be diffed — the JSON store stays the default until the two are proven to agree
+/// (`retire-the-committed-json-record-store`). An empty value is treated as unset, because an exported
+/// -but-empty variable is the shape a shell leaves behind and it must not silently disable the build's
+/// only source of source.
+#[allow(dead_code)]
+pub fn record_db_override() -> Option<std::path::PathBuf> {
+    db_override_from(std::env::var("BSC_MATERIALIZE_FROM_DB").ok().as_deref())
+}
+
+/// The opt-in's parse rule, kept PURE so it is testable without mutating process-global env.
+///
+/// A test that sets an env var races every sibling in the same binary (`cargo test` threads them),
+/// and this repo has already paid for that once — so the rule lives here and the env read stays a
+/// one-liner above it.
+#[allow(dead_code)]
+pub fn db_override_from(raw: Option<&str>) -> Option<std::path::PathBuf> {
+    match raw {
+        Some(v) if !v.trim().is_empty() => Some(std::path::PathBuf::from(v.trim())),
+        _ => None,
+    }
+}
+
+/// The merged store, assembled from the LEDGER rather than from `graph/records/*.json`.
+///
+/// The envelope (`edges`, `note`, `version`) still comes from `graph/algorithms.json` when that file
+/// is present — the ledger holds RECORDS, and those sibling keys are not records. That split is why
+/// this returns the same document shape rather than a bare array: every consumer downstream re-parses
+/// `implementations` and would otherwise lose the edge table.
+#[allow(dead_code)]
+pub fn load_store_from_db(db_path: &Path, store_path: &Path) -> Result<String, String> {
+    let lane = std::env::var("BSC_GRAPH_LANE").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "main".to_string());
+    let records = read_lane(db_path, &lane)?;
+    let mut store: serde_json::Value = if store_path.exists() {
+        let raw = std::fs::read_to_string(store_path)
+            .map_err(|e| format!("cannot read {}: {e}", store_path.display()))?;
+        serde_json::from_str(&raw).map_err(|e| format!("{} is not valid JSON: {e}", store_path.display()))?
+    } else {
+        serde_json::json!({})
+    };
+    if !store.is_object() {
+        return Err(format!("{} is not a JSON object", store_path.display()));
+    }
+    store["implementations"] = serde_json::Value::Array(records);
+    serde_json::to_string(&store).map_err(|e| format!("cannot serialize the store read from {}: {e}", db_path.display()))
+}
+
 pub fn load_merged_store(store_path: &Path) -> Result<String, String> {
+    if let Some(db) = record_db_override() {
+        return load_store_from_db(&db, store_path);
+    }
     let raw = std::fs::read_to_string(store_path)
         .map_err(|e| format!("cannot read the committed graph store at {}: {e}", store_path.display()))?;
     let records_dir = match store_path.parent() {
@@ -562,6 +614,13 @@ pub fn emit_into(
     adoption: Adoption,
 ) -> Result<usize, String> {
     let plan = plan_for(manifest, explicit_root)?;
+    // THE OPT-IN MUST INVALIDATE THE BUILD, or toggling it is silently inert. Cargo re-runs a build
+    // script when a file it declared changed — it knows nothing about an env var unless told, so
+    // without these two lines `BSC_MATERIALIZE_FROM_DB=… cargo check` reuses the JSON-store output and
+    // reports success in 0.11s. MEASURED exactly that on the first end-to-end attempt, which is the
+    // whole reason this comment exists: the flag appeared to work while doing nothing at all.
+    println!("cargo:rerun-if-env-changed=BSC_MATERIALIZE_FROM_DB");
+    println!("cargo:rerun-if-env-changed=BSC_GRAPH_LANE");
     for p in &plan.rerun {
         println!("cargo:rerun-if-changed={}", p.display());
     }
