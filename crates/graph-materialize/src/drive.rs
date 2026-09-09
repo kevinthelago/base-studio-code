@@ -918,7 +918,7 @@ mod materialize_tests {
                 .filter(|p| p.is_file())
                 .filter_map(|p| std::fs::metadata(&p).and_then(|m| m.modified()).ok().map(|t| (t, p)))
                 .collect();
-            candidates.sort_by(|a, b| b.0.cmp(&a.0));
+            candidates.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
             let cargos = candidates.first().map(|(_, p)| p.clone());
             if let Some(c) = cargos {
                 let theirs = std::fs::read_to_string(&c).unwrap();
