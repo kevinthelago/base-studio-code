@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-payoff.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_payoff",
+  "src": "crates/bsc-fin/src/cli/render_payoff.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Which debt first — and what the second answer costs.\n///\n/// Both plans are printed. This module has no opinion about which one a person should run: the\n/// avalanche always pays less interest and the snowball always clears an account sooner, and only\n/// the person paying can say which of those they need.\npub fn render_payoff(c: &payoff::Comparison, skipped: &[String], notes: &[String]) -> String {\n    let mut out = String::new();\n    let m = |x: i64| crate::money::format_minor(x);\n    let line = |p: &payoff::Plan| format!(\n        \"  {:<10} {:>3} months · {} interest · clears in the order {}\\n\",\n        p.strategy.label(), p.months, m(p.total_interest.minor), p.order.join(\" → \")\n    );\n    out.push_str(&line(&c.avalanche));\n    out.push_str(&line(&c.snowball));\n\n    out.push('\\n');\n    if c.extra_interest.minor == 0 && c.extra_months == 0 {\n        out.push_str(\"  the two strategies agree here — the smallest debt is also the dearest one\\n\");\n    } else {\n        out.push_str(&format!(\n            \"  snowball costs {} more in interest and {} more month(s),\\n  and clears its FIRST debt {} month(s) sooner\\n\",\n            m(c.extra_interest.minor), c.extra_months, c.first_cleared_sooner\n        ));\n        out.push_str(\"  Neither is chosen for you: one is cheaper, the other is easier to keep going.\\n\");\n    }\n\n    if !skipped.is_empty() || !notes.is_empty() {\n        out.push_str(\"\\nWhat this is standing on:\\n\");\n        for s in skipped {\n            out.push_str(&format!(\"  · {s}\\n\"));\n        }\n        for n in notes {\n            out.push_str(&format!(\"  · {n}\\n\"));\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

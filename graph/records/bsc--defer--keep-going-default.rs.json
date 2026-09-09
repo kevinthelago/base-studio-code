@@ -1,0 +1,17 @@
+{
+  "id": "bsc--defer--keep-going-default.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "keep_going_default",
+  "src": "crates/bsc/src/defer/keep_going_default.rs",
+  "folder": "crates/bsc/src/defer",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The directives, compiled in as the fallback. The session rc normally exports the CONFIG-RESOLVED\n/// copies (user-overridable, #2145) — see `defer_prose` in `hook.rs`. Same `include_str!`-from-\n/// `src-tauri/data` pattern `bsc-component` uses for the packaged kit.\npub fn keep_going_default() -> &'static str {\n    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();\n    CELL.get_or_init(|| bsc_util::packaged::read_required(\"fleet/defer-directive.md\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

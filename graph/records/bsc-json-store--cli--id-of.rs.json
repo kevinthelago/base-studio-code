@@ -1,0 +1,14 @@
+{
+  "id": "bsc-json-store--cli--id-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "id_of",
+  "src": "crates/bsc-json-store/src/cli/id_of.rs",
+  "folder": "crates/bsc-json-store/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `id` of a stored Value — required, non-empty (it keys the on-disk file). `noun` names the\n/// record in the error (`each <noun> needs a non-empty \"id\"`).\npub fn id_of(v: &Value, noun: &str) -> Result<String, String> {\n    v.get(\"id\")\n        .and_then(Value::as_str)\n        .map(str::trim)\n        .filter(|s| !s.is_empty())\n        .map(str::to_string)\n        .ok_or_else(|| format!(\"each {noun} needs a non-empty \\\"id\\\"\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

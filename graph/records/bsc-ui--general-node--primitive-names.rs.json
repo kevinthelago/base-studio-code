@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--general-node--primitive-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "primitive_names",
+  "src": "crates/bsc-ui/src/general_node/primitive_names.rs",
+  "folder": "crates/bsc-ui/src/general_node",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--general-node--primitives.rs"
+  ],
+  "code": "use super::*;\n\n/// Every primitive name the contract defines — the closed `type` vocabulary.\npub fn primitive_names() -> Vec<String> {\n    primitives().keys().cloned().collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

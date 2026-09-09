@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--render-feature-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_feature_line",
+  "src": "crates/plandb/src/cli/nouns/render_feature_line.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A one-line feature entry: `invite-teammates  ✓ Invite teammates   (auth)` — ✓ = fully defined,\n/// which since #requires-names-components INCLUDES a non-empty `requires`.\npub(crate) fn render_feature_line(f: &PlanFeature) -> String {\n    // The rule itself lives in `crate::features` — see the block above `feature_specified` for why\n    // there is exactly one of each and what it cost when there were three. This site used to inline\n    // its own copy, which is how the mark and the footer came to disagree in one command's output.\n    let mark = if crate::features::feature_defined(f) { \"✓\" } else { \"·\" };\n    let stream = f.stream.as_deref().map(|s| format!(\"   ({s})\")).unwrap_or_default();\n    format!(\"{:<24} {} {}{}\", f.slug, mark, f.name, stream)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

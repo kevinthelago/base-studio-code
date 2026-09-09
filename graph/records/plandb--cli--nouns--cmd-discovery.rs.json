@@ -1,0 +1,16 @@
+{
+  "id": "plandb--cli--nouns--cmd-discovery.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_discovery",
+  "src": "crates/plandb/src/cli/nouns/cmd_discovery.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [
+    "plandb--cli--nouns--cmd-discovery-integration.rs"
+  ],
+  "code": "use super::*;\n\n/// `discovery` — the Discovery stage's DYNAMIC required-set (prose lives in discovery/<topic>.md).\npub(crate) fn cmd_discovery(args: &Args) -> Result<(), String> {\n    let sub = args.positional.get(1).map(String::as_str).unwrap_or(\"\");\n    let s = open_store(&args.db)?;\n    match sub {\n        // `discovery require/unrequire <topic>...` shape the DYNAMIC required set as the project\n        // clarifies. Discovery files gate on GENERATION (the gate checks each required\n        // `discovery/<topic>.md` exists) — they are not confirmed (#1028).\n        \"require\" | \"unrequire\" => {\n            let topics: Vec<&String> = args.positional.iter().skip(2).collect();\n            if topics.is_empty() {\n                return Err(format!(\"usage: bsc plan discovery {sub} <topic>...\"));\n            }\n            let required = sub == \"require\";\n            for t in &topics {\n                s.discovery_require(t, required).map_err(|e| e.to_string())?;\n            }\n            emit_set_result(args.json, &topics, if required { \"required\" } else { \"unrequired\" });\n            Ok(())\n        }\n        \"list\" => {\n            let required = s.discovery_list().map_err(|e| e.to_string())?;\n            emit_json_or_lines(args.json, &required, \"(no required discovery topics)\", |_, t| t.clone());\n            Ok(())\n        }\n        // `discovery integration set|list|remove` (#4024) — the integrations the user declared during\n        // Discovery, as DATA. Nested under `discovery` deliberately: this IS discovery output, and the\n        // top-level `bsc plan integration` noun is already taken by the DEPRECATED connector alias\n        // (#1721 → `bsc data connector`). Two different things — a connector MANIFEST is how you talk to\n        // a system; this is which systems the project needs and why — so they must not share a name.\n        \"integration\" => cmd_discovery_integration(args, &s),\n        other => Err(unknown_sub(args, \"discovery\", other)),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

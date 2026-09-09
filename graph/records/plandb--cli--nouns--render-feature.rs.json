@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--render-feature.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_feature",
+  "src": "crates/plandb/src/cli/nouns/render_feature.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The full human-readable spec of one feature (for `feature get`).\npub(crate) fn render_feature(f: &PlanFeature) -> String {\n    let mut out = format!(\"{}  {}\\n\", f.slug, f.name);\n    if let Some(s) = &f.stream {\n        out.push_str(&format!(\"  stream: {s}\\n\"));\n    }\n    if let Some(b) = &f.behavior {\n        out.push_str(&format!(\"  behavior: {b}\\n\"));\n    }\n    if let Some(a) = &f.approach {\n        out.push_str(&format!(\"  approach: {a}\\n\"));\n    }\n    if let Some(d) = &f.data {\n        out.push_str(&format!(\"  data: {d}\\n\"));\n    }\n    if !f.depends_on.is_empty() {\n        out.push_str(&format!(\"  depends on: {}\\n\", f.depends_on.join(\", \")));\n    }\n    if !f.tools.is_empty() {\n        out.push_str(&format!(\"  tools: {}\\n\", f.tools.join(\", \")));\n    }\n    // #4267: the plan → library edge. It round-tripped and showed under `--json`, but was absent from\n    // the HUMAN view — so a session or a user reading a feature could not see which library records it\n    // is meant to be built from, which is the one thing `requires` exists to communicate.\n    if !f.requires.is_empty() {\n        // Each entry rendered as its id, plus `(by …)` when it carries provenance — the whole reason\n        // the richer shape exists is that a reader can see which entries a director seeded and which a\n        // worker discovered, and a bare id list hides exactly that.\n        let rendered: Vec<String> = f\n            .requires\n            .iter()\n            .map(|r| match r.by() {\n                Some(by) => format!(\"{} (by {by})\", r.id()),\n                None => r.id().to_string(),\n            })\n            .collect();\n        out.push_str(&format!(\"  requires: {}\\n\", rendered.join(\", \")));\n    }\n    if !f.acceptance.is_empty() {\n        out.push_str(\"  acceptance:\\n\");\n        for a in &f.acceptance {\n            out.push_str(&format!(\"    - {a}\\n\"));\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--plandb-decision.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plandb_decision",
+  "src": "crates/plandb/src/cli/nouns/plandb_decision.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn plandb_decision(args: &Args, what: String) -> crate::Decision {\n    crate::Decision {\n        stage: args.stage.clone().unwrap_or_default(),\n        decision: what,\n        clause: args.clause.clone().unwrap_or_default(),\n        rationale: args.why.clone().unwrap_or_default(),\n        ..Default::default()\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-runway.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_runway",
+  "src": "crates/bsc-fin/src/cli/render_runway.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// How long the money lasts — on the LOW band, and saying so.\n///\n/// The headline is deliberately the pessimistic scenario. A runway on expected income is right on\n/// average and useless in the case that matters, so the other two are shown as context BENEATH it\n/// rather than offered as alternatives to quote.\npub fn render_runway(r: &runway::Runway, p: &projection::IncomeProjection, c: &obligations::ObligationCalendar, notes: &[String]) -> String {\n    let mut out = String::new();\n    let m = |x: i64| crate::money::format_minor(x);\n\n    if r.headline.months.is_empty() {\n        out.push_str(&format!(\"{}\\n\", runway::summarise(r)));\n        for x in &r.problems {\n            out.push_str(&format!(\"  · {x}\\n\"));\n        }\n        for n in notes {\n            out.push_str(&format!(\"  · {n}\\n\"));\n        }\n        return out;\n    }\n\n    out.push_str(&format!(\"{}\\n\\n\", runway::summarise(r)));\n    out.push_str(&format!(\"  starting liquid  {}\\n\\n\", m(r.starting_liquid.minor)));\n    out.push_str(\"  month      opening       income   obligations   discretionary       closing\\n\");\n    for x in &r.headline.months {\n        out.push_str(&format!(\n            \"  {:<9}{:>11}  {:>11}   {:>11}     {:>11}   {:>11}{}\\n\",\n            x.month,\n            m(x.opening.minor),\n            m(x.income.minor),\n            m(x.obligations.minor),\n            m(x.discretionary.minor),\n            m(x.closing.minor),\n            if x.shortfall.is_some() { \"  SHORT\" } else { \"\" },\n        ));\n    }\n\n    if !runway::survives_horizon(&r.headline) {\n        out.push_str(&format!(\n            \"\\n  {} a month more closes it — {} over a year\\n\",\n            m(r.headline.monthly_gap.minor),\n            m(runway::annual_gap(r).minor)\n        ));\n    }\n    // The other two scenarios are CONTEXT, shown as the gap each would need rather than as a length\n    // of runway — a reader who sees \"expected: 11 months\" will quote that number.\n    out.push_str(&format!(\n        \"\\n  if income comes in at expected  {} a month short · at high  {} a month short\\n\",\n        m(r.expected.monthly_gap.minor),\n        m(r.high.monthly_gap.minor)\n    ));\n\n    if let Some(h) = obligations::heaviest_window(c, 7) {\n        out.push_str(&format!(\"\\n  heaviest week  {} → {}  {}\\n\", h.from, h.to, m(h.total.minor)));\n    }\n\n    out.push_str(\"\\nWhat this is standing on:\\n\");\n    for a in &p.assumptions {\n        out.push_str(&format!(\"  · {a}\\n\"));\n    }\n    for x in &r.problems {\n        out.push_str(&format!(\"  · {x}\\n\"));\n    }\n    for x in &c.notes {\n        out.push_str(&format!(\"  · {x}\\n\"));\n    }\n    for n in notes {\n        out.push_str(&format!(\"  · {n}\\n\"));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

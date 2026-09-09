@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--cmd-market.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_market",
+  "src": "crates/plandb/src/cli/nouns/cmd_market.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `market` — the Market stage's scored assessment (one blob, #2430): the structured artifact\n/// behind the `marketDefined` gate. Validated at set-time (#2395): all six rubric dimensions scored\n/// 1-5 with a rationale + ≥1 fetched source each (citation discipline), plus a go|caution|no-go\n/// verdict; the echo mirrors the pane's \"N of 6 dimensions scored, cited\" readiness.\npub(crate) fn cmd_market(args: &Args) -> Result<(), String> {\n    cmd_blob_noun(\n        args, \"market\", \"market assessment JSON\", \"(no market assessment)\",\n        crate::validate::validate_market_config,\n        |s, v| s.market_set(v).map_err(|e| e.to_string()),\n        |s| s.market_get().map_err(|e| e.to_string()),\n        |v| format!(\"market set{}\", crate::validate::market_readiness(v)),\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

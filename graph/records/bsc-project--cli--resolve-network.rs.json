@@ -1,0 +1,15 @@
+{
+  "id": "bsc-project--cli--resolve-network.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolve_network",
+  "src": "crates/bsc-project/src/cli/resolve_network.rs",
+  "folder": "crates/bsc-project/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Which NETWORK a new project belongs to: the `--network` flag, else the one the CREATING SESSION\n/// belongs to, else none.\n///\n/// WHY INFER AT ALL. An architect is per network, and the project it creates is part of that network's\n/// domain — but `bsc project new` took no network, so every project an architect created started\n/// UNFILED. Glance scopes each tab by network, so an unfiled project is drawn in no tab, and neither is\n/// its director: indistinguishable, from the user's side, from the create having failed. That was\n/// reported as \"the finance architect failed to create a director\".\n///\n/// A FLAG WOULD NOT HAVE FIXED IT. The charter would have to remember to pass it on every create, and\n/// the one it forgets is silently unfiled again. The session already knows the answer, so it answers.\n///\n/// ONLY A NETWORK ARCHITECT'S PANE COUNTS. `BSC_AUDIT_PANE` is `<key>:<tail>` for every session in the\n/// app, so a worker at `studio-code:auth` would otherwise file its project into a \"network\" named\n/// `studio-code`. The pane must be exactly `<key>:architect` AND the key must be a `network-` id — the\n/// grammar `bsc network` mints and `bsc_session::network_architect_slug` validates.\n///\n/// Pure, and takes the environment as an argument for the same reason `resolve_origin` does: the rule\n/// is testable without a process environment.\npub(crate) fn resolve_network(flag: Option<String>, audit_pane: Option<String>) -> Option<String> {\n    let clean = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && v != \"?\");\n    if let Some(explicit) = clean(flag) {\n        return Some(explicit);\n    }\n    let pane = clean(audit_pane)?;\n    let (key, tail) = pane.split_once(':')?;\n    (tail == \"architect\" && key.starts_with(\"network-\") && key.len() > \"network-\".len())\n        .then(|| key.to_string())\n}\n",
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_session"
+  ]
+}

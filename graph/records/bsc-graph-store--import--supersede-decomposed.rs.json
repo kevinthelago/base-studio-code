@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--import--supersede-decomposed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "supersede_decomposed",
+  "src": "crates/bsc-graph-store/src/import/supersede_decomposed.rs",
+  "folder": "crates/bsc-graph-store/src/import",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--import--module-path.rs"
+  ],
+  "code": "use super::*;\n\n/// Tombstone every flat record a decomposition has superseded.\n///\n/// # The union of the two stores is NOT the truth, and this is where that shows\n///\n/// `bsc graph extract` rewrites `X.rs` into `X--mod.rs` plus children and drops the flat record from\n/// the COMMITTED store. The runtime store never hears about it and keeps the predecessor forever.\n/// Import both and two records claim one module, which `graph-materialize` refuses outright — *\"two\n/// records claim module `connector` of crate `data`\"* — and the whole build stops. Found by exporting\n/// and running the build, not by reading the data.\n///\n/// MEASURED on the real stores: 152 such pairs, every one exactly one `--mod.rs` and one flat, with no\n/// other shape among them. So the rule is narrow and checkable rather than a heuristic.\n///\n/// TOMBSTONED rather than skipped: the superseded record is imported first and then retired, so its\n/// content is in the ledger and one `revert` brings it back. That is the difference between resolving\n/// this and quietly dropping the loser.\npub fn supersede_decomposed(conn: &Connection, by: &str) -> Result<Vec<String>, String> {\n    let mut claims: std::collections::BTreeMap<(String, String), Vec<String>> = Default::default();\n    let mut st = conn\n        .prepare(\"SELECT id, json_extract(json, '$.src') FROM records WHERE tier = 'impl'\")\n        .map_err(|e| e.to_string())?;\n    let rows: Vec<(String, Option<String>)> = st\n        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))\n        .map_err(|e| e.to_string())?\n        .collect::<Result<_, _>>()\n        .map_err(|e| e.to_string())?;\n    for (id, src) in rows {\n        if let Some(k) = module_path(src.as_deref()) {\n            claims.entry(k).or_default().push(id);\n        }\n    }\n    let mut retired = Vec::new();\n    for ((krate, rel), ids) in claims {\n        if ids.len() != 2 {\n            continue;\n        }\n        let winners: Vec<&String> = ids.iter().filter(|i| i.ends_with(\"--mod.rs\")).collect();\n        if winners.len() != 1 {\n            continue;\n        }\n        let winner = winners[0].clone();\n        for id in ids.iter().filter(|i| **i != winner) {\n            crate::remove(conn, id, by,\n                Some(&format!(\"superseded by `{winner}` — both claimed module `{rel}` of `{krate}`\")))?;\n            retired.push(id.clone());\n        }\n    }\n    Ok(retired)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}
