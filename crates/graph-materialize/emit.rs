@@ -572,12 +572,22 @@ pub fn emit_into(
     let raw = load_merged_store(&plan.store_path)?;
     if let Some(dir) = records_dir_beside(&plan.store_path) {
         if dir.is_dir() {
-            // The DIRECTORY, always: cargo watches a directory by its mtime, which changes when a
-            // record is ADDED or REMOVED and not when one is edited. That is what keeps a new record
-            // for this crate from being missed — the crate would otherwise compile without it and
-            // nothing would say so.
-            println!("cargo:rerun-if-changed={}", dir.display());
-            // …and only the records this crate OWNS, for edits. See `Plan::owned_record_files`.
+            // ONLY THE RECORDS THIS CRATE OWNS. The directory itself is deliberately NOT watched.
+            //
+            // MEASURED 2026-09-09: cargo resolves a watched DIRECTORY by `mtime_recursive`, so
+            // naming `graph/records/` here is identical to naming all 2,936 files in it — one
+            // frontend `.ts` record edit rebuilt 77 crates and relinked the app in 22.9s. Dropping it
+            // takes the same edit to 0 crates and 0.38s, while touching a record the crate owns still
+            // rebuilds exactly that crate.
+            //
+            // THE COST, STATED PLAINLY. A record ADDED for this crate by a git operation, with no
+            // other record of the crate changed, is not seen until something else invalidates the
+            // build — MEASURED at 3 of the last 5 record-adding commits. The failure is LOUD rather
+            // than silent (the module is absent, so whatever references it fails to compile) and
+            // `the_drivers_materialization_matches_what_cargo_generated` fails the gate on any crate
+            // whose emitted source has fallen behind the store, so it cannot land. It is a real gap
+            // and the fix is a sentinel the record writer maintains, or per-crate record
+            // subdirectories — both are `a-crate-watches-only-the-records-it-owns`, undecided.
             for p in plan.owned_record_files(&dir) {
                 println!("cargo:rerun-if-changed={}", p.display());
             }
