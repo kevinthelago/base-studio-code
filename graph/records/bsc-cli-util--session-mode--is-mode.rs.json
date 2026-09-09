@@ -1,0 +1,14 @@
+{
+  "id": "bsc-cli-util--session-mode--is-mode.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_mode",
+  "src": "crates/bsc-cli-util/src/session_mode/is_mode.rs",
+  "folder": "crates/bsc-cli-util/src/session_mode",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether `m` names a mode. The refusal names the set, on the rule every other closed set here\n/// follows — a caller that guessed should be corrected, not left to guess again.\npub fn is_mode(m: &str) -> bool {\n    MODES.contains(&m)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

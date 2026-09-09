@@ -1,0 +1,14 @@
+{
+  "id": "bsc-cli-util--session-mode--mode-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mode_of",
+  "src": "crates/bsc-cli-util/src/session_mode/mode_of.rs",
+  "folder": "crates/bsc-cli-util/src/session_mode",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Which mode a resolved configuration IS in, or `None` when it matches neither.\n///\n/// Read from `provider` alone, deliberately. The model can legitimately differ from the packaged\n/// default — a machine with a different local model installed, or a project pinned to a Claude tier —\n/// and reporting such a project as \"no mode\" would be useless precisely where the answer matters.\npub fn mode_of(r: &Resolved) -> Option<&'static str> {\n    match r.get(\"provider\")? {\n        \"ollama\" | \"local\" => Some(\"local\"),\n        \"anthropic\" => Some(\"claude\"),\n        _ => None,\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
