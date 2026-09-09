@@ -176,7 +176,7 @@ describe("TerminalHost parked holding claims (#3357)", () => {
   });
 
   /// A DEBUG-studio session is per-REQUEST, so its pane id is not in the exact-match
-  /// `STUDIO_SESSION_PANE_IDS` the #3427 gate reads — and the mount the gate's comment named as the
+  /// `isStudioSessionPaneId` the #3427 gate reads — and the mount the gate's comment named as the
   /// guarantee (`DebugSessionMount`) no longer exists. The gate silently stopped covering the sessions
   /// that replaced it, and the failure is the one #3427 exists to prevent: reproduced before this fix,
   /// the launch went out with cwd `""` and initCmd `""` — which also skips `ensure_session_settings`,

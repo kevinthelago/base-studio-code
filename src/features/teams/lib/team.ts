@@ -185,11 +185,29 @@ export const ARCHITECT_NODE = "architect";
  *  right shape for the base-studio-code drill, which answers "what does the app run". The architect's
  *  drill answers "what can I command", and since #system-sessions-are-per-technology those are the
  *  per-technology SESSIONS. Editing the packaged JSON would have forced one of the two views to be
- *  wrong, changed the other drill's layout, and re-seeded a store record for a presentational reason. */
+ *  wrong, changed the other drill's layout, and re-seeded a store record for a presentational reason.
+ *
+ *  `librarian-python` IS GONE (`the-studio-session-set-is-derived-not-declared`). There has never been
+ *  a python record in this repo — MEASURED 2026-09-09, `impl.tech` over the committed record store is
+ *  {rust: 1944, typescript: 79} — so the node drew, opened a pane, and started a librarian session with
+ *  nothing to curate. The session set itself is DERIVED now (`studioSessionsFor`, over an axis the app
+ *  reads out of the stores), and the app REFUSES to start a studio that the axis does not produce; this
+ *  list is the one remaining place the technologies are still written down, so it is pinned to the
+ *  store instead — `studioNodeRoster.test.ts` fails when it names a technology the graph does not hold,
+ *  or omits one it does.
+ *
+ *  THAT PIN IS A GATE, NOT A DERIVATION, and the difference is worth stating rather than discovering.
+ *  A technology whose first record lands gains its SESSION with no code change; it gains its NODE when
+ *  someone adds the entry the red gate asks for. Closing that gap needs the runtime axis threaded to
+ *  the two Glance callers, which is `the-glance-studio-nodes-still-declare-their-technologies`. */
 const PER_TECH_EXPANSION: Readonly<Record<string, readonly string[]>> = {
   designer: ["designer-react", "designer-react-native"],
-  librarian: ["librarian-rust", "librarian-typescript", "librarian-python"],
+  librarian: ["librarian-rust", "librarian-typescript"],
 };
+
+/** The expansion, exposed so its gate can compare it against the store the technologies come from.
+ *  Not part of the feature's public API — `@/features/teams` does not re-export it. */
+export const PER_TECH_STUDIO_NODES = PER_TECH_EXPANSION;
 
 /** The single-technology sessions the architect commands, passed through unchanged — their stores
  *  carry no tech facet at any level, so there is nothing to split. The debugger and the request-pool
