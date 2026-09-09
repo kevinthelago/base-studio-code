@@ -1,0 +1,12 @@
+{
+  "id": "bsc-project--cli--nonempty.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "nonempty",
+  "src": "crates/bsc-project/src/cli/nonempty.rs",
+  "folder": "crates/bsc-project/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// A flag value that is actually a value: trimmed, with an empty one dropped to `None`. `link add`\n/// uses it so an empty descriptor is stored as ABSENT rather than as `\"\"` — the same normalization\n/// `update_contract` applies when a `set` clears one, so the two verbs cannot disagree about what an\n/// empty flag means.\npub(crate) fn nonempty(v: &Option<String>) -> Option<String> {\n    v.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)\n}\n",
+  "feature": "cli-platform"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "bsc-fin--cli--render-income.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_income",
+  "src": "crates/bsc-fin/src/cli/render_income.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--cli--clip.rs"
+  ],
+  "code": "use super::*;\n\n/// What arrives — and the WORST month, which is the number a plan has to survive.\n///\n/// The worst month leads. An average income reads as more certain than it is, and every downstream\n/// question (runway, what payment is sustainable, whether a transfer is safe) turns on the low\n/// months rather than the typical one.\npub fn render_income(a: &income::IncomeAnalysis, expected: crate::money::Money, notes: &[String]) -> String {\n    let mut out = String::new();\n    if a.sources.is_empty() && a.one_off.is_empty() {\n        out.push_str(\"no money arriving in what has been read\\n\");\n        for n in notes {\n            out.push_str(&format!(\"  · {n}\\n\"));\n        }\n        return out;\n    }\n    out.push_str(&format!(\n        \"worst month {} · usual {} · best {} — over {} whole month(s)\\n\\n\",\n        crate::money::format_minor(a.worst_month.minor),\n        crate::money::format_minor(a.typical_month.minor),\n        crate::money::format_minor(a.best_month.minor),\n        a.months_observed,\n    ));\n    for s in &a.sources {\n        out.push_str(&format!(\n            \"  {:<22} {:<12} {:>12} /mo  {} · low {}\\n\",\n            clip(&s.label, 22),\n            s.cadence.label(),\n            crate::money::format_minor(s.monthly_equivalent.minor),\n            s.stability.label(),\n            crate::money::format_minor(s.low.minor),\n        ));\n    }\n    if !a.sources.is_empty() {\n        out.push_str(&format!(\"\\n  expected  {} a month from repeating sources\\n\", crate::money::format_minor(expected.minor)));\n    }\n    if !a.one_off.is_empty() {\n        // NOT folded into the expectation. A tax refund is not income you can plan on receiving again.\n        out.push_str(&format!(\"\\n  {} one-off receipt(s), NOT counted as income you can plan on:\\n\", a.one_off.len()));\n        for t in &a.one_off {\n            out.push_str(&format!(\"    {} {:<26} {}\\n\", t.date, t.description, crate::money::format_minor(t.amount.minor)));\n        }\n    }\n    // Coverage is stated rather than implied. Two months is not an income pattern, and the figure\n    // above reads exactly the same whether it rests on two months or twenty.\n    if a.months_observed < 3 {\n        out.push_str(&format!(\"\\n  · {} whole month(s) is too thin to call a pattern — these figures will move\\n\", a.months_observed));\n    }\n    for n in notes {\n        out.push_str(&format!(\"  · {n}\\n\"));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

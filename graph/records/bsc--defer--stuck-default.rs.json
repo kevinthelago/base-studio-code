@@ -1,0 +1,17 @@
+{
+  "id": "bsc--defer--stuck-default.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stuck_default",
+  "src": "crates/bsc/src/defer/stuck_default.rs",
+  "folder": "crates/bsc/src/defer",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub fn stuck_default() -> &'static str {\n    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();\n    CELL.get_or_init(|| bsc_util::packaged::read_required(\"fleet/defer-stuck-directive.md\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

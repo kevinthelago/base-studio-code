@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--declare-hint.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "declare_hint",
+  "src": "crates/bsc-fin/src/cli/declare_hint.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// What to run to declare an account a statement just revealed.\n///\n/// A READY COMMAND, not a description of one. The gap between \"you should declare this\" and a line\n/// somebody can paste is where the loop between ingest and the registry actually breaks — and an\n/// agent driving this has no hands to go and look up the field names.\npub fn declare_hint(id: &str, institution: &str, kind: crate::account::Kind) -> String {\n    format!(\n        \"echo '{{\\\"id\\\":\\\"{id}\\\",\\\"institution\\\":\\\"{institution}\\\",\\\"kind\\\":\\\"{}\\\"}}' | bsc fin account set\",\n        kind.as_str()\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

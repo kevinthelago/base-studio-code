@@ -1,0 +1,17 @@
+{
+  "id": "bsc-ui--shadow--tidy.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tidy",
+  "src": "crates/bsc-ui/src/shadow/tidy.rs",
+  "folder": "crates/bsc-ui/src/shadow",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The brace arithmetic the removals leave behind. Separated from `sync` because each rule here has\n/// been wrong at least once and each is pinned by its own test.\npub(crate) fn tidy(text: &str) -> String {\n    static LEAD: OnceLock<regex::Regex> = OnceLock::new();\n    static TRAIL: OnceLock<regex::Regex> = OnceLock::new();\n    static RUN: OnceLock<regex::Regex> = OnceLock::new();\n    static LONE: OnceLock<regex::Regex> = OnceLock::new();\n    static EMPTY: OnceLock<regex::Regex> = OnceLock::new();\n\n    let lead = LEAD.get_or_init(|| regex::Regex::new(r\"\\{,\").expect(\"lead\"));\n    let trail = TRAIL.get_or_init(|| regex::Regex::new(r\",\\}\").expect(\"trail\"));\n    let run = RUN.get_or_init(|| regex::Regex::new(r\",{2,}\").expect(\"run\"));\n\n    // TO A FIXED POINT, which is the one place this DIVERGES from the script it replaces. The JS applied\n    // the three exactly once each, in this order — so `{,,Gamma}`, which is what removing two adjacent\n    // alternatives from the HEAD of a list produces, came out as `{,Gamma}`: still a brace list, with an\n    // empty alternative, so the lone-unwrap below cannot fire and the glob goes on matching `.tsx`. Two\n    // retirements from one directory is the ordinary tranche, not a corner. Bounded by the fact that\n    // every rule strictly shortens the text.\n    let mut out = text.to_string();\n    loop {\n        let next = run.replace_all(&trail.replace_all(&lead.replace_all(&out, \"{\"), \"}\"), \",\").into_owned();\n        if next == out {\n            break;\n        }\n        out = next;\n    }\n\n    // A brace list worn down to ONE alternative does not expand — `{FocusedBodies}.tsx` matches\n    // nothing, and the catalogue then reports its own entry as \"declared, but the glob missed it\".\n    out = LONE\n        .get_or_init(|| regex::Regex::new(r\"\\{([A-Za-z0-9_$.-]+)\\}\").expect(\"lone\"))\n        .replace_all(&out, \"${1}\")\n        .into_owned();\n    // ...and one worn down to NONE means every module under that directory is retired, so the whole\n    // pattern goes rather than being left to match nothing.\n    EMPTY\n        .get_or_init(|| {\n            regex::Regex::new(r#\"(?m)^[ \\t]*\"[^\"]*\\{\\}[^\"]*\",?[ \\t]*\\r?\\n\"#).expect(\"empty\")\n        })\n        .replace_all(&out, \"\")\n        .into_owned()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "regex"
+  ]
+}

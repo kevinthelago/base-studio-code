@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-priority.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_priority",
+  "src": "crates/bsc-fin/src/cli/render_priority.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Where this month's spare money goes.\n///\n/// The allocations print IN ORDER, because the order IS the recommendation — and each carries its\n/// own reason, so a reader can disagree with the rule rather than only with the number.\npub fn render_priority(p: &priority::Priority, discretionary: i64, read_notes: &[String]) -> String {\n    let mut out = String::new();\n    let m = |x: i64| crate::money::format_minor(x);\n    out.push_str(&format!(\n        \"{} a month is genuinely spare — the WORST month's net, not a good one\\n  (discretionary spending taken as {} a month)\\n\\n\",\n        m(p.available.minor),\n        m(discretionary)\n    ));\n    for al in &p.allocations {\n        out.push_str(&format!(\"  {:<9}{:>12}   {}\\n\", al.kind.label(), m(al.amount.minor), al.label));\n        out.push_str(&format!(\"            {}\\n\", al.reason));\n    }\n    out.push_str(&format!(\"\\n  total this month  {}\\n\", m(priority::total_commitment(p).minor)));\n    if p.lump_available.minor > 0 {\n        // A ONE-OFF, kept separate from the monthly figure so the two are not added by accident.\n        out.push_str(&format!(\"  liquid above the buffer, available as a ONE-OFF: {}\\n\", m(p.lump_available.minor)));\n    }\n    if !p.order.is_empty() {\n        out.push_str(&format!(\"\\n  the order after this one: {}\\n\", p.order.join(\" → \")));\n    }\n    if !p.warnings.is_empty() || !read_notes.is_empty() {\n        out.push_str(\"\\nWhat this is standing on:\\n\");\n        for w in &p.warnings {\n            out.push_str(&format!(\"  · {w}\\n\"));\n        }\n        for n in read_notes {\n            out.push_str(&format!(\"  · {n}\\n\"));\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

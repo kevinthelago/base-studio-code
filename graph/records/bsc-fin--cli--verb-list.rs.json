@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--verb-list.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "verb_list",
+  "src": "crates/bsc-fin/src/cli/verb_list.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every verb that exists, as prose, from the one place they are declared.\npub fn verb_list(prog: &str) -> String {\n    let names: Vec<String> = COMMANDS.iter().map(|c| format!(\"`{prog} {}`\", c.name)).collect();\n    match names.split_last() {\n        Some((last, rest)) if !rest.is_empty() => format!(\"{} or {last}\", rest.join(\", \")),\n        Some((last, _)) => last.clone(),\n        None => \"nothing — this surface has no verbs\".to_string(),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--nouns--check-direction.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "check_direction",
+  "src": "crates/plandb/src/cli/nouns/check_direction.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Reject an unknown `direction` by name, listing the two that exist.\npub(crate) fn check_direction(d: &str) -> Result<(), String> {\n    if crate::DIRECTIONS.contains(&d) {\n        return Ok(());\n    }\n    Err(format!(\"unknown direction '{d}' — use one of: {}\", crate::DIRECTIONS.join(\" | \")))\n}\n"
+}

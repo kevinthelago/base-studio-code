@@ -1,0 +1,19 @@
+{
+  "id": "bsc-json-store--cli--set-items.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "set_items",
+  "src": "crates/bsc-json-store/src/cli/set_items.rs",
+  "folder": "crates/bsc-json-store/src/cli",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-json-store--cli--id-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Upsert every `item` into `store` by its (required, non-empty) `id`, written verbatim, firing\n/// `on_write(id)` after each write lands (#2525). Returns the written ids in input order. Split out of\n/// the `set` arm so the per-id write + hook is unit-testable without a drivable stdin.\npub(crate) fn set_items(store: &Store, items: &[Value], noun: &str, on_write: Option<WriteHook>) -> Result<Vec<String>, String> {\n    let mut ids = Vec::new();\n    for item in items {\n        let id = id_of(item, noun)?;\n        let json = serde_json::to_string(item).map_err(|e| format!(\"set: {e}\"))?;\n        store.set(&id, &json)?;\n        if let Some(hook) = on_write {\n            hook(&id);\n        }\n        ids.push(id);\n    }\n    Ok(ids)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--cmd-deps.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_deps",
+  "src": "crates/plandb/src/cli/nouns/cmd_deps.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `deps` — the Deploy stage's locked dependency manifest (one blob). Validated at set-time (#2395)\n/// against what the manifest readers keep (name + npm/cargo ecosystem; registries need a url).\npub(crate) fn cmd_deps(args: &Args) -> Result<(), String> {\n    cmd_blob_noun(\n        args, \"deps\", \"dependency manifest JSON\", \"(no dependency manifest)\",\n        crate::validate::validate_deps_manifest,\n        |s, v| s.deps_set(v).map_err(|e| e.to_string()),\n        |s| s.deps_get().map_err(|e| e.to_string()),\n        |v| {\n            let (deps, regs) = crate::validate::deps_counts(v);\n            let gate = if deps == 0 { \" — gate blocked: 0 dependencies (the Dependencies gate needs ≥1)\" } else { \"\" };\n            format!(\"deps set ({deps} dependencies, {regs} registries){gate}\")\n        },\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

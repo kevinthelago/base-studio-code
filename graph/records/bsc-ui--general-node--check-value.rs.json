@@ -1,0 +1,17 @@
+{
+  "id": "bsc-ui--general-node--check-value.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "check_value",
+  "src": "crates/bsc-ui/src/general_node/check_value.rs",
+  "folder": "crates/bsc-ui/src/general_node",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--general-node--is-object.rs",
+    "bsc-ui--general-node--is-node-like.rs"
+  ],
+  "code": "use super::*;\n\n/// Check one prop VALUE against its declared type. `None` = acceptable.\n///\n/// Mirrors `checkValue` in `generalNode.ts` arm for arm, including the wording. Note `function`:\n/// in a data tree a handler is the NAME of a host action, never a literal — a stricter and more\n/// meaningful rule than a type check, since a tree carrying a function has stopped being data.\npub(crate) fn check_value(ty: &str, values: Option<&Vec<Value>>, v: &Value) -> Option<String> {\n    match ty {\n        \"string\" => (!v.is_string()).then(|| \"expected a string\".to_string()),\n        \"number\" => (!v.is_number()).then(|| \"expected a number\".to_string()),\n        \"boolean\" => (!v.is_boolean()).then(|| \"expected a boolean\".to_string()),\n        \"enum\" => {\n            let allowed: Vec<&str> = values\n                .map(|vs| vs.iter().filter_map(Value::as_str).collect())\n                .unwrap_or_default();\n            if allowed.is_empty() {\n                return None; // an enum with no declared set constrains nothing\n            }\n            let got = v.as_str().unwrap_or(\"\");\n            if allowed.contains(&got) {\n                None\n            } else {\n                let shown = match v {\n                    Value::String(s) => s.clone(),\n                    other => other.to_string(),\n                };\n                Some(format!(\"\\\"{shown}\\\" is not one of {}\", allowed.join(\", \")))\n            }\n        }\n        \"node\" => {\n            if v.is_string() || v.is_number() {\n                return None;\n            }\n            if let Some(arr) = v.as_array() {\n                return (!arr.iter().all(is_node_like)).then(|| \"expected nodes or text\".to_string());\n            }\n            (!is_node_like(v)).then(|| \"expected a node, a list of nodes, or text\".to_string())\n        }\n        \"function\" => (!v.is_string()).then(|| {\n            \"expected an action NAME (a string) — a data tree binds handlers by name, it cannot carry a function\"\n                .to_string()\n        }),\n        \"color\" => (!v.is_string()).then(|| \"expected a color string (token or CSS color)\".to_string()),\n        \"space\" | \"fontSize\" => (!(v.is_number() || v.is_string()))\n            .then(|| \"expected a rung name or a number\".to_string()),\n        \"tracks\" => (!(v.is_number() || v.is_string()))\n            .then(|| \"expected a track count (number) or a template string\".to_string()),\n        \"style\" => (!is_object(v)).then(|| \"expected a style object\".to_string()),\n        // Contents deliberately unchecked — the manifest keeps array/object shapes in prose, so there\n        // is no schema to check against. The container is verified and no further; that gap is stated\n        // in `VALIDATION_COVERAGE` rather than left for a caller to discover.\n        \"array\" => (!v.is_array()).then(|| \"expected an array\".to_string()),\n        \"object\" => (!is_object(v)).then(|| \"expected an object\".to_string()),\n        _ => None,\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--place-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "place_path",
+  "src": "crates/bsc-fin/src/cli/place_path.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn place_path() -> Result<std::path::PathBuf, String> {\n    let base = bsc_util::bsc_base_dir().ok_or_else(|| \"no base dir ($HOME unset)\".to_string())?;\n    Ok(base.join(\"fin\").join(\"place.json\"))\n}\n",
+  "feature": "finance",
+  "crateDeps": [
+    "bsc_util"
+  ]
+}
