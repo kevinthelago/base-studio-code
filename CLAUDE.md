@@ -469,10 +469,29 @@ the graph** (they carry `build = "../graph-materialize/build.rs"`; count them wi
 **A record lives in up to four places, and a partial write is the failure mode.** Leave one behind and
 `graph-promote-check` goes red for every session on the box, or worse, the change is silently inert.
 
-    ~/.base-studio-code/knowledge/algorithms.json   RUNTIME store — per-user, SHARED BY EVERY SESSION
-    <repo>/graph/{algorithms.json,records/*.json}   REPO store — what the BUILD compiles, BOTH halves
+    ~/.base-studio-code/knowledge/graph.db          RUNTIME store — the LEDGER. What `bsc graph impl
+                                                    get|set` actually reads and writes.
+    ~/.base-studio-code/knowledge/algorithms.json   LEGACY runtime FILE — superseded by the ledger and no
+                                                    longer written. Reading it to check a write "fails"
+                                                    whatever you did; go through the store.
+    <repo>/graph/{algorithms.json,records/*.json}   REPO store — what the BUILD compiles, BOTH halves.
+                                                    BEING RETIRED, and still authoritative until it is.
     src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS; NOT a build input any more
     .bsc-records/                                   EMITTED — rebuilt from the REPO store; never hand-edited
+
+> **THE COMMITTED JSON STORE IS ON ITS WAY OUT — and it is STILL THE BUILD AUTHORITY.** Both halves
+> above are being retired for the ledger under `retire-the-committed-json-record-store`
+> (`epic-retire-json-ledgers-for-db-and-git-drivers`). Until that lands, keep writing them: nothing in
+> the build path knows what a `.db` is — `graph-materialize` and `bsc-emit` read the JSON pair, and
+> `graph/algorithms.json` is also the marker `repo_root()` walks ancestors to find, so it is load-bearing
+> twice over.
+>
+> **Do NOT read "being retired" as "the ledger is the store now".** MEASURED 2026-09-09, the two have
+> diverged in BOTH directions: **436 records are committed-only** (229 of them decomposition CHILDREN
+> whose flat parent is all the ledger still has — `bsc-fin--cli.rs` alone has 35) and **304 are
+> ledger-only** (205 flat predecessors). Pointing the build at the ledger today would revert the
+> decomposition wave. Reconciling those two sets is phase 0 of the retirement and nothing else starts
+> until it is done.
 
 **STEP 4 IS NO LONGER LOAD-BEARING FOR A FRONTEND MODULE** (`retire-the-packaged-seed-directories`).
 `bsc-emit` used to materialize `.bsc-records/` from the packaged seed, so a TypeScript record needed the
