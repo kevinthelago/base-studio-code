@@ -518,6 +518,22 @@ step. `npm run gate` runs the emit first (beside the disk sweep, for the same re
 command every worktree agent runs), and so do the npm build paths. Run it by hand only if you reach for
 cargo directly in a tree that has never been gated.
 
+**To ADD a crate, create a RECORD** — never a file. It registers `crates/<name>` in the workspace in
+the same step, because a record with no `members` entry is invisible to cargo and a `members` entry
+with no record makes every cargo command fail on a manifest no emit will ever produce.
+
+```bash
+cargo run -p graph-materialize --bin sync-manifests -- new <crate>   # record + registration
+npm run emit:manifests                                               # its Cargo.toml appears
+```
+
+`import` is the opposite direction and is a MIGRATION, not a workflow — it reads files that already
+exist. **It refuses to prune by default, and that refusal is load-bearing:** a file-derived import
+cannot tell a DELETED crate from an UN-EMITTED one, because since the flip both are a missing file.
+MEASURED on a fresh-clone-shaped tree, an earlier version reported **78 removals of 82 records** —
+and the records are now the only copy. 56 of 80 crate directories hold nothing but their untracked
+manifest, so those directories do not exist at all in a fresh checkout.
+
 **Edit the RECORD, never the file** — an edit to `Cargo.toml` is erased by the next emit, silently.
 `every_stored_record_regenerates_its_manifest_byte_for_byte` fails if the two ever disagree, so a hand
 edit is caught rather than shipped.
