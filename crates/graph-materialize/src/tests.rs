@@ -71,10 +71,12 @@ fn the_repo_root_is_found_by_walking_up_never_by_counting_directories() {
             "a crate at `{rel}` must resolve to the SAME root — depth is not a signal"
         );
     }
-    // …and a directory with no store above it is a named error, not a path that silently misses.
+    // …and a directory with no MARKER above it is a named error, not a path that silently misses.
+    // It names `graph/store.toml` rather than the store: root discovery stopped keying on the store
+    // file (`the-repo-root-is-its-own-marker`), so the error has to send a reader to the marker.
     let orphan = scratch("orphan");
-    let err = repo_root_by_walk(&orphan).expect_err("no store above it");
-    assert!(err.contains("graph/algorithms.json"), "names what it looked for: {err}");
+    let err = repo_root_by_walk(&orphan).expect_err("no marker above it");
+    assert!(err.contains("graph/store.toml"), "names what it looked for: {err}");
     assert!(err.contains(&orphan.display().to_string()), "names where it started: {err}");
 }
 

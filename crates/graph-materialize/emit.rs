@@ -65,28 +65,74 @@ pub enum Adoption {
     Optional,
 }
 
-/// The nearest ancestor of `manifest` (inclusive) that holds `graph/algorithms.json`.
+/// The nearest ancestor of `manifest` (inclusive) that holds `graph/store.toml`.
+///
+/// THE MARKER IS NOT THE STORE, and that separation is the whole point of this function's shape.
+/// Root discovery used to key on `graph/algorithms.json`, so the store file had a second job nobody
+/// had named: retiring it broke root resolution for all 75 materialized crates INDEPENDENTLY of the
+/// records they compile from (`retire-the-committed-json-record-store` measured that as its own
+/// blocker). `graph/store.toml` exists only to answer "is this a repo root", so no future move of the
+/// store can take root discovery down with it.
 ///
 /// NEAREST wins, deliberately: every nested worktree (`wt-<short>/`) is itself a checkout with its own
 /// committed store, and a walk that preferred the outermost match would compile every worktree against
 /// the root checkout's records.
+///
+/// The legacy anchor is still accepted, and that is TRANSITIONAL rather than belt-and-braces: a
+/// worktree checked out at a commit older than the marker has no `store.toml`, and refusing there
+/// would break every parked tree in the pool the moment this lands. Drop the fallback once no branch
+/// predates the marker.
 ///
 /// This REPLACES `manifest.parent().and_then(Path::parent).expect("crates/<name> is two deep")`, which
 /// was correct for exactly one shape and silently wrong — resolving OUTSIDE the repo — for every other.
 pub fn repo_root_by_walk(manifest: &Path) -> Result<PathBuf, String> {
     let mut dir = Some(manifest);
     while let Some(d) = dir {
-        if d.join("graph").join("algorithms.json").is_file() {
+        let graph = d.join("graph");
+        if graph.join("store.toml").is_file() || graph.join("algorithms.json").is_file() {
             return Ok(d.to_path_buf());
         }
         dir = d.parent();
     }
     Err(format!(
-        "no `graph/algorithms.json` in {} or any ancestor of it — graph materialization needs the \
-         COMMITTED store, which is what makes a fresh clone, CI and every nested worktree build. Pass \
-         an explicit root if this crate lives outside the repo.",
+        "no `graph/store.toml` in {} or any ancestor of it — graph materialization needs the repo \
+         root, and that marker is what makes a fresh clone, CI and every nested worktree find one. \
+         Pass an explicit root if this crate lives outside the repo.",
         manifest.display()
     ))
+}
+
+/// Which store the build compiles from, named by `graph/store.toml`.
+///
+/// Read from the marker rather than hard-coded so `retire-the-committed-json-record-store` phase 3 is
+/// a one-line change to a committed file instead of a code change in a build-dependency of 75 crates.
+/// A missing or unreadable marker falls back to the historical name, for the same transitional reason
+/// the walk above accepts the legacy anchor.
+///
+/// Deliberately a two-line parse and not a TOML dependency: this is a build-dependency of 75 crates
+/// held to `serde_json` and nothing else, and the file is ours — one `key = "value"` line.
+pub fn store_name(repo_root: &Path) -> String {
+    let marker = repo_root.join("graph").join("store.toml");
+    let text = match std::fs::read_to_string(&marker) {
+        Ok(t) => t,
+        Err(_) => return "algorithms.json".to_string(),
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("store") {
+            let rest = rest.trim_start();
+            if let Some(v) = rest.strip_prefix('=') {
+                let v = v.trim().trim_matches('"');
+                if !v.is_empty() {
+                    return v.to_string();
+                }
+            }
+        }
+    }
+    "algorithms.json".to_string()
 }
 
 /// The repo-relative source prefix for a crate — `crates/plandb/src/`, `src-tauri/src/`.
@@ -122,7 +168,7 @@ pub fn plan_for(manifest: &Path, explicit_root: Option<&Path>) -> Result<Plan, S
         Some(r) => r.to_path_buf(),
         None => repo_root_by_walk(manifest)?,
     };
-    let store_path = repo_root.join("graph").join("algorithms.json");
+    let store_path = repo_root.join("graph").join(store_name(&repo_root));
     let crate_dir = manifest
         .file_name()
         .and_then(|s| s.to_str())

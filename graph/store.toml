@@ -1,0 +1,17 @@
+# THE REPO-ROOT MARKER, and the store the build reads. One job each.
+#
+# Root discovery used to key on `graph/algorithms.json` (`repo_root_by_walk`), which conflated two
+# questions that are not the same one: WHERE IS THE REPO, and WHERE IS THE STORE. That conflation is
+# why retiring the store breaks root discovery for all 75 materialized crates independently of the
+# records — the file has a second job nobody named, and `retire-the-committed-json-record-store`
+# measured it as a separate blocker from the records themselves.
+#
+# This file has exactly one purpose, so nothing can obsolete it by moving somewhere else. It is
+# COMMITTED, which is what makes a fresh clone, CI and every nested worktree resolve a root at all.
+#
+# NEAREST WINS on the walk: each `wt-<short>/` is its own checkout with its own store, and preferring
+# the outermost match would compile every worktree against the root checkout's records.
+
+# The store `graph-materialize` and `bsc-emit` compile from, relative to this directory.
+# `retire-the-committed-json-record-store` phase 3 changes this line and nothing else.
+store = "algorithms.json"
