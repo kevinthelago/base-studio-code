@@ -8,7 +8,9 @@
   "folder": "features/glance/lib",
   "src": "src/features/glance/lib/featureNodes.ts",
   "provides": "@/features/glance/lib/featureNodes",
-  "composes": [],
+  "composes": [
+    "glance-data.ts"
+  ],
   "tests": [
     {
       "name": "featureNodes",

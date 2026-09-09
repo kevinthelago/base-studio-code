@@ -1,0 +1,20 @@
+{
+  "code": "// type.ts — the shared vocabulary the Text primitive is built on (#2057).\r\n//\r\n// One type scale, one semantic tone mapping. The named `TextSize` rungs mirror the `--fs-*` CSS\r\n// tokens in tokens.css (xxs=9 … xl=18) so the primitive and the stylesheet speak the same scale —\r\n// chosen from the real fontSize distribution (11/10/12/14/18 dominate). But a raw pixel number is\r\n// always legal too (the off-scale half-sizes 9.5/10.5/11.5/13 stay `size={10.5}`), which keeps\r\n// mechanical `<span style={{ fontSize }}>` → primitive conversions lossless.\r\n\r\n/** A font size: a named scale rung, or a raw pixel number for the off-scale cases. */\r\nexport type TextSize = number | \"xxs\" | \"xs\" | \"sm\" | \"md\" | \"lg\" | \"xl\";\r\n\r\n/** A semantic tone: maps to a foreground color token. Omit to inherit (no color forced). */\r\nexport type Tone = \"dim\" | \"muted\" | \"accent\" | \"danger\" | \"success\";\r\n\r\nconst SCALE: Record<Exclude<TextSize, number>, number> = { xxs: 9, xs: 10, sm: 11, md: 12, lg: 14, xl: 18 };\r\n\r\nconst TONE: Record<Tone, string> = {\r\n  dim: \"var(--fg-dim)\",\r\n  muted: \"var(--fg-muted)\",\r\n  accent: \"var(--accent)\",\r\n  danger: \"var(--danger)\",\r\n  success: \"var(--success)\",\r\n};\r\n\r\n/** Resolve a `TextSize` to a pixel number (named rung → scale, number → itself). */\r\nexport function fontSize(v: TextSize | undefined): number | undefined {\r\n  if (v == null) return undefined;\r\n  return typeof v === \"number\" ? v : SCALE[v];\r\n}\r\n\r\n/** Resolve a semantic `Tone` to its color token (undefined → inherit, no color set). */\r\nexport function toneColor(v: Tone | undefined): string | undefined {\r\n  return v == null ? undefined : TONE[v];\r\n}\r\n",
+  "composes": [],
+  "domain": "ui",
+  "folder": "shared/ui/typography",
+  "id": "type.ts",
+  "name": "type",
+  "provides": "@/shared/ui/typography/type",
+  "role": "algorithm",
+  "src": "src/shared/ui/typography/type.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "fontSize()",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { fontSize, toneColor } from \"@/shared/ui/typography/type\";\n\ndescribe(\"fontSize()\", () => {\n  it(\"maps named rungs to their pixel values\", () => {\n    expect(fontSize(\"xxs\")).toBe(9);\n    expect(fontSize(\"xs\")).toBe(10);\n    expect(fontSize(\"sm\")).toBe(11);\n    expect(fontSize(\"md\")).toBe(12);\n    expect(fontSize(\"lg\")).toBe(14);\n    expect(fontSize(\"xl\")).toBe(18);\n  });\n  it(\"passes raw pixel numbers through unchanged (incl. off-scale half-sizes)\", () => {\n    expect(fontSize(10.5)).toBe(10.5);\n    expect(fontSize(13)).toBe(13);\n    expect(fontSize(0)).toBe(0);\n  });\n  it(\"returns undefined for undefined\", () => {\n    expect(fontSize(undefined)).toBeUndefined();\n  });\n});\n\ndescribe(\"toneColor()\", () => {\n  it(\"maps each semantic tone to its color token\", () => {\n    expect(toneColor(\"dim\")).toBe(\"var(--fg-dim)\");\n    expect(toneColor(\"muted\")).toBe(\"var(--fg-muted)\");\n    expect(toneColor(\"accent\")).toBe(\"var(--accent)\");\n    expect(toneColor(\"danger\")).toBe(\"var(--danger)\");\n    expect(toneColor(\"success\")).toBe(\"var(--success)\");\n  });\n  it(\"returns undefined for undefined (inherit, no color forced)\", () => {\n    expect(toneColor(undefined)).toBeUndefined();\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "plandb--surfaces--is-crate-name-shaped.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_crate_name_shaped",
+  "src": "crates/plandb/src/surfaces/is_crate_name_shaped.rs",
+  "folder": "crates/plandb/src/surfaces",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// A crate name shaped like one: lowercase, digits and hyphens, non-empty.\n///\n/// # Why the check stops here, and where the real one belongs\n///\n/// The obvious guard is \"refuse a crate the workspace does not have\", and it does NOT belong in this\n/// crate. `plan.db` is the per-project store for ANY project — a CRM, a mobile app, a generated\n/// site — and \"the workspace\" is meaningless for almost all of them. Teaching `plandb` to find a\n/// repository root and parse its `Cargo.toml` would make every project pay for one project's model,\n/// and would be wrong the moment a plan is opened outside a Rust checkout.\n///\n/// The existence check belongs where the roster is known, which is `bsc surface` — it already\n/// derives the workspace members from the root manifest rather than a directory listing. Recorded\n/// here so the gap reads as a decision rather than an oversight.\npub fn is_crate_name_shaped(name: &str) -> bool {\n    !name.is_empty()\n        && name.len() <= 64\n        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')\n}\n"
+}

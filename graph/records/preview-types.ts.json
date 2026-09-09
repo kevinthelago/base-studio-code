@@ -1,0 +1,13 @@
+{
+  "code": "// Core types for the modular streaming preview feed consumer (#581).\r\n\r\n/** The set of renderable content kinds the registry dispatches on. */\r\nexport type RenderableKind =\r\n  | 'react-bundle'\r\n  | 'html'\r\n  | 'gltf'\r\n  | 'scene'\r\n  | 'image'\r\n  | 'video-frame';\r\n\r\n/**\r\n * A chunk arriving from the preview feed. One-shots are streams of length 1\r\n * (`final: true`). The `payload` is opaque to the shell; each renderer knows\r\n * its own payload shape.\r\n */\r\nexport interface RenderableChunk {\r\n  kind: RenderableKind;\r\n  /** Opaque label identifying the producer; chrome-only, never affects routing. */\r\n  source?: string;\r\n  /** Display mode hint, passed to the pane chrome (e.g. \"2d\" | \"3d\"). */\r\n  mode?: string;\r\n  /** Monotonically increasing sequence number for ordering. */\r\n  seq?: number;\r\n  /** True when this is the final chunk in the stream. */\r\n  final?: boolean;\r\n  /** Renderer-specific payload (opaque to the shell). */\r\n  payload: unknown;\r\n}\r\n\r\n/** Renderer-reported surface status, forwarded to the pane chrome. */\r\nexport interface PreviewStatus {\r\n  status: 'building' | 'ready' | 'error';\r\n  message?: string;\r\n}\r\n",
+  "composes": [],
+  "domain": "planner",
+  "folder": "features/planner/preview",
+  "id": "preview-types.ts",
+  "name": "types",
+  "provides": "@/features/planner/preview/types",
+  "role": "algorithm",
+  "src": "src/features/planner/preview/types.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

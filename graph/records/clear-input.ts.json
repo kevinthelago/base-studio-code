@@ -1,0 +1,20 @@
+{
+  "code": "/**\r\n * Bytes the app sends to a PTY to wipe the pending input line (the typed-but-\r\n * unsubmitted text on the prompt). Ctrl+U is the portable choice (#192):\r\n *\r\n * - **bash readline**: `unix-line-discard` — kills from the cursor to the start\r\n *   of the line. With the cursor at end-of-line (the common case when you stop\r\n *   mid-type and want to abandon what you've typed), that's the whole line.\r\n * - **claude's TUI input box**: clears the input. Many ink-based TUIs inherit\r\n *   the readline convention even though their input handling is otherwise\r\n *   bespoke.\r\n *\r\n * Mid-line clear in bash is a known partial: only the left half goes; the user\r\n * can press Ctrl+K (or Ctrl+E first) to finish the job. We opted for the\r\n * single, well-known control byte over a multi-byte combo so it works\r\n * uniformly in both contexts — the Ctrl+A select-all behavior some TUIs use\r\n * would make a combined Ctrl+A Ctrl+K sequence land the user in a \"text\r\n * highlighted\" state in claude.\r\n */\r\nexport const CLEAR_INPUT_BYTES = \"\\x15\";\r\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console/lib",
+  "id": "clear-input.ts",
+  "name": "clearInput",
+  "provides": "@/app/console/lib/clearInput",
+  "role": "algorithm",
+  "src": "src/app/console/lib/clearInput.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "CLEAR_INPUT_BYTES",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { CLEAR_INPUT_BYTES } from \"@/app/console/lib/clearInput\";\n\n/**\n * #192: the Ctrl+Shift+Backspace shortcut sends these bytes to the PTY to wipe\n * pending input. Pin the choice — flipping the byte changes user-visible\n * behavior in both bash and claude.\n */\ndescribe(\"CLEAR_INPUT_BYTES\", () => {\n  it(\"is Ctrl+U — the portable readline 'kill to start of line' control byte\", () => {\n    expect(CLEAR_INPUT_BYTES).toBe(\"\\x15\");\n  });\n\n  it(\"is a single byte — the PTY broadcast/write call should never fragment\", () => {\n    expect(CLEAR_INPUT_BYTES.length).toBe(1);\n  });\n});\n"
+    }
+  ],
+  "feature": "shell"
+}

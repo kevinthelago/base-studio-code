@@ -1,0 +1,15 @@
+{
+  "code": "/**\r\n * FNV-1a 32-bit hash — the canonical hash for the planner-sync protocol.\r\n *\r\n * Operates on UTF-8 bytes via TextEncoder for cross-platform parity: Rust\r\n * hashes &str bytes directly (UTF-8); JS must encode first. The Math.imul +\r\n * >>> 0 form is the only correct 32-bit overflow pattern in JavaScript (a plain\r\n * `*` promotes to float64 and loses precision past 53 bits; Math.imul gives the\r\n * correct low 32 bits of the integer product).\r\n *\r\n * Pinned test vectors in src/lib/plannerCore.fixtures.json (fnv1a32 section).\r\n */\r\nexport function fnv1a32(s: string): number {\r\n  let h = 0x811c9dc5;\r\n  const bytes = new TextEncoder().encode(s);\r\n  for (const b of bytes) {\r\n    h ^= b;\r\n    h = Math.imul(h, 0x01000193) >>> 0;\r\n  }\r\n  return h;\r\n}\r\n\r\n/** Lowercase 8-char hex representation of an fnv1a32 result. */\r\nexport function fnv1a32hex(s: string): string {\r\n  return fnv1a32(s).toString(16).padStart(8, \"0\");\r\n}\r\n",
+  "composes": [
+    "fnv1a32.ts"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/lib/plannerCore",
+  "id": "planner-core-hash.ts",
+  "name": "hash",
+  "provides": "@/features/planner/lib/plannerCore/hash",
+  "role": "algorithm",
+  "src": "src/features/planner/lib/plannerCore/hash.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

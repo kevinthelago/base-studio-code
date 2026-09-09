@@ -1,0 +1,20 @@
+{
+  "code": "// Shared numeric helpers (#2421) — feature-agnostic, pure. The one home for the clamp\r\n// that was written three ways (useDragResize's clampSize, useGraphViewport's local const,\r\n// and many inline Math.min/Math.max chains).\r\n\r\n/**\r\n * Clamp `value` into the inclusive `[min, max]` range.\r\n *\r\n * Equivalent to `Math.max(min, Math.min(max, value))` — so like every prior inline chain,\r\n * a caller passing an inverted range (min > max) gets `min` back.\r\n */\r\nexport function clamp(value: number, min: number, max: number): number {\r\n  return Math.max(min, Math.min(max, value));\r\n}\r\n",
+  "composes": [],
+  "domain": "core",
+  "folder": "shared/lib/core",
+  "id": "math.ts",
+  "name": "math",
+  "provides": "@/shared/lib/core/math",
+  "role": "algorithm",
+  "src": "src/shared/lib/core/math.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "clamp",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { clamp } from \"@/shared/lib/core/math\";\n\n// Covers the edge behaviors of BOTH former implementations (#2421): useDragResize's\n// `clampSize(value, min, max)` and useGraphViewport's `clamp(v, a, b)` were the same\n// `Math.max(min, Math.min(max, v))` chain — these pin that exact semantic.\ndescribe(\"clamp\", () => {\n  it(\"returns the value when inside the range\", () => {\n    expect(clamp(200, 100, 300)).toBe(200);\n  });\n  it(\"clamps below min up to min\", () => {\n    expect(clamp(50, 100, 300)).toBe(100);\n  });\n  it(\"clamps above max down to max\", () => {\n    expect(clamp(999, 100, 300)).toBe(300);\n  });\n  it(\"is inclusive at both bounds\", () => {\n    expect(clamp(100, 100, 300)).toBe(100);\n    expect(clamp(300, 100, 300)).toBe(300);\n  });\n  it(\"handles fractional values and negative ranges\", () => {\n    expect(clamp(0.5, 0, 1)).toBe(0.5);\n    expect(clamp(-10, -5, 5)).toBe(-5);\n    expect(clamp(0.005, 0.01, 8)).toBe(0.01);\n  });\n  it(\"returns min for an inverted range (min > max) — the Math.max-outermost chain semantic\", () => {\n    expect(clamp(5, 10, 0)).toBe(10);\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

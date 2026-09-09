@@ -1,0 +1,13 @@
+{
+  "code": "// Kit-change propagation actuator (#2277). Drains the store's queued kit-change dispatches\n// (`kitDispatches`, produced by setComponent's fan-out over the consumer index) and, for each CONSUMER\n// project whose per-project auto-dispatch toggle is ON, delivers a bounded, deduped set of BREAKING\n// changes to the ONE rail (#2806): a LIVE fleet → the project's director pane (bsc-issue → bsc-assign →\n// the UI worker re-runs `bsc ui emit sync`). A consumer with NO live fleet HOLDS in the queue (carried\n// forward, adopted on its next launch) — the GitHub-issue rail was dropped. Notify-only by default\n// (toggle OFF ⇒ surface-only, rendered by KitChangesCard). The gate/dedup/rate-limit is the pure\n// `planKitDrain`; this is the thin poll+deliver layer, mounted once in ConsoleWorkspace beside\n// useFaultTriage. It lives in app/console (not shared/) because it reads the app's pane-identity +\n// director-drive state.\n//\n// INERT since #app-stops-pushing-prompts. Its entire body was a poll that injected queued kit changes into a consumer's director. Nothing is lost: the same `kitDispatches` queue is rendered by the KitChangesBanner, and a kit change is now adopted by the DIRECTOR polling for it.\n//\n// The export SURVIVES deliberately: this module is registered in graphPlatform/appModules so graph\n// RECORDS can import it, and removing the export breaks record compilation at runtime. Inert-but-\n// exported is the shape useFleetGate took for the same reason when its launch pump was killed —\n// deleting the hook is not the fix, doing nothing is.\n\n/** Does nothing. See the note above. */\nexport function useKitDispatch(): void {\n  // Intentionally empty: no poll, no evaluation, no injection.\n}\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console",
+  "id": "use-kit-dispatch.ts",
+  "name": "useKitDispatch",
+  "provides": "@/app/console/useKitDispatch",
+  "role": "algorithm",
+  "src": "src/app/console/useKitDispatch.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

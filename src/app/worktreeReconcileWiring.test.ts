@@ -11,7 +11,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import algorithmsSeed from "@data/knowledge/algorithms.json";
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this module compiles
+// from (`retire-the-packaged-seed-directories`).
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 
 /** `useAppBoot` is a RECORD now (`the-frontend-modules-that-are-still-files-become-records`), so its
  *  source is the seed's `code`, not a file. FILE FIRST and record second, which is the same "src wins"
@@ -21,8 +24,8 @@ import algorithmsSeed from "@data/knowledge/algorithms.json";
 function moduleSource(file: string, provides: string): string {
   const onDisk = join(__dirname, file);
   if (existsSync(onDisk)) return readFileSync(onDisk, "utf8");
-  const rec = (algorithmsSeed as { implementations: { provides?: string; code?: string }[] })
-    .implementations.find((i) => i.provides === provides);
+  const rec = ((loadImplementations() ?? []) as { provides?: string; code?: string }[])
+    .find((i) => i.provides === provides);
   if (!rec?.code) throw new Error(`no file ${onDisk} and no seed record providing ${provides}`);
   return rec.code;
 }

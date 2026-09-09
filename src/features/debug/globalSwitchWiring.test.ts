@@ -6,10 +6,13 @@
 //
 // A WIRING guard, and it says so: it proves the mount reads `allowed` and combines nothing.
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this module compiles
+// from (`retire-the-packaged-seed-directories`).
+import { loadStore } from "@scripts/lib/recordStore.mjs";
 
 function mountSource(): string {
-  const seed = JSON.parse(readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8"));
+  const seed = loadStore();
   let found: string | null = null;
   const walk = (o: unknown): void => {
     if (Array.isArray(o)) return void o.forEach(walk);

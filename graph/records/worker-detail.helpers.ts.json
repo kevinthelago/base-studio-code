@@ -1,0 +1,13 @@
+{
+  "code": "// Shared constants + types for the per-agent WorkerDetail page (#499).\r\n\r\n/** Permission-tier → dot color for the WorkerDetail permissions grid. */\r\nexport const TIER_COLOR: Record<string, string> = {\r\n  allow: \"var(--success)\", ask: \"var(--accent)\", deny: \"var(--danger)\",\r\n};\r\n\r\n/** The modal states the WorkerDetail page can open. */\r\nexport type WorkerModal = \"steer\" | \"answer\" | \"stop\" | \"profile\";\r\n",
+  "composes": [],
+  "domain": "planner",
+  "folder": "features/planner/fleet",
+  "id": "worker-detail.helpers.ts",
+  "name": "workerDetail.helpers",
+  "provides": "@/features/glance/fleet/workerDetail.helpers",
+  "role": "algorithm",
+  "src": "src/features/planner/fleet/workerDetail.helpers.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

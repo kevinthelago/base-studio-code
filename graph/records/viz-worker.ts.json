@@ -1,0 +1,15 @@
+{
+  "code": "// The vizCode SANDBOX worker (#3233) — a dedicated module Web Worker that compiles + runs a stored\r\n// trace-program in an ISOLATED global scope (no DOM, no app state) and posts the recorded frames back.\r\n// This is where untrusted stored `vizCode` executes, so `new Function` (in compileVizProgram) and the\r\n// algorithm's `run` never touch the main thread. Spawned lazily by `vizSandbox.runInSandbox`.\r\n\r\nimport { runVizProgram } from \"@/features/algorithms/viz/examples/vizProgram\";\r\nimport type { VizWorkerRequest, VizWorkerResponse } from \"@/features/algorithms/viz/examples/vizSandbox\";\r\n\r\n// `self` is the worker global. Typed loosely (a minimal shape) to avoid pulling in the TS \"webworker\" lib,\r\n// which would clash with the app-wide \"dom\" lib (duplicate `self`/`postMessage` declarations). The message\r\n// types are shared with the client via `import type` (erased — no runtime cycle with vizSandbox).\r\nconst ctx = self as unknown as {\r\n  postMessage(message: VizWorkerResponse): void;\r\n  onmessage: ((event: { data: VizWorkerRequest }) => void) | null;\r\n};\r\n\r\nctx.onmessage = ({ data }) => {\r\n  try {\r\n    const { datatype, input, frames, source } = runVizProgram(data.code, data.input);\r\n    ctx.postMessage({ id: data.id, ok: true, datatype, input, frames, source });\r\n  } catch (err) {\r\n    ctx.postMessage({ id: data.id, ok: false, error: err instanceof Error ? err.message : String(err) });\r\n  }\r\n};\r\n",
+  "composes": [
+    "viz-program.ts"
+  ],
+  "domain": "algorithms",
+  "folder": "features/algorithms/viz/examples",
+  "id": "viz-worker.ts",
+  "name": "vizWorker",
+  "provides": "@/features/algorithms/viz/examples/vizWorker",
+  "role": "algorithm",
+  "src": "src/features/algorithms/viz/examples/vizWorker.ts",
+  "tech": "typescript",
+  "feature": "algorithms"
+}

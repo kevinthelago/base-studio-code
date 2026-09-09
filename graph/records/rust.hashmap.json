@@ -1,0 +1,10 @@
+{
+  "id": "rust.hashmap",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "HashMap",
+  "summary": "HashMap<K, V> — average-O(1) keyed lookup; the adjacency map and the memo / distance table.",
+  "composes": [],
+  "ref": "std::collections::HashMap",
+  "feature": "core"
+}

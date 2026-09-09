@@ -15,12 +15,20 @@
 //   never drifts — asserted here: the JSON matches the file, byte for byte
 //
 // Regenerate with `UPDATE_ALGOS=1 npx vitest run seedAlgorithms.gen`.
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { loadStore, writeStore } from "@scripts/lib/recordStore.mjs";
 
 const SEED_DIR = join(process.cwd(), "src/shared/lib/algorithms");
-const GRAPH_FILE = join(process.cwd(), "src-tauri/data/knowledge/algorithms.json");
+
+// THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`). These six nodes
+// are the ones the retirement census refuses — the file IS the source and the record is generated from
+// it — so the guard has to pin the copy the app actually reads, and that is now
+// `graph/algorithms.json` + `graph/records/*.json`. Read and written through the shared merged loader,
+// because a record lives in its own file under `graph/records/` and writing the merged document back
+// as one blob would duplicate every record in the store.
+const PACKAGED_SEED = join(process.cwd(), "src-tauri/data/knowledge/algorithms.json");
 
 /** seed module filename → the node id whose `code` it owns. */
 const OWNED: Record<string, string> = {
@@ -36,12 +44,11 @@ interface Impl { id: string; code?: string; provides?: string; src?: string }
 
 /** The `@/…` specifier a seed module answers, from its filename. */
 const specifierFor = (file: string) => `@/shared/lib/algorithms/${file.replace(/\.ts$/, "")}`;
-const readGraph = (): { implementations: Impl[] } =>
-  JSON.parse(readFileSync(GRAPH_FILE, "utf8")) as { implementations: Impl[] };
+const readGraph = (): { implementations: Impl[] } => loadStore() as { implementations: Impl[] };
 
 const readSeed = (file: string) => readFileSync(join(SEED_DIR, file), "utf8").replace(/\r\n/g, "\n").trimEnd();
 
-describe("algorithms seed ↔ @data/knowledge/algorithms.json (#3465)", () => {
+describe("algorithms seed ↔ the committed record store (#3465)", () => {
   const seedFiles = readdirSync(SEED_DIR).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
 
   it("every seed module is accounted for — no orphan file, no missing node", () => {
@@ -78,7 +85,25 @@ describe("algorithms seed ↔ @data/knowledge/algorithms.json (#3465)", () => {
         expect(impl!.code, `${id}.code drifted from seed/${file} — run UPDATE_ALGOS=1`).toBe(code);
       }
     }
-    if (changed) writeFileSync(GRAPH_FILE, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
+    if (changed) writeStore(graph);
+  });
+
+  // WHILE THE PACKAGED SEED STILL EXISTS it carries its own copy of these six, and nothing else pins
+  // it any more — the guard above moved to the committed store with the rest of the build. A copy that
+  // ships and drifts is worse than one that is simply gone, so it is asserted here until the seed is
+  // retired, at which point this whole test goes with it.
+  it("the packaged seed's copy agrees, for as long as it ships one", () => {
+    if (!existsSync(PACKAGED_SEED)) return;
+    const seedImpls = (JSON.parse(readFileSync(PACKAGED_SEED, "utf8")) as { implementations?: Impl[] })
+      .implementations ?? [];
+    let checked = 0;
+    for (const [file, id] of Object.entries(OWNED)) {
+      const impl = seedImpls.find((i) => i.id === id);
+      if (!impl) continue;
+      checked += 1;
+      expect(impl.code, `${id}.code in the PACKAGED SEED drifted from seed/${file}`).toBe(readSeed(file));
+    }
+    expect(checked, "the packaged seed exists but carries none of the six").toBe(Object.keys(OWNED).length);
   });
 
   // The node must also ANSWER the specifier its module answers, or no record can import it. Five

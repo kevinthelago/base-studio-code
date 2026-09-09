@@ -1,0 +1,17 @@
+{
+  "code": "export function scopeWriteGlobs(role, ownGlobs) { const cap = roleCapability(role, ownGlobs.length ? { writeGlobs: ownGlobs } : {}); if (cap.code === \"write\") return cap.writeGlobs; return hasScopedWriteCarveOut(cap) ? cap.writeGlobs : []; }",
+  "composes": [
+    "write-scope.ts",
+    "role-model.ts",
+    "typescript.array",
+    "typescript.string"
+  ],
+  "domain": "session",
+  "folder": "shared/lib/session",
+  "id": "scope-write-globs.ts",
+  "name": "scopeWriteGlobs",
+  "role": "algorithm",
+  "src": "src/shared/lib/session/writeScope.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

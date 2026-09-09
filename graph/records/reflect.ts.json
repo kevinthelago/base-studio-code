@@ -1,0 +1,14 @@
+{
+  "id": "reflect.ts",
+  "domain": "graphics",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "reflect",
+  "kind": "transform",
+  "summary": "Reflect a square matrix horizontally (mirror left↔right) — swap columns c and n-1-c in every row. Animated as column swaps in the Matrix visualization (#3221).",
+  "composes": [
+    "typescript.number"
+  ],
+  "code": "export function reflect(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a[0].length;\n  for (const r of a)\n    for (let c = 0; c < Math.floor(n / 2); c++) [r[c], r[n - 1 - c]] = [r[n - 1 - c], r[c]];\n  return a;\n}\n",
+  "feature": "reference"
+}

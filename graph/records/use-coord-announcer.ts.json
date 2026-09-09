@@ -1,0 +1,23 @@
+{
+  "code": "// useCoordAnnouncer (#3770, a11y epic #2725) — announces NEW coordination events to the screen reader.\n// App-level (the shell may import features); reuses the tunnel's `coordAlerts` derivation, whose `text`\n// is already the human line (\"api-stream paused and is waiting for you\"), so the spoken status matches\n// the CoordinatorInbox + the mobile alerts. It speaks the STRUCTURED events, never the raw terminal\n// stream (screen readers drown in that). The mount backlog is seeded SILENT so a reader isn't buried in\n// history on launch — only events that arrive after are announced.\nimport { useEffect, useRef } from \"react\";\nimport { useCoordLog } from \"@/shared/lib/fleet/useCoordLog\";\nimport { coordAlerts } from \"@/features/tunnel\";\nimport { announce } from \"@/shared/lib/a11y/announcer\";\n\nexport function useCoordAnnouncer(): void {\n  const { state } = useCoordLog();\n  const seen = useRef<Set<string>>(new Set());\n  const seeded = useRef(false);\n\n  useEffect(() => {\n    const alerts = coordAlerts(state);\n    if (!seeded.current) {\n      // First read after mount: remember the existing backlog without speaking it.\n      seeded.current = true;\n      for (const a of alerts) seen.current.add(a.id);\n      return;\n    }\n    for (const a of alerts) {\n      if (seen.current.has(a.id)) continue;\n      seen.current.add(a.id);\n      // `fleet-failed` is the one that can't wait (a stalled chain); everything else queues politely.\n      announce(a.text, { assertive: a.kind === \"fleet-failed\" });\n    }\n  }, [state]);\n}\n",
+  "composes": [
+    "features--tunnel--index.ts",
+    "use-coord-log.ts"
+  ],
+  "domain": "shell",
+  "folder": "app/a11y",
+  "id": "use-coord-announcer.ts",
+  "name": "useCoordAnnouncer",
+  "provides": "@/app/a11y/useCoordAnnouncer",
+  "role": "algorithm",
+  "src": "src/app/a11y/useCoordAnnouncer.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "useCoordAnnouncer (#3770)",
+      "src": "import { describe, it, expect, beforeEach, vi } from \"vitest\";\nimport { renderHook } from \"@testing-library/react\";\n\n// Hoisted so the vi.mock factories (which run before imports) can reference them.\nconst h = vi.hoisted(() => ({\n  announceMock: vi.fn(),\n  coordState: { alerts: [] as { id: string; kind: string; text: string }[] },\n}));\n\nvi.mock(\"@/shared/lib/a11y/announcer\", () => ({ announce: h.announceMock }));\nvi.mock(\"@/shared/lib/fleet/useCoordLog\", () => ({ useCoordLog: () => ({ state: h.coordState }) }));\nvi.mock(\"@/features/tunnel\", () => ({ coordAlerts: (s: typeof h.coordState) => s.alerts }));\n\nimport { useCoordAnnouncer } from \"@/app/a11y/useCoordAnnouncer\";\n\nconst alerts = (...a: { id: string; kind: string; text: string }[]) => ({ alerts: a });\n\ndescribe(\"useCoordAnnouncer (#3770)\", () => {\n  beforeEach(() => {\n    h.announceMock.mockClear();\n    h.coordState = { alerts: [] };\n  });\n\n  it(\"seeds the mount backlog SILENT, then announces only NEW events, deduped by id\", () => {\n    h.coordState = alerts({ id: \"a1\", kind: \"agent-paused\", text: \"api-stream paused\" });\n    const { rerender } = renderHook(() => useCoordAnnouncer());\n    expect(h.announceMock).not.toHaveBeenCalled(); // the backlog on mount is never spoken\n\n    h.coordState = alerts(\n      { id: \"a1\", kind: \"agent-paused\", text: \"api-stream paused\" },\n      { id: \"a2\", kind: \"fleet-landed\", text: \"ui landed a PR\" },\n    );\n    rerender();\n    expect(h.announceMock).toHaveBeenCalledTimes(1);\n    expect(h.announceMock).toHaveBeenCalledWith(\"ui landed a PR\", { assertive: false });\n\n    rerender(); // unchanged set → nothing new to announce\n    expect(h.announceMock).toHaveBeenCalledTimes(1);\n  });\n\n  it(\"announces a fleet-failed event assertively (it can't wait)\", () => {\n    const { rerender } = renderHook(() => useCoordAnnouncer()); // seed empty\n    h.coordState = alerts({ id: \"f1\", kind: \"fleet-failed\", text: \"a dependency chain failed\" });\n    rerender();\n    expect(h.announceMock).toHaveBeenCalledWith(\"a dependency chain failed\", { assertive: true });\n  });\n});\n"
+    }
+  ],
+  "feature": "shell"
+}

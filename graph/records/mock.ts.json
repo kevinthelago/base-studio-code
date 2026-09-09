@@ -1,0 +1,13 @@
+{
+  "code": "// Domain types — shared across store, components, and screens.\r\n// All sample data has been removed; see git history if needed.\r\n\r\nexport interface TextBlock     { kind: \"text\";     text: string }\r\nexport interface ThinkingBlock { kind: \"thinking\"; text: string; dur: string; collapsed?: boolean }\r\nexport interface ToolBlock     { kind: \"tool\";     tool: string; args: string; ok?: boolean; summary?: string; preview?: string }\r\ntype Block = TextBlock | ThinkingBlock | ToolBlock;\r\ntype AssistantTurn = { role: \"assistant\"; blocks: Block[] };\r\ntype UserTurn      = { role: \"user\";      text: string };\r\nexport type Turn = AssistantTurn | UserTurn;\r\n\r\nexport interface FileRow {\r\n  name: string; path: string;\r\n  depth?: number; dir?: boolean; open?: boolean;\r\n  status?: \"M\" | \"A\" | \"??\" | \"D\";\r\n}\r\n\r\nexport interface Branch {\r\n  n: string; cur?: boolean;\r\n  ahead?: number; behind?: number;\r\n  age: string; merged?: boolean; stale?: boolean;\r\n}\r\n\r\nexport interface DiffLine { sign: \" \" | \"+\" | \"-\"; text: string }\r\nexport interface DiffHunk { file: string; add: number; del: number; sample: DiffLine[] }\r\n\r\nexport interface Commit { s: string; m: string; who: string; t: string; head?: boolean; merge?: boolean }\r\n\r\nexport interface Schedule {\r\n  id: string; name: string; on: boolean;\r\n  when: string; target: string;\r\n  action: \"command\";\r\n  detail: string; lastRun: string; nextRun: string;\r\n}\r\n\r\nexport interface Command {\r\n  id: string; name: string; cmd: string;\r\n  kind?: \"claude\"; used: number; tags: string[];\r\n}\r\n\r\n// Project list, board, roadmap, and planning data now come from the GitHub API / live\r\n// planning session — no sample data remains here.\r\n",
+  "composes": [],
+  "domain": "data",
+  "folder": "shared/data",
+  "id": "mock.ts",
+  "name": "mock",
+  "provides": "@/shared/data/mock",
+  "role": "algorithm",
+  "src": "src/shared/data/mock.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

@@ -1,0 +1,16 @@
+{
+  "code": "// The debug feature's graph-platform surface (register-the-feature-logic-surface) — the modules a\n// graph-loaded record imports from this feature but does NOT redraw.\n//\n// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545)\n// and eager-importing them from `app/` would de-lazy the whole feature at boot. The feature's BARREL\n// calls this at module load, so the shadow catalogue's `ensurePlatform: () => import(\"@/features/debug\")`\n// is what registers them — the same shape `registerAutomationsPlatform` already uses.\n//\n// These files STAY on disk: registration is not migration. It makes a record that imports them\n// loadable, which is the prerequisite for migrating the modules that import THEM.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as RequestSession from \"@/features/debug/requestSession\";\n\nlet done = false;\n\n/** Register this feature's injected graph-platform modules by the specifiers a record imports. Idempotent. */\nexport function registerDebugPlatform(): void {\n  if (done) return;\n  done = true;\n  registerAppModule(\"@/features/debug/requestSession\", RequestSession);\n}\n",
+  "composes": [
+    "module-registry.ts",
+    "request-session.ts"
+  ],
+  "domain": "debug",
+  "folder": "features/debug",
+  "id": "debug-graph-platform.ts",
+  "name": "graphPlatform",
+  "provides": "@/features/debug/graphPlatform",
+  "role": "algorithm",
+  "src": "src/features/debug/graphPlatform.ts",
+  "tech": "typescript",
+  "feature": "maintenance-bots"
+}

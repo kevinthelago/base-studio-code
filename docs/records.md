@@ -1,10 +1,16 @@
 # Records — when a module is not a file
 
-Most of this app's frontend no longer exists as files. **1,094 modules ship as records** — 469 component
-records under `src-tauri/data/components/app/**` and 625 algorithm implementations in
-`src-tauri/data/knowledge/algorithms.json`, of which **895 carry a `provides`** and so answer a specifier
-an importer writes. **69 non-test modules remain under `src/`**, down from 388. This is epic #3604,
-"the graph IS the app".
+Most of this app's frontend no longer exists as files. **969 modules ship as records** — 311 component
+records under `src-tauri/data/components/app/**` and 658 implementations carrying a `provides` in the
+**committed record store** (`graph/algorithms.json` + `graph/records/*.json`, 2,661 records in all), each
+answering a specifier an importer writes. **57 non-test modules remain under `src/`**, down from 388. This
+is epic #3604, "the graph IS the app".
+
+> **The algorithm half moved out of the packaged seed** (`retire-the-packaged-seed-directories`). It used
+> to live in `src-tauri/data/knowledge/algorithms.json`; `bsc-emit` now materializes it from the committed
+> store instead — the same pair of files `graph-materialize` compiles 25 Rust crates from. So one store
+> decides what BOTH halves of the app compile, and a record edit is reviewable on a branch. The seed file
+> still exists and still ships, but nothing the build does reads it any more.
 
 > Those numbers move every tranche, and a stale one here is worse than none — this document went eleven
 > slices describing a tree that no longer existed. Re-measure rather than trust the prose:
@@ -12,6 +18,7 @@ an importer writes. **69 non-test modules remain under `src/`**, down from 388. 
 > ```bash
 > find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l   # files left
 > find src-tauri/data/components/app -name "*.json" | wc -l                     # component records
+> ls graph/records | wc -l                                                      # committed store records
 > ```
 
 If you have opened `src/` looking for a module and it was not there, this document is why, and what to do
@@ -60,14 +67,21 @@ There are two copies of every record and they are not the same thing.
 
 | | what it is | where |
 |---|---|---|
-| **seed** | what SHIPS. Checked into git, identical for everyone. | `src-tauri/data/components/app/**`, `src-tauri/data/knowledge/algorithms.json` |
-| **store** | your machine's live working copy, edited by the app and by designer sessions. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
+| **seed** (components) | what SHIPS, and for a COMPONENT also the committed home. Checked into git, identical for everyone. | `src-tauri/data/components/app/**` |
+| **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and 25 Rust crates. Checked into git, one file per record. | `graph/algorithms.json` + `graph/records/*.json` |
+| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
 
-`scripts/emit-records.mjs` materializes **the seed** — never the store — into a git-ignored `.bsc-records/`
-tree, which is what the compilers resolve against. So:
+The two committed homes are asymmetric and it matters: an ALGORITHM record has a git-tracked home that is
+not the packaged seed, and a COMPONENT record does not — `bsc ui promote` writes a new component record
+into its own file *under the packaged seed*. That is why the algorithms seed could be taken off the build
+path and the component seed cannot be, yet.
 
-- A record that exists only in your **store** cannot retire its file. It has to be **promoted** into the
-  seed first, or the module vanishes for everyone else.
+`scripts/emit-records.mjs` materializes the **committed** copies — never the runtime store — into a
+git-ignored `.bsc-records/` tree, which is what the compilers resolve against. So:
+
+- A record that exists only in your **runtime store** cannot retire its file. It has to be **promoted**
+  into the committed copy first (`bsc graph promote` for an algorithm, `bsc ui promote` for a component),
+  or the module vanishes for everyone else.
 - The two drift, in both directions. A designer edits the store; a merge moves the file. Never assume one
   is authoritative — `bsc ui retirable` grades the three-way (seed vs store vs file), and
   that grade is the whole safety story.

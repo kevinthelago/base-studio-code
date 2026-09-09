@@ -1,0 +1,9 @@
+{
+  "composes": [],
+  "id": "typescript.string",
+  "name": "string",
+  "ref": "string",
+  "role": "primitive",
+  "tech": "typescript",
+  "feature": "core"
+}

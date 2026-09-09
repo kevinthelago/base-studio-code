@@ -1,0 +1,20 @@
+{
+  "code": "// The theme try-on palette strip's model (#2834) — the semantic base-palette tokens a theme retints,\r\n// grouped for display (surfaces · text · borders · accent · status). These are exactly the keys every\r\n// packaged palette theme overrides; the strip shows each as the theme's override value when set, else\r\n// the live base token default. Pure (React-free) → unit-testable.\r\n\r\nexport interface PaletteToken {\r\n  /** Short display name under the swatch. */\r\n  name: string;\r\n  /** The CSS custom property the swatch reflects. */\r\n  token: string;\r\n}\r\n\r\nexport interface PaletteGroup {\r\n  label: string;\r\n  tokens: PaletteToken[];\r\n}\r\n\r\n/** The semantic palette, grouped — the 14 base-palette tokens every packaged theme retints. */\r\nexport const PALETTE_GROUPS: PaletteGroup[] = [\r\n  { label: \"Surfaces\", tokens: [\r\n    { name: \"canvas\", token: \"--bg-canvas\" },\r\n    { name: \"panel\", token: \"--bg-panel\" },\r\n    { name: \"elev\", token: \"--bg-elev\" },\r\n    { name: \"elev2\", token: \"--bg-elev2\" },\r\n  ] },\r\n  { label: \"Text\", tokens: [\r\n    { name: \"fg\", token: \"--fg\" },\r\n    { name: \"muted\", token: \"--fg-muted\" },\r\n    { name: \"dim\", token: \"--fg-dim\" },\r\n  ] },\r\n  { label: \"Borders\", tokens: [\r\n    { name: \"border\", token: \"--border\" },\r\n    { name: \"soft\", token: \"--border-soft\" },\r\n  ] },\r\n  { label: \"Accent\", tokens: [\r\n    { name: \"accent\", token: \"--accent\" },\r\n    { name: \"dim\", token: \"--accent-dim\" },\r\n  ] },\r\n  { label: \"Status\", tokens: [\r\n    { name: \"success\", token: \"--success\" },\r\n    { name: \"info\", token: \"--info\" },\r\n    { name: \"danger\", token: \"--danger\" },\r\n  ] },\r\n];\r\n\r\n/** The swatch colour for a token under a theme: the theme's literal override if it sets it, else the\r\n *  live base token via `var()` (so a base-look theme with no overrides shows the app defaults). */\r\nexport function swatchColor(vars: Record<string, string>, token: string): string {\r\n  return vars[token] ?? `var(${token})`;\r\n}\r\n",
+  "composes": [],
+  "domain": "designs",
+  "folder": "features/designs/lib",
+  "id": "palette.ts",
+  "name": "palette",
+  "provides": "@/features/designs/lib/palette",
+  "role": "algorithm",
+  "src": "src/features/designs/lib/palette.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "palette (#2834)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { PALETTE_GROUPS, swatchColor } from \"@/features/designs/lib/palette\";\n\ndescribe(\"palette (#2834)\", () => {\n  it(\"covers exactly the 14 semantic base-palette tokens every packaged theme retints\", () => {\n    const tokens = PALETTE_GROUPS.flatMap((g) => g.tokens.map((t) => t.token));\n    expect(tokens).toEqual(\n      expect.arrayContaining([\n        \"--bg-canvas\", \"--bg-panel\", \"--bg-elev\", \"--bg-elev2\",\n        \"--fg\", \"--fg-muted\", \"--fg-dim\",\n        \"--border\", \"--border-soft\",\n        \"--accent\", \"--accent-dim\",\n        \"--success\", \"--info\", \"--danger\",\n      ]),\n    );\n    expect(tokens.length).toBe(14);\n    expect(new Set(tokens).size).toBe(14); // no duplicate tokens across groups\n  });\n\n  it(\"swatchColor uses the theme's override when set, else the live base token via var()\", () => {\n    expect(swatchColor({ \"--accent\": \"#88c0d0\" }, \"--accent\")).toBe(\"#88c0d0\");\n    expect(swatchColor({}, \"--accent\")).toBe(\"var(--accent)\");\n  });\n});\n"
+    }
+  ],
+  "feature": "design-studio"
+}

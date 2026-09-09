@@ -1,0 +1,15 @@
+{
+  "code": "export function classifyImport(spec, registered) { if (registered(spec)) return 'platform'; if (spec.startsWith('@/') || spec.startsWith('.') || spec.startsWith('/')) return 'graph'; return 'library'; }",
+  "composes": [
+    "typescript.string",
+    "typescript.boolean"
+  ],
+  "domain": "runtime",
+  "folder": "shared/lib/runtime",
+  "id": "classify-import.ts",
+  "name": "classifyImport",
+  "role": "algorithm",
+  "src": "src/shared/lib/runtime/componentLoader.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

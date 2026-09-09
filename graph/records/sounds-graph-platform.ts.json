@@ -1,0 +1,17 @@
+{
+  "code": "// The sounds feature's graph-platform surface (#4215, epic #3604) — the modules a graph-loaded Sounds\n// imports but does NOT redraw: the pure sound domain (descriptors, the kit graph, the kit catalogue, the\n// synth) and the kit hook. Registered HERE, inside the feature, because the shell must not reach a\n// feature's internals (#1545). The sounds host calls this at module load, before the graph page loads.\n//\n// The split is the usual one at a smaller scale: the graph carries the LAYOUT (rail, inspector, kit\n// canvas), and everything that makes a noise or derives a graph stays code.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as SoundDescriptor from \"@/features/sounds/lib/soundDescriptor\";\nimport * as SoundGraph from \"@/features/sounds/lib/soundGraph\";\nimport * as SoundKits from \"@/features/sounds/lib/soundKits\";\nimport * as Synth from \"@/features/sounds/lib/synth\";\nimport * as UseSoundKits from \"@/features/sounds/useSoundKits\";\nimport * as GraphPlatform from \"@/features/sounds/graphPlatform\";\n\n/** Register the Sounds page's injected graph-platform modules by the specifiers it imports.\n *\n *  Idempotent, and holding NO MODULE STATE on purpose. `registerAppModule` is a Map set, so calling\n *  this twice writes the same entries twice and changes nothing — the `done` flag this used to carry\n *  saved Map writes, it never guarded correctness. It had to go: `bsc graph impl set` refuses a\n *  `provides` from a stateful record onto a REGISTERED specifier, because the record wins over the\n *  registry and would vendor a second copy of that state to every graph consumer.\n */\nexport function registerSoundsPlatform(): void {\n  registerAppModule(\"@/features/sounds/lib/soundDescriptor\", SoundDescriptor);\n  registerAppModule(\"@/features/sounds/lib/soundGraph\", SoundGraph);\n  registerAppModule(\"@/features/sounds/lib/soundKits\", SoundKits);\n  registerAppModule(\"@/features/sounds/lib/synth\", Synth);\n  registerAppModule(\"@/features/sounds/useSoundKits\", UseSoundKits);\n  registerAppModule(\"@/features/sounds/graphPlatform\", GraphPlatform);\n}",
+  "composes": [
+    "module-registry.ts",
+    "sound-descriptor.ts",
+    "sound-graph.ts",
+    "use-sound-kits.ts"
+  ],
+  "folder": "features/sounds",
+  "id": "sounds-graph-platform.ts",
+  "name": "graphPlatform",
+  "provides": "@/features/sounds/graphPlatform",
+  "role": "algorithm",
+  "src": "src/features/sounds/graphPlatform.ts",
+  "tech": "typescript",
+  "feature": "sounds"
+}

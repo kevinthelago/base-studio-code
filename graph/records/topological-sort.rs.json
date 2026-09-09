@@ -1,0 +1,15 @@
+{
+  "id": "topological-sort.rs",
+  "domain": "logistics",
+  "tech": "rust",
+  "name": "topological_sort",
+  "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
+  "composes": [
+    "rust.hashmap",
+    "rust.vecdeque",
+    "rust.vec"
+  ],
+  "code": "use std::collections::{HashMap, VecDeque};\n\n/// Kahn's algorithm — a topological ordering of a DAG, or `None` if a cycle is present.\npub fn topological_sort(adj: &HashMap<String, Vec<(String, u32)>>) -> Option<Vec<String>> {\n    let mut indegree: HashMap<String, usize> = HashMap::new();\n    for (node, edges) in adj {\n        indegree.entry(node.clone()).or_insert(0);\n        for (next, _) in edges {\n            *indegree.entry(next.clone()).or_insert(0) += 1;\n        }\n    }\n    let mut queue: VecDeque<String> = indegree\n        .iter()\n        .filter(|(_, &d)| d == 0)\n        .map(|(n, _)| n.clone())\n        .collect();\n    let mut order = Vec::new();\n    while let Some(node) = queue.pop_front() {\n        order.push(node.clone());\n        if let Some(edges) = adj.get(&node) {\n            for (next, _) in edges {\n                let d = indegree.get_mut(next).unwrap();\n                *d -= 1;\n                if *d == 0 {\n                    queue.push_back(next.clone());\n                }\n            }\n        }\n    }\n    if order.len() == indegree.len() {\n        Some(order)\n    } else {\n        None\n    }\n}\n",
+  "role": "algorithm",
+  "feature": "reference"
+}

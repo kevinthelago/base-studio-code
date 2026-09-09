@@ -1,0 +1,15 @@
+{
+  "code": "// ── Registry config writers (#1127) ──────────────────────────────────────────────\r\n// Generate the source/registry config so a private dependency is fetchable from the first commit.\r\n// Only the registries a repo's deps actually reference are emitted; public-only repos get nothing.\r\n\r\nimport type {\r\n  DependencyEcosystem,\r\n  DependencyRegistry,\r\n  PlanDependency,\r\n} from \"@/features/planner/issues/dependencyTypes\";\r\n\r\n/** The `//host[/path]/` key npm's `.npmrc` uses for an auth token, derived from a registry URL. */\r\nfunction npmrcHostKey(url: string): string {\r\n  return url.replace(/^https?:/i, \"\").replace(/\\/?$/, \"/\");\r\n}\r\n\r\n/** The registry KEYs (sorted, deterministic) that a repo's deps of one ecosystem reference and that\r\n *  are actually defined in the registries map. */\r\nfunction usedRegistries(registries: Record<string, DependencyRegistry>, deps: PlanDependency[], eco: DependencyEcosystem): string[] {\r\n  const used = new Set(deps.filter((d) => d.ecosystem === eco && d.source && registries[d.source]).map((d) => d.source!));\r\n  return [...used].sort();\r\n}\r\n\r\n/**\r\n * Build a repo's `.npmrc` from the registries its npm deps reference (#1127): a scoped registry as\r\n * `@scope:registry=<url>`, an unscoped one as the default `registry=<url>`, plus a `${SECRET}` auth\r\n * token line when the registry declares one. Returns null when no npm dep uses a private source.\r\n */\r\nexport function buildNpmrc(registries: Record<string, DependencyRegistry>, deps: PlanDependency[]): string | null {\r\n  const keys = usedRegistries(registries, deps, \"npm\");\r\n  if (!keys.length) return null;\r\n  const lines: string[] = [];\r\n  for (const key of keys) {\r\n    const r = registries[key];\r\n    lines.push(r.scope ? `${r.scope}:registry=${r.url}` : `registry=${r.url}`);\r\n    if (r.auth) lines.push(`${npmrcHostKey(r.url)}:_authToken=\\${${r.auth}}`);\r\n  }\r\n  return lines.join(\"\\n\") + \"\\n\";\r\n}\r\n\r\n/**\r\n * Build a repo's `.cargo/config.toml` from the registries its cargo deps reference (#1127) — one\r\n * `[registries.<name>]` table with the index URL each. Returns null when no cargo dep uses a private\r\n * source. (Cargo reads the token from `CARGO_REGISTRIES_<NAME>_TOKEN`, kept out of the file.)\r\n */\r\nexport function buildCargoConfig(registries: Record<string, DependencyRegistry>, deps: PlanDependency[]): string | null {\r\n  const keys = usedRegistries(registries, deps, \"cargo\");\r\n  if (!keys.length) return null;\r\n  const lines: string[] = [];\r\n  for (const key of keys) lines.push(`[registries.${key}]`, `index = \"${registries[key].url}\"`, \"\");\r\n  return lines.join(\"\\n\").replace(/\\n+$/, \"\\n\");\r\n}\r\n",
+  "composes": [
+    "dependency-types.ts"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/issues",
+  "id": "dependency-registry-config.ts",
+  "name": "dependencyRegistryConfig",
+  "provides": "@/features/planner/issues/dependencyRegistryConfig",
+  "role": "algorithm",
+  "src": "src/features/planner/issues/dependencyRegistryConfig.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

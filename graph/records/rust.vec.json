@@ -1,0 +1,10 @@
+{
+  "id": "rust.vec",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Vec",
+  "summary": "Vec<T> — the growable owned buffer sort results and graph traversal orders are built up in.",
+  "composes": [],
+  "ref": "std::vec::Vec",
+  "feature": "core"
+}

@@ -901,11 +901,29 @@
         // is the third writer of this string — the boot watchdog, the npm scripts and now the debug
         // session's fault path — and a disagreement would split the app's own faults across stores that
         // each look empty from the others, which is precisely the failure nothing else can see.
-        let graph = std::fs::read_to_string(manifest.join("data").join("knowledge").join("algorithms.json"))
-            .expect("data/knowledge/algorithms.json");
-        let needle = format!("SELF_PROJECT_KEY = \\\"{}\\\"", bsc_util::SELF_PROJECT_KEY);
+        //
+        // THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`): the
+        // frontend's `.bsc-records/` tree is materialized by `bsc-emit` from `graph/algorithms.json` +
+        // `graph/records/*.json` now, so the seed copy is no longer the one the app compiles.
+        //
+        // Through `load_merged_value`, never by parsing the store file — a direct parse sees an
+        // `implementations` array missing every record under `graph/records/`, does not fail on it, and
+        // simply covers less (`scripts/graph-store-readers.test.ts` is the gate that says so).
+        let store = manifest.parent().expect("src-tauri has a parent").join("graph").join("algorithms.json");
+        let doc = graph_materialize::load_merged_value(&store)
+            .expect("the committed store parses")
+            .expect("the committed store exists");
+        let impls = doc["implementations"].as_array().expect("implementations is an array");
+        // Non-vacuity: a wrong path or an empty layout would leave the assertion below unfalsifiable.
+        assert!(impls.len() > 1_000, "the committed store held {} records", impls.len());
+        let spec = "@/shared/lib/core/projectPaths";
+        let rec = impls
+            .iter()
+            .find(|r| r["provides"].as_str() == Some(spec))
+            .unwrap_or_else(|| panic!("no record provides `{spec}` — the frontend copy has moved or been retired"));
+        let needle = format!("SELF_PROJECT_KEY = \"{}\"", bsc_util::SELF_PROJECT_KEY);
         assert!(
-            graph.contains(&needle),
+            rec["code"].as_str().is_some_and(|c| c.contains(&needle)),
             "the frontend's SELF_PROJECT_KEY does not match `{}` — the app's faults would split across two stores",
             bsc_util::SELF_PROJECT_KEY,
         );

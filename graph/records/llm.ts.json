@@ -1,0 +1,15 @@
+{
+  "code": "// API-tier LLM provider config (#1085) — the keys + provider/model that back llm_complete calls.\n// Split from store/types (#1634).\nimport type { LlmProvider } from \"@/shared/lib/core/llmConfig\";\n\n/** LLM-provider slice of {@link AppStore}. */\nexport interface LlmState {\n  claudeApiKey: string;\n  setClaudeApiKey: (key: string) => void;\n\n  // API-tier LLM provider config (#1085) — powers llm_complete-backed calls (planning\n  // autopilot, grader, cleanup verifier). `claudeApiKey` doubles as the anthropic key.\n  // Distinct from the per-pane runtime model (defaultModel/paneModels).\n  llmProvider: LlmProvider;\n  setLlmProvider: (p: LlmProvider) => void;\n  llmModel: string;\n  setLlmModel: (m: string) => void;\n  openaiKey: string;\n  setOpenaiKey: (k: string) => void;\n  geminiKey: string;\n  setGeminiKey: (k: string) => void;\n  /** OpenAI-compatible endpoint for the `local` provider (default Ollama). */\n  localBaseUrl: string;\n  setLocalBaseUrl: (u: string) => void;\n  /** The per-agent context cap (`num_ctx`) for a local session, as typed — reaches the runtime as\n   *  `$BSC_AGENT_NUM_CTX`. A STRING because the field is a text input and three states must stay\n   *  distinguishable: empty = \"use the runtime's packaged ceiling\", `\"0\"` = \"don't set `num_ctx` at\n   *  all\", any other number = that ceiling. A `number` cannot hold the first two apart.\n   *\n   *  Load-bearing, not a preference: a prompt at or over `num_ctx` is not trimmed by Ollama, it is\n   *  truncated to HALF the window with the head discarded — and the head is the CLAUDE.md. */\n  llmNumCtx: string;\n  setLlmNumCtx: (v: string) => void;\n}\n",
+  "composes": [
+    "llm-config.ts"
+  ],
+  "domain": "store",
+  "folder": "store/types",
+  "id": "llm.ts",
+  "name": "llm",
+  "provides": "@/store/types/llm",
+  "role": "algorithm",
+  "src": "src/store/types/llm.ts",
+  "tech": "typescript",
+  "feature": "store"
+}

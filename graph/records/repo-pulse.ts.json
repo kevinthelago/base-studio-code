@@ -1,0 +1,13 @@
+{
+  "code": "// Typed shapes for the Repo Pulse page (GitHub → Pulse, #402). The page is now\r\n// driven by live GitHub data (#413) — these are the typed view-model shapes the\r\n// pure mappers in lib/repoPulseLive produce; the screen renders off them. (The\r\n// original sample data was removed once the page went live.)\r\n\r\nexport interface VelocitySlice {\r\n  labels: string[];\r\n  commits: number[];\r\n  merged: number[];\r\n  opened: number[];\r\n  /** additions per day (positive). */\r\n  adds: number[];\r\n  /** deletions per day (stored positive). */\r\n  dels: number[];\r\n}\r\n\r\nexport interface ChurnArea { area: string; add: number; del: number; files: number; color: string }\r\nexport interface ChurnFile { p: string; w: number }\r\nexport interface Contributor { name: string; bot: boolean; commits: number; add: number; del: number; color: string }\r\nexport interface Workflow { name: string; runs: number; pass: number; min: number }\r\n\r\nexport type BranchStatusKey = \"open-pr\" | \"ci-running\" | \"draft\" | \"blocked\" | \"commit-only\" | \"integration\";\r\nexport interface Branch {\r\n  n: string; owner: string; bot: boolean; ahead: number; behind: number;\r\n  status: BranchStatusKey; age: string; color: string;\r\n}\r\n\r\nconst G = \"var(--success)\", A = \"var(--accent)\", D = \"var(--danger)\", DIM = \"var(--fg-dim)\";\r\n\r\n/** Branch status → display label + color. */\r\nexport const BRANCH_STATUS: Record<BranchStatusKey, { label: string; color: string }> = {\r\n  \"open-pr\": { label: \"PR open\", color: G },\r\n  \"ci-running\": { label: \"CI running\", color: A },\r\n  draft: { label: \"draft\", color: DIM },\r\n  blocked: { label: \"blocked\", color: D },\r\n  \"commit-only\": { label: \"commit-only\", color: DIM },\r\n  integration: { label: \"integration\", color: A },\r\n};\r\n",
+  "composes": [],
+  "domain": "data",
+  "folder": "shared/data",
+  "id": "repo-pulse.ts",
+  "name": "repoPulse",
+  "provides": "@/shared/data/repoPulse",
+  "role": "algorithm",
+  "src": "src/shared/data/repoPulse.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

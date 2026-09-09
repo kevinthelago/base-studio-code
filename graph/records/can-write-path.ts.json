@@ -1,0 +1,17 @@
+{
+  "code": "export function canWritePath(cap, path) { if (cap.code === \"none\" && !hasScopedWriteCarveOut(cap)) return false; return cap.writeGlobs.some((g) => matchGlob(g, path)); }",
+  "composes": [
+    "write-scope.ts",
+    "role-model.ts",
+    "typescript.boolean",
+    "typescript.array"
+  ],
+  "domain": "session",
+  "folder": "shared/lib/session",
+  "id": "can-write-path.ts",
+  "name": "canWritePath",
+  "role": "algorithm",
+  "src": "src/shared/lib/session/writeScope.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

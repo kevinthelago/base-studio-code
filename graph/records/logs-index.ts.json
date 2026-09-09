@@ -1,0 +1,18 @@
+{
+  "code": "// The logs feature's PUBLIC API — re-exports only.\n//\n// The screen itself is the `logspage` RECORD, mounted by `LogsGraphHost` — which is what\n// `lazyWorkspaces` resolves the `LogsWorkspace` symbol to, in both App.tsx and DetachedWindow.\n//\n// This feature WAS `features/security`. The Security workspace held four tabs; three were deleted\n// (retire-agentprofile-and-strip-security-to-activity) and Activity — the only one with a real feed\n// behind it — became the first tab of the unified Logs screen (epic-a-unified-logs-workspace). The\n// remaining tabs (Sessions, Waiting, Skills, Hooks, Cost, Streams) read the `bsc logs` engine (#1607).\n//\n// WHAT DID NOT COME HERE, and why. `agentProfiles`, `profileEnforcement` and `consoleModel` moved to\n// `shared/lib/security` instead: they are read by the console shell, the planner, the tunnel projector\n// AND the store, so a feature was never their owner — the shell was reaching into a feature's internals\n// to get them, which is exactly what #1545 forbids. Logs imports them from `shared/`, like anyone else.\n//\n// The `AgentProfile` model is still ENFORCED at launch via `resolveProfileSettings` →\n// `ensure_session_settings`, and allowlists still resolve additively (guaranteed ∪ profile ∪ project ∪\n// repo). Retiring the model needs a coordinated mobile-studio-code change — the tunnel ships it against\n// a byte-exact fixture — and is tracked as `retire-the-agentprofile-model-behind-the-tunnel-contract`.\n\n// The graph-hosted workspace (#3646) — App.tsx/DetachedWindow render this via the lazy LogsWorkspace.\nexport { LogsGraphHost } from \"@/features/logs/LogsGraphHost\";\n\n// #1545: public API for cross-feature consumers. The audit feed's derivation is shared with the tunnel\n// projector (#3754), which derives its consoles + display rows the SAME way this screen does — one\n// source of truth for the pane→console join and the allow/ask/block verdict.\nexport { parseAuditLog, type AuditRecord } from \"@/features/logs/lib/auditLog\";\nexport { buildAuditRows, type AuditDisplayRow } from \"@/features/logs/lib/auditRows\";\n",
+  "composes": [
+    "profile-enforcement.ts",
+    "audit-log.ts",
+    "console-model.ts",
+    "audit-rows.ts"
+  ],
+  "domain": "security",
+  "folder": "features/logs",
+  "id": "logs-index.ts",
+  "name": "index",
+  "provides": "@/features/logs",
+  "role": "algorithm",
+  "src": "src/features/logs/index.ts",
+  "tech": "typescript",
+  "feature": "observability"
+}

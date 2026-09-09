@@ -1,0 +1,20 @@
+{
+  "code": "import { useEffect, type RefObject } from \"react\";\r\n\r\n/**\r\n * Dismiss a popover/menu on an outside `mousedown`. Listens only while `active`, and calls `onClose`\r\n * when the press lands outside `ref` (and outside `ignoreRef`, if given — use it for the toggle\r\n * button so its own click handler owns the open/close instead of double-firing). mousedown (not\r\n * click) so the menu doesn't unmount before an inner item's click fires. (Callers' inline `onClose`\r\n * is auto-memoized by react-compiler, so the listener isn't re-subscribed every render.)\r\n */\r\nexport function useClickOutside<E extends HTMLElement, I extends HTMLElement = HTMLElement>(\r\n  ref: RefObject<E | null>,\r\n  onClose: () => void,\r\n  active: boolean,\r\n  ignoreRef?: RefObject<I | null>,\r\n): void {\r\n  useEffect(() => {\r\n    if (!active) return;\r\n    const onDown = (e: MouseEvent) => {\r\n      const t = e.target as Node;\r\n      if (ignoreRef?.current?.contains(t)) return;\r\n      if (!ref.current?.contains(t)) onClose();\r\n    };\r\n    document.addEventListener(\"mousedown\", onDown);\r\n    return () => document.removeEventListener(\"mousedown\", onDown);\r\n  }, [active, ref, ignoreRef, onClose]);\r\n}\r\n",
+  "composes": [],
+  "domain": "hooks",
+  "folder": "shared/hooks",
+  "id": "use-click-outside.ts",
+  "name": "useClickOutside",
+  "provides": "@/shared/hooks/useClickOutside",
+  "role": "algorithm",
+  "src": "src/shared/hooks/useClickOutside.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".tsx",
+      "name": "useClickOutside",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { useRef } from \"react\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { useClickOutside } from \"@/shared/hooks/useClickOutside\";\n\nfunction Harness({ onClose, active, withIgnore = false }: { onClose: () => void; active: boolean; withIgnore?: boolean }) {\n  const ref = useRef<HTMLDivElement>(null);\n  const ignoreRef = useRef<HTMLButtonElement>(null);\n  useClickOutside(ref, onClose, active, withIgnore ? ignoreRef : undefined);\n  return (\n    <div>\n      <div ref={ref} data-testid=\"inside\">menu</div>\n      <button ref={ignoreRef} data-testid=\"toggle\">toggle</button>\n      <div data-testid=\"outside\">outside</div>\n    </div>\n  );\n}\n\ndescribe(\"useClickOutside\", () => {\n  it(\"fires on an outside mousedown, not on an inside one\", () => {\n    const onClose = vi.fn();\n    render(<Harness onClose={onClose} active />);\n    fireEvent.mouseDown(screen.getByTestId(\"inside\"));\n    expect(onClose).not.toHaveBeenCalled();\n    fireEvent.mouseDown(screen.getByTestId(\"outside\"));\n    expect(onClose).toHaveBeenCalledOnce();\n  });\n\n  it(\"does nothing while inactive\", () => {\n    const onClose = vi.fn();\n    render(<Harness onClose={onClose} active={false} />);\n    fireEvent.mouseDown(screen.getByTestId(\"outside\"));\n    expect(onClose).not.toHaveBeenCalled();\n  });\n\n  it(\"ignores presses inside ignoreRef\", () => {\n    const onClose = vi.fn();\n    render(<Harness onClose={onClose} active withIgnore />);\n    fireEvent.mouseDown(screen.getByTestId(\"toggle\"));\n    expect(onClose).not.toHaveBeenCalled();\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

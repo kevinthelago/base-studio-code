@@ -1,0 +1,22 @@
+{
+  "code": "import type { ConsoleProvider } from \"@/app/console/lib/providers/types\";\nimport { claudeProvider } from \"@/app/console/lib/providers/providers/claude\";\nimport { geminiProvider } from \"@/app/console/lib/providers/providers/gemini\";\nimport { codexProvider } from \"@/app/console/lib/providers/providers/codex\";\nimport { aiderProvider } from \"@/app/console/lib/providers/providers/aider\";\nimport { ollamaProvider } from \"@/app/console/lib/providers/providers/ollama\";\nimport { amazonQProvider } from \"@/app/console/lib/providers/providers/amazonq\";\nimport { bscAgentProvider } from \"@/app/console/lib/providers/providers/bscAgent\";\n\nconst REGISTRY = new Map<string, ConsoleProvider>();\n\nexport function registerProvider(p: ConsoleProvider): void {\n  REGISTRY.set(p.id, p);\n}\n\nexport function getProvider(id: string): ConsoleProvider | undefined {\n  return REGISTRY.get(id);\n}\n\nexport function listProviders(): ConsoleProvider[] {\n  return [...REGISTRY.values()];\n}\n\n// The built-in provider set, seeded HERE — in the module that owns the map — rather than in the\n// barrel (providers-register-in-the-registry-that-owns-them).\n//\n// Two things this buys. Anyone reaching `getProvider` necessarily loads THIS module, so the built-ins\n// are guaranteed present; when the barrel seeded them, a consumer importing `./registry` directly got\n// an empty map, and the guarantee rested on which path you happened to take. And the barrel becomes\n// re-exports only, which is what lets it be a record rather than a file that must RUN to be correct.\n//\n// This module cannot be a record either way: it holds REGISTRY, a live map. Seeding it here therefore\n// costs nothing that was not already spent.\nregisterProvider(claudeProvider);\nregisterProvider(geminiProvider);\nregisterProvider(codexProvider);\nregisterProvider(aiderProvider);\nregisterProvider(ollamaProvider);\nregisterProvider(amazonQProvider);\nregisterProvider(bscAgentProvider);",
+  "composes": [
+    "types.ts",
+    "aider.ts",
+    "amazonq.ts",
+    "bsc-agent.ts",
+    "claude.ts",
+    "codex.ts",
+    "gemini.ts",
+    "ollama.ts"
+  ],
+  "domain": "shell",
+  "folder": "app/console/lib/providers",
+  "id": "providers-registry.ts",
+  "name": "registry",
+  "provides": "@/app/console/lib/providers/registry",
+  "role": "algorithm",
+  "src": "src/app/console/lib/providers/registry.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

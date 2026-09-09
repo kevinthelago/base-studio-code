@@ -1,0 +1,10 @@
+{
+  "id": "rust.i64",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Integer",
+  "summary": "Fixed-width signed integer — the scalar arithmetic and counting run on (i32/i64/u64/usize).",
+  "composes": [],
+  "ref": "i64",
+  "feature": "core"
+}

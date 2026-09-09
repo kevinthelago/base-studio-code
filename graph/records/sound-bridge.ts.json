@@ -1,0 +1,16 @@
+{
+  "code": "// The Sounds store bridge (#3080) — reads/writes the durable `bsc-sound` store through the generic\r\n// `bsc` command (#2114), so the desktop Sounds library and a live session's shell share one store. A\r\n// GLOBAL store (no per-project key), exactly like the persona bridge.\r\nimport { bscJson, bscRun, bscWrite } from \"@/shared/lib/core/bsc\";\r\nimport type { SoundKit } from \"@/features/sounds/lib/soundDescriptor\";\r\n\r\n/** Every kit from the durable store (full objects), or `[]` if the store/CLI is unavailable. */\r\nexport async function loadKits(): Promise<SoundKit[]> {\r\n  const rows = await bscJson<SoundKit[]>(null, [\"sound\", \"list\", \"--full\"], []);\r\n  return Array.isArray(rows) ? rows : [];\r\n}\r\n\r\n/** Upsert a kit into the durable store (verbatim JSON on stdin, keyed by its `id`). */\r\nexport async function pushKit(kit: SoundKit): Promise<void> {\r\n  await bscWrite(null, [\"sound\", \"set\"], kit);\r\n}\r\n\r\n/** Delete a kit from the durable store (no-op if absent). */\r\nexport async function dropKit(id: string): Promise<void> {\r\n  await bscRun(null, [\"sound\", \"remove\", id]);\r\n}\r\n",
+  "composes": [
+    "bsc.ts",
+    "sound-descriptor.ts"
+  ],
+  "domain": "sounds",
+  "folder": "features/sounds/lib",
+  "id": "sound-bridge.ts",
+  "name": "soundBridge",
+  "provides": "@/features/sounds/lib/soundBridge",
+  "role": "algorithm",
+  "src": "src/features/sounds/lib/soundBridge.ts",
+  "tech": "typescript",
+  "feature": "sounds"
+}

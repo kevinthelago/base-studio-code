@@ -30,8 +30,21 @@ let emitted = false;
 let emittedInputStamp = 0;
 
 /** Newest mtime across everything `emitRecords` reads: every `src-tauri/data/components/**` record and
- *  `data/knowledge/algorithms.json`. Walks rather than trusting directory mtimes, because editing an
- *  existing record in place does not change the mtime of the directory holding it. */
+ *  the COMMITTED record store (`graph/algorithms.json` + `graph/records/*.json`). Walks rather than
+ *  trusting directory mtimes, because editing an existing record in place does not change the mtime of
+ *  the directory holding it.
+ *
+ *  THE SECOND ROOT ARRIVED WITH `retire-the-packaged-seed-directories`, which pointed `bsc-emit` off the
+ *  packaged algorithms seed and onto the committed store. Watching only the old path would have left the
+ *  dev server serving a frozen copy of every algorithm record for its whole life — the exact failure the
+ *  poll below exists for, and the one that cost a whole misdiagnosis when the emitted `pty_data` listener
+ *  sat an hour behind the record it mirrors.
+ *
+ *  IT IS ~9x THE FILES (2,661 records against 311 component seeds) and the poll is every 2s, so the cost
+ *  was MEASURED rather than assumed: 14.1 / 15.2 / 15.5ms per sweep over 2,973 files on this box, against
+ *  3.9ms for the 312 component seeds alone. Paid on a timer that is `unref`'d and only ever runs under a
+ *  dev server. A cheaper signal was considered and rejected for the reason stated below — `fs.watch`
+ *  would add ~2,700 inotify watches per dev server on a box already out of them. */
 function newestInputMtime(repoRoot: string): number {
   let newest = 0;
   const bump = (p: string) => {
@@ -49,7 +62,8 @@ function newestInputMtime(repoRoot: string): number {
     }
   };
   walk(join(repoRoot, "src-tauri", "data", "components"));
-  bump(join(repoRoot, "src-tauri", "data", "knowledge", "algorithms.json"));
+  walk(join(repoRoot, "graph", "records"));
+  bump(join(repoRoot, "graph", "algorithms.json"));
   return newest;
 }
 

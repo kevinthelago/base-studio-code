@@ -1,0 +1,9 @@
+{
+  "composes": [],
+  "id": "typescript.map",
+  "name": "Map",
+  "ref": "Map<K, V>",
+  "role": "primitive",
+  "tech": "typescript",
+  "feature": "core"
+}

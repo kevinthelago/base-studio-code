@@ -1,0 +1,16 @@
+{
+  "id": "llm-settings.ts",
+  "tech": "typescript",
+  "name": "llmSettings",
+  "role": "algorithm",
+  "domain": "store",
+  "feature": "store",
+  "folder": "store/slices",
+  "src": "src/store/slices/llmSettings.ts",
+  "provides": "@/store/slices/llmSettings",
+  "composes": [
+    "llm-config.ts",
+    "store-types.ts"
+  ],
+  "code": "// LlmSettingsSlice — the API-tier LLM provider config (#1085): the anthropic/openai/gemini keys,\r\n// the local endpoint, and the provider/model that back llm_complete calls. Split out of the former\r\n// `core` grab-bag (#2715) — these are settings, not project state. Typed Pick<AppStore, …>.\r\nimport type { StateCreator } from \"zustand\";\r\nimport type { AppStore } from \"@/store/types\";\r\nimport { modelOnProviderSwitch, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL } from \"@/shared/lib/core/llmConfig\";\r\n\r\ntype LlmSettingsSlice = Pick<AppStore,\r\n  \"claudeApiKey\" | \"setClaudeApiKey\" | \"llmProvider\" | \"setLlmProvider\" | \"llmModel\" | \"setLlmModel\" | \"openaiKey\" | \"setOpenaiKey\" | \"geminiKey\" | \"setGeminiKey\" | \"localBaseUrl\" | \"setLocalBaseUrl\" | \"llmNumCtx\" | \"setLlmNumCtx\"\r\n>;\r\n\r\nexport const createLlmSettingsSlice: StateCreator<AppStore, [], [], LlmSettingsSlice> = (set) => ({\r\n      claudeApiKey: \"\",\r\n      setClaudeApiKey: (key) => set({ claudeApiKey: key }),\r\n\r\n      // API-tier LLM provider config (#1085). claudeApiKey is the anthropic key.\r\n      llmProvider: \"anthropic\",\r\n      // Switch the model field to the new provider's default when it still holds another provider's\r\n      // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user\r\n      // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.\r\n      setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),\r\n      llmModel: DEFAULT_ANTHROPIC_MODEL,\r\n      setLlmModel: (m) => set({ llmModel: m }),\r\n      openaiKey: \"\",\r\n      setOpenaiKey: (k) => set({ openaiKey: k }),\r\n      geminiKey: \"\",\r\n      setGeminiKey: (k) => set({ geminiKey: k }),\r\n      localBaseUrl: DEFAULT_LOCAL_BASE_URL,\r\n      // TRIMMED AT THE SETTING (`a-whitespace-base-url-survives-the-pane-routing-and-cannot-dial`). A\n  // whitespace-only endpoint is not an endpoint, and storing one sends the failure far from the field\n  // that caused it. Fixing it here means nothing new is stored wrong; the readers still trim because\n  // persisted state predates this.\n  setLocalBaseUrl: (u) => set({ localBaseUrl: u.trim() }),\r\n      // The per-agent context cap. Defaults to EMPTY rather than to a number, so the runtime's\r\n      // packaged ceiling stays the source of that default: raising it then reaches every install,\r\n      // instead of only the ones that never opened this field. A number here is a real override.\r\n      llmNumCtx: \"\",\r\n      setLlmNumCtx: (v) => set({ llmNumCtx: v }),\r\n});\r\n"
+}

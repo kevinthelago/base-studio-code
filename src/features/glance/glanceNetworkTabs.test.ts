@@ -6,6 +6,7 @@
 // which is where every regression in this area has actually been — not the pixels.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 
 const GLANCE: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/features/glance/glancepage.json", "utf8"),
@@ -16,9 +17,11 @@ const LOGS: string = JSON.parse(
 const SCREEN: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/shared/ui/ui-screen.json", "utf8"),
 ).srcText;
-const PERSIST: string = JSON.parse(
-  readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8"),
-).implementations.find((i: { id: string }) => i.id === "persist.ts").code;
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this asserts about
+// (`retire-the-packaged-seed-directories`).
+const PERSIST: string = (loadImplementations() as { id: string; code: string }[])
+  .find((i) => i.id === "persist.ts")!.code;
 
 describe("Glance's tabs are the networks", () => {
   it("derives the strip from the store rather than a constant", () => {

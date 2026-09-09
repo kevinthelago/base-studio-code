@@ -1,0 +1,13 @@
+{
+  "id": "features--memory--index.ts",
+  "tech": "typescript",
+  "name": "index",
+  "role": "algorithm",
+  "domain": "memory",
+  "feature": "memory",
+  "folder": "features/memory",
+  "src": "src/features/memory/index.ts",
+  "provides": "@/features/memory",
+  "composes": [],
+  "code": "// The Memory feature's public API. Cross-feature, import ONLY this barrel (#1545).\n//\n// `bsc memory` (`~/.base-studio-code/memory.db`) is the store that catches what a session LEARNS but\n// has no plan item for — a finding, a decision, a lesson, a parked thread — as a TYPED GRAPH rather\n// than a log: each memory carries edges to the record, plan ref or other memory it is about.\n//\n// The store is deliberately SEPARATE from the code-record graph (`graph/algorithms.json`): memory is\n// high-churn user data and must never enter the committed store the build compiles.\nexport { MemoryWorkspace } from \"@/features/memory/MemoryWorkspace\";\nexport { MemoryGraphView } from \"@/features/memory/MemoryGraphView\";\nexport {\n  HORIZONS, KINDS, KIND_META, MEMORY_STATUSES, MEMORY_TABS, NODE_TYPES,\n  TAB_LABEL, TAB_BLURB, DEFAULT_REL, NODE_W, NODE_H, LAYOUT_COLUMNS,\n  asHorizon, asKind, asStatus, buildGraph, layoutGraph, linkKind, targetLabel,\n  parseMemories, relativeAge, searchMemories, selectTab, sortMemories, summarize, tagCounts,\n  type GraphEdge, type GraphLayout, type GraphNode, type Horizon, type Kind, type LayoutColumn,\n  type LinkKind, type MemoryEntry, type MemoryGraph, type MemoryLink, type MemoryStatus,\n  type MemorySummary, type MemoryTab, type Placed,\n} from \"@/features/memory/lib/memory\";\n"
+}

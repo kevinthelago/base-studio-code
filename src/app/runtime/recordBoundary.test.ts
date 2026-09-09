@@ -24,7 +24,13 @@
 // same reasoning as both precedents: the seed is what ships, and the guard has to hold on a fresh clone
 // and in CI where no local store exists.
 import { describe, it, expect } from "vitest";
-import algorithmsSeed from "@data/knowledge/algorithms.json";
+// READS THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`). The seed
+// used to be the right source here for a stated reason — it is what ships, and a guard has to hold on a
+// fresh clone and in CI where no local runtime store exists. Both halves of that are now true of
+// `graph/algorithms.json` + `graph/records/*.json`, which is git-tracked, and it is what `bsc-emit`
+// materializes `.bsc-records/` from and what `graph-materialize` compiles 25 crates from. Left on the
+// seed, this guard would police a copy nothing compiles.
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 // A relative path on purpose: `scripts/` is outside the `@/` alias (which maps to `src/`).
 import { runtimeImports } from "../../../scripts/lib/recordSource.mjs";
 
@@ -40,7 +46,7 @@ const COMPONENTS: SeedRecord[] = Object.values(seedModules)
   .map((m) => m.default)
   .filter((r) => r && r.id && r.suppressed !== true);
 
-const IMPLS = ((algorithmsSeed as { implementations?: { id: string; tech?: string; provides?: string; code?: string; suppressed?: boolean }[] }).implementations ?? [])
+const IMPLS = (((loadImplementations() ?? []) as { id: string; tech?: string; provides?: string; code?: string; suppressed?: boolean }[]))
   .filter((i) => i.tech === "typescript" && i.code && i.suppressed !== true);
 
 /** A record whose `provides` places it under `shared/` — the specifier-side mirror of eslint's
