@@ -1,0 +1,10 @@
+{
+  "id": "rust.tuple",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Tuple",
+  "summary": "A fixed heterogeneous group — pairs like (node, weight) or a complex sample (re, im).",
+  "composes": [],
+  "ref": "(T, U, …)",
+  "feature": "core"
+}

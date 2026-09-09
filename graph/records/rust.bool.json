@@ -1,0 +1,10 @@
+{
+  "id": "rust.bool",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Boolean",
+  "summary": "true / false — the branch and predicate primitive every comparison collapses to.",
+  "composes": [],
+  "ref": "bool",
+  "feature": "core"
+}

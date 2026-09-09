@@ -1,0 +1,16 @@
+{
+  "code": "export function statusCounts(workers) { const c = {}; for (const w of workers) c[w.status] = (c[w.status] ?? 0) + 1; return c; }",
+  "composes": [
+    "typescript.array",
+    "typescript.map",
+    "typescript.string"
+  ],
+  "domain": "fleet",
+  "folder": "shared/lib/fleet",
+  "id": "status-counts.ts",
+  "name": "statusCounts",
+  "role": "algorithm",
+  "src": "src/shared/lib/fleet/fleetLive.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

@@ -1,0 +1,17 @@
+{
+  "code": "export function diffManifests(local, remote) { const pull = []; const localOnly = []; const localSet = new Set(Object.keys(local.files)); for (const relpath in remote.files) { const remoteHash = remote.files[relpath]; if (local.files[relpath] !== remoteHash) pull.push(relpath); localSet.delete(relpath); } for (const relpath of localSet) localOnly.push(relpath); return { pull: pull.sort(), localOnly: localOnly.sort() }; }",
+  "composes": [
+    "typescript.map",
+    "typescript.set",
+    "typescript.array",
+    "typescript.string"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/lib/plannerCore",
+  "id": "diff-manifests.ts",
+  "name": "diffManifests",
+  "role": "algorithm",
+  "src": "src/features/planner/lib/plannerCore/manifest.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

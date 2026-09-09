@@ -1,0 +1,20 @@
+{
+  "code": "// Which coordination alerts to speak, by verbosity (#3804, a11y epic #2725 Tier 1). Pure so the\n// policy is unit-tested without the engine. `AlertKind`/verbosity are the same taxonomy the ARIA\n// announcer + mobile alerts use, so spoken output stays consistent with the rest of the app.\nimport type { AlertKind } from \"@/features/tunnel\";\nimport type { TtsVerbosity } from \"@/shared/lib/a11y/speech\";\n\n// The needs-you / went-wrong alerts — the actionable ones, always spoken. `verbose` ADDS the progress\n// alerts (`fleet-landed`, `gate-ready`) so a user driving by ear hears the fleet make headway too.\nconst TERSE_KINDS: readonly AlertKind[] = [\n  \"agent-paused\",\n  \"prompt-waiting\",\n  \"worker-question\",\n  \"planner-waiting\",\n  \"fleet-failed\",\n];\n\n/** Whether an alert of `kind` should be spoken at the chosen `verbosity`. */\nexport function shouldSpeak(kind: AlertKind, verbosity: TtsVerbosity): boolean {\n  return verbosity === \"verbose\" || TERSE_KINDS.includes(kind);\n}\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/a11y",
+  "id": "coord-speech.ts",
+  "name": "coordSpeech",
+  "provides": "@/app/a11y/coordSpeech",
+  "role": "algorithm",
+  "src": "src/app/a11y/coordSpeech.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "shouldSpeak — TTS verbosity policy (#3804)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport type { AlertKind } from \"@/features/tunnel\";\nimport { shouldSpeak } from \"@/app/a11y/coordSpeech\";\n\nconst NEEDS_YOU: AlertKind[] = [\"agent-paused\", \"prompt-waiting\", \"worker-question\", \"planner-waiting\", \"fleet-failed\"];\nconst PROGRESS: AlertKind[] = [\"fleet-landed\", \"gate-ready\"];\n\ndescribe(\"shouldSpeak — TTS verbosity policy (#3804)\", () => {\n  it(\"verbose speaks every alert kind\", () => {\n    for (const k of [...NEEDS_YOU, ...PROGRESS]) {\n      expect(shouldSpeak(k, \"verbose\"), k).toBe(true);\n    }\n  });\n\n  it(\"terse speaks the needs-you / went-wrong kinds\", () => {\n    for (const k of NEEDS_YOU) expect(shouldSpeak(k, \"terse\"), k).toBe(true);\n  });\n\n  it(\"terse SKIPS the progress kinds (landings, ready gates)\", () => {\n    for (const k of PROGRESS) expect(shouldSpeak(k, \"terse\"), k).toBe(false);\n  });\n});\n"
+    }
+  ],
+  "feature": "shell"
+}

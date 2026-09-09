@@ -1,0 +1,16 @@
+{
+  "code": "// The console PROVIDER surface — public API only. The built-in set is seeded by `./registry`, the\n// module that owns the map, so this barrel has NO import-time side effect and can be a record\n// (providers-register-in-the-registry-that-owns-them).\nexport type { ConsoleProvider, ProviderLaunchConfig } from \"@/app/console/lib/providers/types\";\nexport { registerProvider, getProvider, listProviders } from \"@/app/console/lib/providers/registry\";\n",
+  "composes": [
+    "types.ts",
+    "providers-registry.ts"
+  ],
+  "domain": "shell",
+  "folder": "app/console/lib/providers",
+  "id": "providers-index.ts",
+  "name": "index",
+  "provides": "@/app/console/lib/providers",
+  "role": "algorithm",
+  "src": "src/app/console/lib/providers/index.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

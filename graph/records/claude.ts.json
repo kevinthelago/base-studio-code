@@ -1,0 +1,13 @@
+{
+  "code": "import type { ConsoleProvider } from \"@/app/console/lib/providers/types\";\r\nimport { claudeFirstRunInstall } from \"@/app/console/lib/providers/providers/claudeInstall\";\r\n\r\nexport const claudeProvider: ConsoleProvider = {\r\n  id: \"claude\",\r\n  displayName: \"Claude Code\",\r\n  buildLaunchCmd: () => \"claude\",\r\n  prereqProbe: \"which claude\",\r\n  isClaude: true,\r\n  // #1277: Claude Code is Anthropic's proprietary CLI — we install it from npm on first run (with\r\n  // consent) instead of repackaging it. See `claudeInstall.ts` for the detect → offer/guide policy.\r\n  firstRunInstall: claudeFirstRunInstall,\r\n};\r\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console/lib/providers/providers",
+  "id": "claude.ts",
+  "name": "claude",
+  "provides": "@/app/console/lib/providers/providers/claude",
+  "role": "algorithm",
+  "src": "src/app/console/lib/providers/providers/claude.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

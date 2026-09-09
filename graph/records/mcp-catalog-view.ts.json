@@ -1,0 +1,13 @@
+{
+  "code": "// Catalog/installed derivation for the MCP screen. Pure (no React/Tauri): splits the catalog into\n// the always-available \"Built-in tools\" set vs the downloadable browse list, dedupes already-\n// installed servers, and free-text filters. Shared by the screen's installed + catalog views.\n\nimport { MCP_CATALOG, type CatalogItem } from \"@/shared/data/mcpCatalog\";\nimport { BUILTIN_MCP_SERVERS, type McpServer } from \"@/features/mcp/lib/mcpServers\";\n\n/** Catalog entries for the built-in servers (#1196) — shown as always-available, never downloadable. */\nexport const builtInCatalog: CatalogItem[] = MCP_CATALOG.filter(\n  c => c.builtIn || BUILTIN_MCP_SERVERS.some(b => b.name.toLowerCase() === c.name.toLowerCase()),\n);\n\n/** Lowercased names of the installed servers, for catalog dedupe. */\nexport function installedNameSet(servers: McpServer[]): Set<string> {\n  return new Set(servers.map(e => e.name.toLowerCase()));\n}\n\n/** The downloadable/browsable catalog: every entry that isn't built-in (those live in the\n *  Built-in tools section) and isn't already installed. */\nexport function browsableCatalog(servers: McpServer[]): CatalogItem[] {\n  const installed = installedNameSet(servers);\n  return MCP_CATALOG.filter(c => !c.builtIn && !installed.has(c.name.toLowerCase()));\n}\n\n/** Count for the Catalog tab badge: catalog entries not yet installed (built-ins included, matching\n *  the original badge). */\nexport function catalogTabCount(servers: McpServer[]): number {\n  const installed = installedNameSet(servers);\n  return MCP_CATALOG.filter(c => !installed.has(c.name.toLowerCase())).length;\n}\n\n/** Free-text filter over a catalog list by name + description (empty query → unchanged). */\nexport function filterCatalog(items: CatalogItem[], query: string): CatalogItem[] {\n  const q = query.trim().toLowerCase();\n  return q ? items.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : items;\n}\n",
+  "composes": [],
+  "domain": "mcp",
+  "folder": "features/mcp/lib",
+  "id": "mcp-catalog-view.ts",
+  "name": "mcpCatalogView",
+  "provides": "@/features/mcp/lib/mcpCatalogView",
+  "role": "algorithm",
+  "src": "src/features/mcp/lib/mcpCatalogView.ts",
+  "tech": "typescript",
+  "feature": "mcp"
+}

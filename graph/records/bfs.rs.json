@@ -1,0 +1,15 @@
+{
+  "id": "bfs.rs",
+  "domain": "logistics",
+  "tech": "rust",
+  "name": "bfs",
+  "summary": "Explore a graph level by level using a queue.",
+  "composes": [
+    "rust.hashmap",
+    "rust.vecdeque",
+    "rust.vec"
+  ],
+  "code": "use std::collections::{HashMap, HashSet, VecDeque};\n\n/// Breadth-first traversal order from `start` over an adjacency map.\npub fn bfs(adj: &HashMap<&str, Vec<&str>>, start: &str) -> Vec<String> {\n    let mut order = Vec::new();\n    let mut seen = HashSet::from([start]);\n    let mut queue = VecDeque::from([start]);\n    while let Some(node) = queue.pop_front() {\n        order.push(node.to_string());\n        for &next in adj.get(node).into_iter().flatten() {\n            if seen.insert(next) {\n                queue.push_back(next);\n            }\n        }\n    }\n    order\n}\n",
+  "role": "algorithm",
+  "feature": "reference"
+}

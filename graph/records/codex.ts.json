@@ -1,0 +1,13 @@
+{
+  "code": "import type { ConsoleProvider } from \"@/app/console/lib/providers/types\";\r\n\r\nexport const codexProvider: ConsoleProvider = {\r\n  id: \"codex\",\r\n  displayName: \"OpenAI Codex CLI\",\r\n  buildLaunchCmd: () => \"codex\",\r\n  prereqProbe: \"which codex\",\r\n};\r\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console/lib/providers/providers",
+  "id": "codex.ts",
+  "name": "codex",
+  "provides": "@/app/console/lib/providers/providers/codex",
+  "role": "algorithm",
+  "src": "src/app/console/lib/providers/providers/codex.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

@@ -1,0 +1,13 @@
+{
+  "code": "// Derived KPIs computed from the live skills list (the Skills screen's header tiles).\r\n\r\nimport type { SkillDef } from \"@/features/skills/lib/skillsModel\";\r\n\r\n// ── derived KPIs (from the live list) ──────────────────────────────────────────\r\n\r\nexport interface DerivedSkillKpis {\r\n  total: number;\r\n  pinned: number;\r\n  /** sum of per-skill invocations (display telemetry). */\r\n  invWeek: number;\r\n  /** invocation-weighted success rate (0 when there are no invocations). */\r\n  avgSuccess: number;\r\n}\r\n\r\nexport function deriveSkillKpis(skills: SkillDef[]): DerivedSkillKpis {\r\n  const totalInv = skills.reduce((a, s) => a + s.invocations, 0);\r\n  const avgSuccess = totalInv > 0\r\n    ? Math.round(skills.reduce((a, s) => a + s.success * s.invocations, 0) / totalInv)\r\n    : 0;\r\n  return {\r\n    total: skills.length,\r\n    pinned: skills.filter(s => s.pinned).length,\r\n    invWeek: totalInv,\r\n    avgSuccess,\r\n  };\r\n}\r\n",
+  "composes": [],
+  "domain": "skills",
+  "folder": "features/skills/lib",
+  "id": "skills-kpis.ts",
+  "name": "skillsKpis",
+  "provides": "@/features/skills/lib/skillsKpis",
+  "role": "algorithm",
+  "src": "src/features/skills/lib/skillsKpis.ts",
+  "tech": "typescript",
+  "feature": "skills"
+}

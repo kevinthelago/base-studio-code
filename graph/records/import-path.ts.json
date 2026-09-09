@@ -1,0 +1,20 @@
+{
+  "code": "// Shared module-path resolution for the in-browser previews (#3246 — consolidated from three copies:\n// designs/lib/graphHealth, designs/lib/componentPreview, and shared/lib/preview/componentBundle).\n// Pure string helpers — no DOM, no esbuild.\n\n/** Collapse empty/`.`/`..` segments of a split module path (`..` pops the parent), joining with `/`. Pure. */\nexport function collapseSegments(segs: string[]): string {\n  const out: string[] = [];\n  for (const seg of segs) {\n    if (seg === \"\" || seg === \".\") continue;\n    if (seg === \"..\") out.pop();\n    else out.push(seg);\n  }\n  return out.join(\"/\");\n}\n\n/** Resolve an INTERNAL import `spec` — imported FROM module `fromRel` (a `src/`-relative path) — to its\n *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a relative\n *  path is joined onto the importer's dir and `.`/`..` segments collapsed. Rust twin: `resolve_internal_base`. */\nexport function resolveInternalBase(spec: string, fromRel: string): string | null {\n  let segs: string[];\n  if (spec.startsWith(\"@/\")) {\n    segs = spec.slice(2).split(\"/\");\n  } else if (spec.startsWith(\"./\") || spec.startsWith(\"../\")) {\n    const fromDir = fromRel.includes(\"/\") ? fromRel.slice(0, fromRel.lastIndexOf(\"/\")) : \"\";\n    segs = (fromDir ? fromDir.split(\"/\") : []).concat(spec.split(\"/\"));\n  } else {\n    return null;\n  }\n  return collapseSegments(segs);\n}\n",
+  "composes": [],
+  "domain": "preview",
+  "folder": "shared/lib/preview",
+  "id": "import-path.ts",
+  "name": "importPath",
+  "provides": "@/shared/lib/preview/importPath",
+  "role": "algorithm",
+  "src": "src/shared/lib/preview/importPath.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "importPath — collapseSegments",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { collapseSegments, resolveInternalBase } from \"@/shared/lib/preview/importPath\";\n\n// The shared module-path resolver (#3246), extracted from the three former copies. resolveMemPath\n// (componentBundle) delegates its collapse loop here; the two former `resolveInternalBase` copies in\n// designs/ now import this one.\n\ndescribe(\"importPath — collapseSegments\", () => {\n  it(\"drops empty and `.` segments, joining the rest with `/`\", () => {\n    expect(collapseSegments([\"a\", \"\", \".\", \"b\"])).toBe(\"a/b\");\n    expect(collapseSegments([])).toBe(\"\");\n  });\n  it(\"pops the parent on `..` (and a pop past the root is a no-op)\", () => {\n    expect(collapseSegments([\"a\", \"b\", \"..\", \"c\"])).toBe(\"a/c\");\n    expect(collapseSegments([\"a\", \"..\", \"..\", \"b\"])).toBe(\"b\");\n  });\n});\n\ndescribe(\"importPath — resolveInternalBase\", () => {\n  it(\"maps `@/x` to the src-relative base (importer ignored)\", () => {\n    expect(resolveInternalBase(\"@/shared/ui/Card\", \"features/x/y.tsx\")).toBe(\"shared/ui/Card\");\n  });\n  it(\"joins a relative import onto the importer's directory, collapsing `.`/`..`\", () => {\n    expect(resolveInternalBase(\"./chip\", \"shared/ui/data/Card.tsx\")).toBe(\"shared/ui/data/chip\");\n    expect(resolveInternalBase(\"../feedback/Skeleton\", \"shared/ui/data/Card.tsx\")).toBe(\"shared/ui/feedback/Skeleton\");\n    expect(resolveInternalBase(\"../../x\", \"a/b/c.tsx\")).toBe(\"x\");\n  });\n  it(\"resolves a relative import from a top-level (dir-less) importer\", () => {\n    expect(resolveInternalBase(\"./sibling\", \"root.tsx\")).toBe(\"sibling\");\n  });\n  it(\"returns null for a bare (non-internal) specifier\", () => {\n    expect(resolveInternalBase(\"react\", \"features/x/y.tsx\")).toBeNull();\n    expect(resolveInternalBase(\"d3-force\", \"a/b.tsx\")).toBeNull();\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

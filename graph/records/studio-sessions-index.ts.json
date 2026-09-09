@@ -1,0 +1,19 @@
+{
+  "code": "// The shadow catalogue registers this feature's graph-platform modules by importing\n// `./graphPlatform` DIRECTLY and calling its register function (see `shadowPages.ts`). This barrel\n// therefore has NO import-time side effect — it is re-exports only, which is what lets it be a\n// record rather than a file that must run to be correct.\n\n// Public API of the studio-sessions feature (#3357) — the app-owned designer / librarian / architect\n// singleton SESSIONS, hosted on the shared TerminalHost. (Distinct from the neighbouring `studio` feature,\n// #2889, which is the shareable snapshot BUNDLE of the app's library state — same word, unrelated\n// concern; hence the plural, hyphenated name.) Before #3357 each studio ran its own single-mount xterm\n// (`use*Terminal` → `useScreenSession`), which the host could not re-parent, so their Glance nodes could\n// only \"open the page\" instead of morphing into the live terminal. They now launch through the generic\n// TerminalView path like every fleet terminal, with a lazy start, survival across navigation, and a\n// 30-minute idle reaper.\nexport { StudioSessionHosts } from \"@/features/studio-sessions/StudioSessionHosts\";\nexport { StudioSessionMount, seedStudioLaunchState, studioStartPrompt } from \"@/features/studio-sessions/StudioSessionMount\";\nexport { useStudioViewer, useStudioViewers } from \"@/features/studio-sessions/useStudioViewer\";\nexport { useStudioPageShowing, studioPageShowing } from \"@/features/studio-sessions/useStudioPageShowing\";\nexport { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from \"@/features/studio-sessions/useStudioReaper\";\nexport { createStudiosSlice, orderedWantedStudios, type StudiosSlice } from \"@/features/studio-sessions/store\";\nexport {\n  STUDIO_IDS, STUDIO_SESSIONS, studioInitCmd,\n  isStudioId, studioForPaneId, studioRoleForPaneId, studioDetached, studioForTech, studioScopeDirective,\n  type StudioId, type StudioSessionDef,\n} from \"@/features/studio-sessions/lib/studioSessions\";\n",
+  "composes": [
+    "use-studio-viewer.ts",
+    "use-studio-page-showing.ts",
+    "use-studio-reaper.ts",
+    "studio-sessions-store.ts",
+    "studio-sessions.ts"
+  ],
+  "domain": "studio-sessions",
+  "folder": "features/studio-sessions",
+  "id": "studio-sessions-index.ts",
+  "name": "index",
+  "provides": "@/features/studio-sessions",
+  "role": "algorithm",
+  "src": "src/features/studio-sessions/index.ts",
+  "tech": "typescript",
+  "feature": "fleet"
+}

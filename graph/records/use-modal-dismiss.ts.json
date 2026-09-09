@@ -1,0 +1,20 @@
+{
+  "code": "// useModalDismiss (#1541) — the Escape-to-close + overlay-click-to-close pattern that was\r\n// hand-rolled inline across the app's modals (`Dialog.tsx` is the reference implementation).\r\n//\r\n//  - useModalDismiss(onClose, { enabled }) — a window keydown Escape listener → onClose, with\r\n//    cleanup on unmount / deps-change. `enabled` (default true) gates it, e.g. `{ enabled: !busy }`.\r\n//  - overlayDismiss(onClose?) — an onMouseDown/onClick handler that fires onClose ONLY when the\r\n//    event hits the overlay itself (`e.target === e.currentTarget`), so clicks on the inner card\r\n//    don't dismiss. Pass `undefined` (e.g. while busy/deleting) to disable dismissal entirely.\r\n\r\nimport { useEffect, type MouseEvent } from \"react\";\r\n\r\nexport function useModalDismiss(onClose: () => void, opts?: { enabled?: boolean }): void {\r\n  const enabled = opts?.enabled ?? true;\r\n  useEffect(() => {\r\n    if (!enabled) return;\r\n    const onKey = (e: KeyboardEvent) => { if (e.key === \"Escape\") onClose(); };\r\n    window.addEventListener(\"keydown\", onKey);\r\n    return () => window.removeEventListener(\"keydown\", onKey);\r\n  }, [onClose, enabled]);\r\n}\r\n\r\n/** An overlay click/mousedown handler that dismisses only when the overlay itself is the target.\r\n *  `onClose === undefined` makes it a no-op (use for a busy/locked modal). */\r\nexport function overlayDismiss(onClose?: () => void) {\r\n  return (e: MouseEvent) => {\r\n    if (onClose && e.target === e.currentTarget) onClose();\r\n  };\r\n}\r\n",
+  "composes": [],
+  "domain": "hooks",
+  "folder": "shared/hooks",
+  "id": "use-modal-dismiss.ts",
+  "name": "useModalDismiss",
+  "provides": "@/shared/hooks/useModalDismiss",
+  "role": "algorithm",
+  "src": "src/shared/hooks/useModalDismiss.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "useModalDismiss",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { renderHook } from \"@testing-library/react\";\nimport { useModalDismiss, overlayDismiss } from \"@/shared/hooks/useModalDismiss\";\n\nfunction pressEscape() {\n  window.dispatchEvent(new KeyboardEvent(\"keydown\", { key: \"Escape\" }));\n}\n\ndescribe(\"useModalDismiss\", () => {\n  it(\"calls onClose on Escape\", () => {\n    const onClose = vi.fn();\n    renderHook(() => useModalDismiss(onClose));\n    pressEscape();\n    expect(onClose).toHaveBeenCalledOnce();\n  });\n\n  it(\"ignores other keys\", () => {\n    const onClose = vi.fn();\n    renderHook(() => useModalDismiss(onClose));\n    window.dispatchEvent(new KeyboardEvent(\"keydown\", { key: \"Enter\" }));\n    expect(onClose).not.toHaveBeenCalled();\n  });\n\n  it(\"does not listen while disabled\", () => {\n    const onClose = vi.fn();\n    renderHook(() => useModalDismiss(onClose, { enabled: false }));\n    pressEscape();\n    expect(onClose).not.toHaveBeenCalled();\n  });\n\n  it(\"removes the listener on unmount\", () => {\n    const onClose = vi.fn();\n    const { unmount } = renderHook(() => useModalDismiss(onClose));\n    unmount();\n    pressEscape();\n    expect(onClose).not.toHaveBeenCalled();\n  });\n});\n\ndescribe(\"overlayDismiss\", () => {\n  it(\"fires only when the overlay itself is the target\", () => {\n    const onClose = vi.fn();\n    const node = {} as EventTarget;\n    overlayDismiss(onClose)({ target: node, currentTarget: node } as never);\n    expect(onClose).toHaveBeenCalledOnce();\n    overlayDismiss(onClose)({ target: {}, currentTarget: node } as never); // clicked inner child\n    expect(onClose).toHaveBeenCalledOnce(); // unchanged\n  });\n\n  it(\"is a no-op when onClose is undefined (busy/locked)\", () => {\n    const node = {} as EventTarget;\n    expect(() => overlayDismiss(undefined)({ target: node, currentTarget: node } as never)).not.toThrow();\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

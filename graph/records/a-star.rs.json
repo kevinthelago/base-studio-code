@@ -1,0 +1,14 @@
+{
+  "id": "a-star.rs",
+  "domain": "logistics",
+  "tech": "rust",
+  "name": "a_star",
+  "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or None.",
+  "composes": [
+    "rust.hashmap",
+    "rust.vec"
+  ],
+  "code": "use std::collections::{HashMap, HashSet};\n\n/// A* shortest path from `start` to `goal`, guided by `heuristic`. Returns the node path\n/// (inclusive of both ends) or `None` if `goal` is unreachable.\npub fn a_star(\n    adj: &HashMap<String, Vec<(String, u32)>>,\n    start: &str,\n    goal: &str,\n    heuristic: impl Fn(&str) -> u32,\n) -> Option<Vec<String>> {\n    let mut g_score: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut came_from: HashMap<String, String> = HashMap::new();\n    let mut open: HashSet<String> = HashSet::from([start.to_string()]);\n    while !open.is_empty() {\n        let current = open\n            .iter()\n            .min_by_key(|n| {\n                g_score.get(*n).copied().unwrap_or(u32::MAX).saturating_add(heuristic(n))\n            })\n            .cloned()\n            .unwrap();\n        if current == goal {\n            let mut path = vec![current.clone()];\n            let mut step = current;\n            while let Some(prev) = came_from.get(&step) {\n                path.push(prev.clone());\n                step = prev.clone();\n            }\n            path.reverse();\n            return Some(path);\n        }\n        open.remove(&current);\n        let g_current = g_score.get(&current).copied().unwrap_or(u32::MAX);\n        if let Some(neighbors) = adj.get(&current) {\n            for (next, w) in neighbors {\n                let tentative = g_current.saturating_add(*w);\n                if tentative < g_score.get(next).copied().unwrap_or(u32::MAX) {\n                    came_from.insert(next.clone(), current.clone());\n                    g_score.insert(next.clone(), tentative);\n                    open.insert(next.clone());\n                }\n            }\n        }\n    }\n    None\n}\n",
+  "role": "algorithm",
+  "feature": "reference"
+}

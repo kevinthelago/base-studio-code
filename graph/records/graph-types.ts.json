@@ -1,0 +1,13 @@
+{
+  "code": "// Shared graph core (#2214, epic) — the pure (React-free) graph primitives that Glance, the Org\r\n// designer, and the agent-relationship graph all build on, so layering/cycle/focus logic lives once\r\n// instead of being re-copied per domain (#2204: \"layout is a function of the data structure\"). The\r\n// render layer is already shared (GraphCanvas + useGraphViewport, #2208); this is the model layer.\r\n//\r\n// Each feature extends these bases with its own domain fields (role/status/kind/hardness/…) and\r\n// palettes — the core only knows ids + direction.\r\n\r\n/** The minimum a node needs to participate in the shared graph algorithms. */\r\nexport interface GraphNode {\r\n  id: string;\r\n}\r\n\r\n/** A directed edge; `from`/`to` are node ids. Direction matters for layering + cycle detection. */\r\nexport interface GraphEdge {\r\n  id: string;\r\n  from: string;\r\n  to: string;\r\n}\r\n",
+  "composes": [],
+  "domain": "graph",
+  "folder": "shared/lib/graph",
+  "id": "graph-types.ts",
+  "name": "types",
+  "provides": "@/shared/lib/graph/types",
+  "role": "algorithm",
+  "src": "src/shared/lib/graph/types.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

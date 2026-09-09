@@ -1,0 +1,20 @@
+{
+  "code": "// `{{NAME}}` placeholder filling for `@data`-seeded prompt templates (#2416). The prompt PROSE lives\n// in JSON under `src-tauri/data/` (editable without a rebuild via the config-dir overlay, #2047);\n// TS keeps only the interpolation — this helper is that interpolation step.\n\n/**\n * Substitute every `{{NAME}}` placeholder in `template` with `vars[NAME]`.\n *\n * Uses a replacer FUNCTION (not a replacement string), so `$`-sequences in a value are inserted\n * verbatim rather than interpreted as regex replacement patterns. A placeholder with no entry in\n * `vars` is left untouched — a visible `{{…}}` in rendered output beats silently dropping prose,\n * and callers that must guarantee full substitution can assert on it.\n */\nexport function fillTemplate(template: string, vars: Record<string, string>): string {\n  return template.replace(/\\{\\{(\\w+)\\}\\}/g, (whole, name: string) =>\n    Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : whole,\n  );\n}\n",
+  "composes": [],
+  "domain": "core",
+  "folder": "shared/lib/core",
+  "id": "template.ts",
+  "name": "template",
+  "provides": "@/shared/lib/core/template",
+  "role": "algorithm",
+  "src": "src/shared/lib/core/template.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "fillTemplate (#2416)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { fillTemplate } from \"@/shared/lib/core/template\";\n\ndescribe(\"fillTemplate (#2416)\", () => {\n  it(\"substitutes every known {{NAME}} placeholder\", () => {\n    expect(fillTemplate(\"a {{X}} b {{Y}} c {{X}}\", { X: \"1\", Y: \"2\" })).toBe(\"a 1 b 2 c 1\");\n  });\n\n  it(\"leaves an unknown placeholder verbatim (visible, not dropped)\", () => {\n    expect(fillTemplate(\"keep {{NOPE}} as-is\", {})).toBe(\"keep {{NOPE}} as-is\");\n  });\n\n  it(\"inserts $-sequences in values literally (no regex replacement-pattern expansion)\", () => {\n    expect(fillTemplate(\"cost: {{V}}\", { V: \"$100 and $' and $&\" })).toBe(\"cost: $100 and $' and $&\");\n  });\n\n  it(\"handles multi-line values (prompt bodies)\", () => {\n    expect(fillTemplate(\"A:\\n{{BODY}}\\nend\", { BODY: \"line1\\nline2\" })).toBe(\"A:\\nline1\\nline2\\nend\");\n  });\n});\n"
+    }
+  ],
+  "feature": "core"
+}

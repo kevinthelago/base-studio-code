@@ -1,0 +1,13 @@
+{
+  "code": "// Shared GitHub data shapes (#1492, #1528) — reused across features (mcp, skills, planner,\r\n// github). Genuinely-shared shapes live here; truly view-specific supersets (the full\r\n// projectsV2 node in ProjectsList) stay with their feature.\r\n\r\n/** A minimal GitHub Project reference (subset of the GraphQL `projectsV2` node). */\r\nexport interface GhProjectRef {\r\n  id: string;\r\n  number: number;\r\n  title: string;\r\n}\r\n\r\n/** A GitHub REST milestone (the superset the Roadmap Gantt needs; ProjectsSummary reads a subset). */\r\nexport interface GhMilestone {\r\n  number: number;\r\n  title: string;\r\n  description: string | null;\r\n  state: \"open\" | \"closed\";\r\n  due_on: string | null;\r\n  created_at: string;\r\n  open_issues: number;\r\n  closed_issues: number;\r\n  creator: { login: string } | null;\r\n}\r\n\r\n/** A GitHub REST issue row (the `issues` endpoint also returns PRs — rows with `pull_request`\r\n *  set are PRs and must be excluded from \"issues\"). Union of the fields the fleet + portfolio\r\n *  views read. */\r\nexport interface GhIssueItem {\r\n  number: number;\r\n  title: string;\r\n  state: string;\r\n  created_at: string;\r\n  closed_at: string | null;\r\n  pull_request?: unknown;\r\n}\r\n\r\n/** A GitHub Events API event — the shape the user/repo activity feeds consume. */\r\nexport interface GHEvent {\r\n  id: string;\r\n  type: string;\r\n  actor: { login: string };\r\n  repo: { name: string };\r\n  payload: unknown;\r\n  created_at: string;\r\n}\r\n\r\n/** A GitHub issue/PR label — `name` + a 6-hex `color` (no leading `#`). */\r\nexport interface GhLabel {\r\n  name: string;\r\n  color: string;\r\n}\r\n",
+  "composes": [],
+  "domain": "github",
+  "folder": "shared/lib/github",
+  "id": "github-types.ts",
+  "name": "types",
+  "provides": "@/shared/lib/github/types",
+  "role": "algorithm",
+  "src": "src/shared/lib/github/types.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

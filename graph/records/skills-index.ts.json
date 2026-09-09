@@ -1,0 +1,12 @@
+{
+  "code": "// The Skills feature's public API barrel (#1309).\n//\n// The `SkillsWorkspace` COMPONENT that used to live here is gone (retire-the-dead-skills-workspace-\n// copy). It had been dead since #3654 — `lazyWorkspaces` resolves the symbol to `SkillsGraphHost`, so\n// the record was what mounted and this was a second copy nobody rendered. #4179 is what that costs:\n// two changes landed on the two copies four hours apart, neither was carried across, and the suite\n// stayed green for months because the tests rendered THIS one.\n//\n// The barrel survives where `security`'s did not, because three records import it — `fleet-lessons`,\n// `planningpage` and `teams-inspector` all reach `@/features/skills` for types and helpers.\n// Re-exported feature surface — this index is the skills feature's public API barrel (#1309).\nexport { SkillsGraphHost } from \"@/features/skills/SkillsGraphHost\"; // the graph-hosted workspace (#3654)\nexport { SkillsStatus } from \"@/features/skills/SkillsStatus\";\nexport { SessionSkillsModal, type SessionSkillsModalProps } from \"@/features/skills/SessionSkillsModal\";\n\n// #1545: public API for cross-feature consumers (planner, app/console).\nexport {\n  type SkillDef, skillFromPayload, resolveSkills, effectiveSessionSkills,\n  expandGroups, toSkillCfgs,\n} from \"@/features/skills/lib/skills\";\nexport { loadPendingLessons, lessonTitle, type Lesson } from \"@/features/skills/lib/lessons\";\n// The skill-usage LOG parser + aggregate. Exported because Logs → Skills renders the invocation\n// history and must derive it the SAME way the library page does — two derivations of \"how many\n// times did this skill run\" would eventually disagree, and neither screen would say which was\n// right. Cross-feature consumers take the barrel, never `lib/*` (#1545).\nexport { parseSkillLog, aggregateSkillTelemetry, type SkillUsageRecord, type SkillStats } from \"@/features/skills/lib/skillTelemetry\";",
+  "composes": [],
+  "folder": "features/skills",
+  "id": "skills-index.ts",
+  "name": "index",
+  "provides": "@/features/skills",
+  "role": "algorithm",
+  "src": "src/features/skills/index.ts",
+  "tech": "typescript",
+  "feature": "skills"
+}

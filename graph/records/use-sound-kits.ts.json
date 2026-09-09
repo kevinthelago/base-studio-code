@@ -1,0 +1,13 @@
+{
+  "code": "// useSoundKits (#3080) — the Sounds tab's kit source, seed-first: renders the packaged built-ins\r\n// immediately, then hydrates from the durable `bsc-sound` store and seeds any built-in the store is\r\n// missing (first run). Mirrors the Algorithms knowledge-graph hydration (`useKnowledgeGraph`, #2856):\r\n// a hook, not a store slice, since the library is read-mostly here (authoring lands in Phase 4).\r\nimport { useEffect, useState } from \"react\";\r\nimport type { SoundKit } from \"@/features/sounds/lib/soundDescriptor\";\r\nimport { BUILTIN_KITS, mergeKits } from \"@/features/sounds/lib/soundKits\";\r\nimport { loadKits, pushKit } from \"@/features/sounds/lib/soundBridge\";\r\n\r\nexport function useSoundKits(): SoundKit[] {\r\n  const [kits, setKits] = useState<SoundKit[]>(BUILTIN_KITS);\r\n  useEffect(() => {\r\n    let cancelled = false;\r\n    void loadKits().then((rows) => {\r\n      const { kits: merged, toSeed } = mergeKits(rows);\r\n      // Push any built-in the store doesn't have yet, so `bsc sound get <id>` works from a session too.\r\n      toSeed.forEach((k) => { void pushKit(k).catch(() => {}); });\r\n      if (!cancelled && merged.length) setKits(merged);\r\n    });\r\n    return () => { cancelled = true; };\r\n  }, []);\r\n  return kits;\r\n}\r\n",
+  "composes": [],
+  "domain": "sounds",
+  "folder": "features/sounds",
+  "id": "use-sound-kits.ts",
+  "name": "useSoundKits",
+  "provides": "@/features/sounds/useSoundKits",
+  "role": "algorithm",
+  "src": "src/features/sounds/useSoundKits.ts",
+  "tech": "typescript",
+  "feature": "sounds"
+}

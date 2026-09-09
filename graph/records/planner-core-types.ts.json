@@ -1,0 +1,13 @@
+{
+  "code": "/** One file in the canonical plan representation — the atomic sync unit. */\r\nexport interface CanonicalFile {\r\n  /** Relative path within the project hub (e.g. \"goal.md\", \"phases.json\"). */\r\n  relpath: string;\r\n  /** Raw text content (UTF-8). */\r\n  content: string;\r\n}\r\n\r\n/**\r\n * Compact reconciliation payload: relpath → lowercase 8-char hex FNV-1a 32-bit hash.\r\n * Both peers exchange this to discover which files differ without transferring content.\r\n */\r\nexport interface PlanManifest {\r\n  /** Stable project identifier (e.g. \"proj-bf9cf968\"). */\r\n  projectId: string;\r\n  /** Map from relpath to content hash. */\r\n  files: Record<string, string>;\r\n}\r\n\r\n/**\r\n * Canonical section-state vocabulary (the unified cross-device spec).\r\n *\r\n * Desktop vocab map:\r\n *   pending   → surfaced   (Claude has written the section; user hasn't confirmed)\r\n *   drafted   → drafted    (Claude has drafted it; in-progress)\r\n *   confirmed → confirmed  (User explicitly confirmed)\r\n *\r\n * _skipped.md entries are individually mapped to \"skipped\".\r\n *\r\n * See plannerCore.fixtures.json (sectionStates section) for the pinned mapping.\r\n */\r\nexport type CanonicalSectionState = \"surfaced\" | \"drafted\" | \"confirmed\" | \"skipped\";\r\n\r\n/** Metadata stored in plan.json — stable identity and per-section states. */\r\nexport interface PlanMeta {\r\n  /** Stable \"proj-{hex}\" identifier (hash-derived from the sanitized title). */\r\n  projectId: string;\r\n  /** Human-readable project title (the sanitized form). */\r\n  title: string;\r\n  /** Per-section canonical states, keyed by section key (e.g. \"goal\", \"scope\"). */\r\n  sectionStates: Record<string, CanonicalSectionState>;\r\n}\r\n",
+  "composes": [],
+  "domain": "planner",
+  "folder": "features/planner/lib/plannerCore",
+  "id": "planner-core-types.ts",
+  "name": "types",
+  "provides": "@/features/planner/lib/plannerCore/types",
+  "role": "algorithm",
+  "src": "src/features/planner/lib/plannerCore/types.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

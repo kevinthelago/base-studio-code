@@ -1,0 +1,10 @@
+{
+  "id": "rust.slice",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Slice",
+  "summary": "&[T] — a borrowed contiguous view; the sequence sort and search read it without owning it.",
+  "composes": [],
+  "ref": "&[T]",
+  "feature": "core"
+}

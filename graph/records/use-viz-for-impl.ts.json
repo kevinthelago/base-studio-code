@@ -1,0 +1,13 @@
+{
+  "code": "// The visualization hook for an implementation (#3233). Resolving a viz is now ASYNC when the impl carries\r\n// a stored `vizCode` (it is compiled + run in the sandbox Web Worker), so the sync `vizForImpl` became this\r\n// hook: the in-app program (trusted, main-thread) shows IMMEDIATELY, and a stored `vizCode` — when the\r\n// worker returns its frames — REPLACES it. A malformed / timed-out `vizCode` falls back to the program.\r\n\r\nimport { useEffect, useState } from \"react\";\r\nimport type { AlgoImpl } from \"@/features/algorithms/lib/knowledge\";\r\nimport { programVizForImpl, resolveVizExample, type VizExample } from \"@/features/algorithms/viz/examples/registry\";\r\n\r\n/**\r\n * The {@link VizExample} to render for `impl`, or `undefined` when it has none.\r\n *\r\n * The in-app program is derived synchronously during render, so an algorithm with an in-app viz never\r\n * flashes empty. A stored `vizCode` resolves asynchronously via the sandbox and, once ready, replaces the\r\n * program (it is the durable per-algorithm form). The resolved code-viz is kept KEYED by its code string,\r\n * so switching implementations never shows a previous impl's stored viz. `null` impl → `undefined`.\r\n */\r\nexport function useVizForImpl(impl: Pick<AlgoImpl, \"id\" | \"name\" | \"vizCode\"> | null): VizExample | undefined {\r\n  // The in-app program — synchronous, trusted, stable identity (a singleton per base name).\r\n  const program = impl ? programVizForImpl(impl) : undefined;\r\n  const vizCode = impl?.vizCode?.trim() ?? \"\";\r\n\r\n  // The sandbox-resolved stored viz, tagged with the code it came from (so it's never used for a different\r\n  // impl before its own resolves). Only the async callback sets state — no synchronous setState-in-effect.\r\n  const [resolved, setResolved] = useState<{ code: string; viz: VizExample | undefined }>({ code: \"\", viz: undefined });\r\n\r\n  useEffect(() => {\r\n    if (!vizCode) return;\r\n    let cancelled = false;\r\n    void resolveVizExample(vizCode).then((viz) => {\r\n      if (!cancelled) setResolved({ code: vizCode, viz });\r\n    });\r\n    return () => {\r\n      cancelled = true;\r\n    };\r\n  }, [vizCode]);\r\n\r\n  const codeViz = resolved.code === vizCode ? resolved.viz : undefined;\r\n  return codeViz ?? program;\r\n}\r\n",
+  "composes": [],
+  "domain": "algorithms",
+  "folder": "features/algorithms/viz",
+  "id": "use-viz-for-impl.ts",
+  "name": "useVizForImpl",
+  "provides": "@/features/algorithms/viz/useVizForImpl",
+  "role": "algorithm",
+  "src": "src/features/algorithms/viz/useVizForImpl.ts",
+  "tech": "typescript",
+  "feature": "algorithms"
+}

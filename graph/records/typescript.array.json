@@ -1,0 +1,9 @@
+{
+  "composes": [],
+  "id": "typescript.array",
+  "name": "Array",
+  "ref": "Array<T>",
+  "role": "primitive",
+  "tech": "typescript",
+  "feature": "core"
+}

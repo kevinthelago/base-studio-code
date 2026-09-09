@@ -1,0 +1,13 @@
+{
+  "code": "// The app-wide store_state publisher (#2498) — the singleton the projector hook and the\r\n// planner's plan-domain push share, bound to the real `tunnel_set_store_state` command.\r\n// Kept apart from domainPublisher.ts so the engine stays Tauri-free and unit-testable.\r\n\r\nimport { createDomainPublisher } from \"@/features/tunnel/lib/domainPublisher\";\r\nimport { tunnelSetStoreState, type StoreDomain } from \"@/features/tunnel/lib/tunnelClient\";\r\nimport { log } from \"@/shared/lib/core/log\";\r\n\r\nconst publisher = createDomainPublisher({\r\n  send: tunnelSetStoreState,\r\n  onError: (domain, e) => log.error(`tunnel: store_state[${domain}] push failed: ${e}`),\r\n});\r\n\r\n/** Publish one domain's projection over the tunnel — debounced, deduped, rev-stamped.\r\n *  Safe to call on every derivation: an unchanged payload never reaches the wire. */\r\nexport function publishTunnelDomain(domain: StoreDomain, payload: unknown): void {\r\n  publisher.publish(domain, payload);\r\n}\r\n\r\n/** Forget the last-sent cache (the next publish per domain re-sends). Called when the relay\r\n *  (re)starts so a fresh Rust-side store is repopulated even if the store didn't change. */\r\nexport function resetTunnelDomains(): void {\r\n  publisher.reset();\r\n}\r\n",
+  "composes": [],
+  "domain": "tunnel",
+  "folder": "features/tunnel/lib",
+  "id": "tunnel-domains.ts",
+  "name": "tunnelDomains",
+  "provides": "@/features/tunnel/lib/tunnelDomains",
+  "role": "algorithm",
+  "src": "src/features/tunnel/lib/tunnelDomains.ts",
+  "tech": "typescript",
+  "feature": "mobile-tunnel"
+}

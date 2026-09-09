@@ -1,0 +1,13 @@
+{
+  "code": "// Public API of the studio feature (#2889) — a Studio is the top-level shareable bundle: a\r\n// self-contained snapshot of the app's library state (teams · personas · components · variants ·\r\n// themes · blueprints). Slice #2891 adds gist export/import over the shared extension-manifest\r\n// envelope, mirroring blueprints + component-kits. Cross-feature, import ONLY through this barrel.\r\nexport {\r\n  STUDIO_KIND,\r\n  studioToManifest,\r\n  manifestToStudio,\r\n  exportStudioToGist,\r\n  importStudioFromGist,\r\n  type Studio,\r\n} from \"@/features/studio/lib/studioGist\";\r\n",
+  "composes": [],
+  "domain": "studio",
+  "folder": "features/studio",
+  "id": "studio-index.ts",
+  "name": "index",
+  "provides": "@/features/studio",
+  "role": "algorithm",
+  "src": "src/features/studio/index.ts",
+  "tech": "typescript",
+  "feature": "cli-platform"
+}

@@ -1,0 +1,13 @@
+{
+  "code": "// The `graph` viz kit's MOTION wiring (#3224, epic #3220/#2942) — injects the compiled motion CSS\r\n// (frontier / visit / relax) into the live GraphView. SVG-safe properties only. The animation DATA now\r\n// lives in a SHARED, feature-agnostic home (`@/shared/ui/kit/graphVizAnimations`, #3242) so BOTH consumers\r\n// read ONE definition: this renderer AND the Designs `graph-viz` builtin kit — see that module's doc for\r\n// the why and the state-trigger seam. The renderer's root carries the applying classes.\r\nimport { animClassName, compileAnimationsCss, kitAnimations } from \"@/shared/ui/kit\";\r\nimport { GRAPH_VIZ_KIT_ID, GRAPH_VIZ_ANIMATIONS } from \"@/shared/ui/kit/graphVizAnimations\";\r\n\r\n// Re-export the shared data so this renderer's public surface (and the algorithms barrel) is unchanged.\r\nexport { GRAPH_VIZ_KIT_ID, GRAPH_VIZ_ANIMATIONS };\r\n\r\n/** The applying classes the renderer's root carries so the state-scoped rules match its SVG elements. */\r\nexport const GRAPH_VIZ_ANIM_CLASSES: string = GRAPH_VIZ_ANIMATIONS.map((a) =>\r\n  animClassName({ kit: GRAPH_VIZ_KIT_ID, name: a.name }),\r\n).join(\" \");\r\n\r\n/** The compiled motion CSS — produced ONCE from {@link GRAPH_VIZ_ANIMATIONS}. Pure. */\r\nexport const GRAPH_VIZ_MOTION_CSS: string = compileAnimationsCss(\r\n  kitAnimations([{ id: GRAPH_VIZ_KIT_ID, animations: GRAPH_VIZ_ANIMATIONS }]),\r\n);\r\n\r\nconst STYLE_ID = \"bsc-graph-viz-animations\";\r\n\r\n/** Inject the compiled graph motion CSS into a dedicated managed `<style>` (idempotent). `doc` param'd for\r\n *  tests. Mirrors `ensureArrayViewMotion` on its own style id. */\r\nexport function ensureGraphViewMotion(doc: Document = document): void {\r\n  if (!GRAPH_VIZ_MOTION_CSS) return;\r\n  let el = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;\r\n  if (!el) {\r\n    el = doc.createElement(\"style\");\r\n    el.id = STYLE_ID;\r\n    doc.head.appendChild(el);\r\n  }\r\n  if (el.textContent !== GRAPH_VIZ_MOTION_CSS) el.textContent = GRAPH_VIZ_MOTION_CSS;\r\n}\r\n",
+  "composes": [],
+  "domain": "algorithms",
+  "folder": "features/algorithms/viz/renderers",
+  "id": "graph-view-motion.ts",
+  "name": "graphViewMotion",
+  "provides": "@/features/algorithms/viz/renderers/graphViewMotion",
+  "role": "algorithm",
+  "src": "src/features/algorithms/viz/renderers/graphViewMotion.ts",
+  "tech": "typescript",
+  "feature": "algorithms"
+}
