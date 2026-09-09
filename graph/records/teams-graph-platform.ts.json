@@ -1,0 +1,19 @@
+{
+  "code": "// The teams feature's graph-platform surface (register-the-feature-logic-surface) — the modules a\n// graph-loaded record imports from this feature but does NOT redraw.\n//\n// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545)\n// and eager-importing them from `app/` would de-lazy the whole feature at boot. The feature's BARREL\n// calls this at module load, so the shadow catalogue's `ensurePlatform: () => import(\"@/features/teams\")`\n// is what registers them — the same shape `registerAutomationsPlatform` already uses.\n//\n// These files STAY on disk: registration is not migration. It makes a record that imports them\n// loadable, which is the prerequisite for migrating the modules that import THEM.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as Team from \"@/features/teams/lib/team\";\nimport * as OrgLayout from \"@/features/teams/lib/orgLayout\";\nimport * as OrgView from \"@/features/teams/lib/orgView\";\nimport * as OrgPools from \"@/features/teams/lib/orgPools\";\nimport * as TeamsLayout from \"@/features/teams/lib/teamsLayout\";\n// `d3-force`, registered HERE and not in `appModules`: only the teams auto-layout uses the\n// simulation, and registration is EAGER — the shell's set would pay for it at boot.\nimport * as D3Force from \"d3-force\";\n\nlet done = false;\n\n/** Register this feature's injected graph-platform modules by the specifiers a record imports. Idempotent. */\nexport function registerTeamsPlatform(): void {\n  if (done) return;\n  done = true;\n  registerAppModule(\"@/features/teams/lib/team\", Team);\n  registerAppModule(\"@/features/teams/lib/orgLayout\", OrgLayout);\n  registerAppModule(\"@/features/teams/lib/orgView\", OrgView);\n  registerAppModule(\"@/features/teams/lib/orgPools\", OrgPools);\n  registerAppModule(\"@/features/teams/lib/teamsLayout\", TeamsLayout);\n  registerAppModule(\"d3-force\", D3Force);\n}\n",
+  "composes": [
+    "module-registry.ts",
+    "org-layout.ts",
+    "org-pools.ts",
+    "org-view.ts",
+    "teams-layout.ts"
+  ],
+  "domain": "teams",
+  "folder": "features/teams",
+  "id": "teams-graph-platform.ts",
+  "name": "graphPlatform",
+  "provides": "@/features/teams/graphPlatform",
+  "role": "algorithm",
+  "src": "src/features/teams/graphPlatform.ts",
+  "tech": "typescript",
+  "feature": "teams-personas"
+}

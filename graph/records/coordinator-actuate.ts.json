@@ -1,0 +1,16 @@
+{
+  "code": "// Shared wake actuation (#199): kill the parked pane, relaunch it fresh via the store's\n// wakePane, then record the `woke` event so it isn't offered again. Used by both the\n// inbox \"Wake\" button and the always-on auto-wake coordinator.\nimport { safeInvoke } from \"@/shared/lib/core/safeInvoke\";\nimport { injectRedirect } from \"@/shared/lib/fleet/paneInject\";\n\nexport async function actuateWake(\n  session: string,\n  prompt: string,\n  wakePane: (paneId: string, prompt: string) => boolean,\n): Promise<boolean> {\n  // Kill first so the runId-bump remount spawns a FRESH session (not a reconnect).\n  await safeInvoke(\"pty_kill\", { paneId: session }, undefined);\n  const ok = wakePane(session, prompt);\n  if (ok) await safeInvoke(\"append_coord_woke\", { session }, undefined);\n  return ok;\n}\n\n/**\n * Deliver a wake to a LIVE (parked) session by injecting the prompt straight into its pane\n * (#374) — instant, keeps the session's own context, and consistent with how the director\n * pump + CI watcher deliver. Records the `woke` event so it isn't re-fired. This is the\n * automatic path; the manual inbox button still uses actuateWake (a fresh relaunch).\n */\nexport async function injectWake(session: string, prompt: string): Promise<boolean> {\n  // `injectRedirect`, not `injectPrompt` (#4253): a PARKED session is frequently parked ON a permission\n  // dialog, and a plain paste lands in that dialog rather than the composer — so the wake was recorded\n  // as delivered while the session never moved. Clearing first is the whole point of a wake.\n  await injectRedirect(session, prompt);\n  await safeInvoke(\"append_coord_woke\", { session }, undefined);\n  return true;\n}\n",
+  "composes": [
+    "pane-inject.ts",
+    "safe-invoke.ts"
+  ],
+  "domain": "fleet",
+  "folder": "shared/lib/fleet",
+  "id": "coordinator-actuate.ts",
+  "name": "coordinatorActuate",
+  "provides": "@/shared/lib/fleet/coordinatorActuate",
+  "role": "algorithm",
+  "src": "src/shared/lib/fleet/coordinatorActuate.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

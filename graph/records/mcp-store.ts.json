@@ -1,0 +1,17 @@
+{
+  "code": "// MCP feature store slice (#1309) — MCP servers + hooks, extracted from the former `session`\r\n// grab-bag slice. Composed into the single app store by store/index.ts.\r\nimport type { StateCreator } from \"zustand\";\r\nimport type { AppStore } from \"@/store/types\";\r\nimport type { McpServer } from \"@/features/mcp/lib/mcpServers\";\r\nimport type { Hook } from \"@/features/mcp/lib/hooks\";\r\n\r\nexport interface McpSlice {\r\n  // MCP servers the user configures, each scoped via `projects` ([] = global). Written into a\r\n  // launched session's .mcp.json. Persisted.\r\n  mcpServers: McpServer[];\r\n  addMcpServer: (def: Omit<McpServer, \"id\">) => string;\r\n  updateMcpServer: (id: string, patch: Partial<McpServer>) => void;\r\n  removeMcpServer: (id: string) => void;\r\n  toggleMcpServer: (id: string) => void;\r\n  setMcpServerProjects: (id: string, projects: string[]) => void;\r\n  // Lifecycle hooks, each scoped via `projects`. Written into .claude/settings.json. Persisted.\r\n  hooks: Hook[];\r\n  addHook: (def: Omit<Hook, \"id\">) => string;\r\n  updateHook: (id: string, patch: Partial<Hook>) => void;\r\n  removeHook: (id: string) => void;\r\n  toggleHook: (id: string) => void;\r\n  setHookProjects: (id: string, projects: string[]) => void;\r\n  // Resolved per-pane servers + hooks (transient): set at session creation, read by TerminalView.\r\n  paneHooks: Record<string, Hook[]>;\r\n}\r\n\r\nexport const createMcpSlice: StateCreator<AppStore, [], [], McpSlice> = (set) => ({\r\n  mcpServers: [],\r\n  addMcpServer: (def) => {\r\n    const id = `mcp_${Math.random().toString(36).slice(2, 8)}`;\r\n    set((s) => ({ mcpServers: [...s.mcpServers, { ...def, id }] }));\r\n    return id;\r\n  },\r\n  updateMcpServer: (id, patch) =>\r\n    set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),\r\n  removeMcpServer: (id) =>\r\n    set((s) => ({ mcpServers: s.mcpServers.filter((e) => e.id !== id) })),\r\n  toggleMcpServer: (id) =>\r\n    set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),\r\n  setMcpServerProjects: (id, projects) =>\r\n    set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, projects } : e)) })),\r\n  hooks: [],\r\n  addHook: (def) => {\r\n    const id = `hook_${Math.random().toString(36).slice(2, 8)}`;\r\n    set((s) => ({ hooks: [...s.hooks, { ...def, id }] }));\r\n    return id;\r\n  },\r\n  updateHook: (id, patch) =>\r\n    set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),\r\n  removeHook: (id) =>\r\n    set((s) => ({ hooks: s.hooks.filter((e) => e.id !== id) })),\r\n  toggleHook: (id) =>\r\n    set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })),\r\n  setHookProjects: (id, projects) =>\r\n    set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, projects } : e)) })),\r\n  paneHooks: {},\r\n});\r\n",
+  "composes": [
+    "hooks.ts",
+    "mcp-servers.ts",
+    "store-types.ts"
+  ],
+  "domain": "mcp",
+  "folder": "features/mcp",
+  "id": "mcp-store.ts",
+  "name": "store",
+  "provides": "@/features/mcp/store",
+  "role": "algorithm",
+  "src": "src/features/mcp/store.ts",
+  "tech": "typescript",
+  "feature": "mcp"
+}

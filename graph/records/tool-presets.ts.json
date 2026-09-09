@@ -1,0 +1,13 @@
+{
+  "code": "// Tool permission presets + the common-tool suggestion list for the Claude Config editor (#1709).\r\n// Kept as typed TS data (NOT JSON, per project decision) so the shapes stay type-checked and the\r\n// preset table reads as code alongside its consumers.\r\n\r\n/** A one-click allow/deny pair applied to the tool-permission editor. */\r\nexport interface ToolPreset {\r\n  label: string;\r\n  allow: string[];\r\n  deny: string[];\r\n}\r\n\r\nexport const TOOL_PRESETS: ToolPreset[] = [\r\n  { label: \"read-only\",  allow: [\"Read\", \"Glob\", \"Grep\"],                        deny: [\"Write\", \"Edit\", \"MultiEdit\", \"Bash\", \"WebFetch\", \"WebSearch\"] },\r\n  { label: \"no-bash\",    allow: [],                                               deny: [\"Bash\"] },\r\n  { label: \"no-web\",     allow: [],                                               deny: [\"WebFetch\", \"WebSearch\"] },\r\n  { label: \"full\",       allow: [],                                               deny: [] },\r\n];\r\n\r\n/** Suggestions surfaced in the chip-input datalist when typing a tool name. */\r\nexport const COMMON_TOOLS = [\"Read\", \"Write\", \"Edit\", \"MultiEdit\", \"Bash\", \"Glob\", \"Grep\", \"WebFetch\", \"WebSearch\"];\r\n",
+  "composes": [],
+  "domain": "settings",
+  "folder": "features/settings/lib",
+  "id": "tool-presets.ts",
+  "name": "toolPresets",
+  "provides": "@/features/settings/lib/toolPresets",
+  "role": "algorithm",
+  "src": "src/features/settings/lib/toolPresets.ts",
+  "tech": "typescript",
+  "feature": "settings"
+}

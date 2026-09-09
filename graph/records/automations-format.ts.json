@@ -1,0 +1,22 @@
+{
+  "code": "// Compact local-time formatting for automation timestamps.\r\n// fmtClock moved to the shared home (@/shared/lib/core/format, #2421) — import it from there.\r\n\r\nimport { fmtClock } from \"@/shared/lib/core/format\";\r\n\r\n/** \"today HH:MM\" / \"yesterday HH:MM\" / \"Mon D HH:MM\", or \"—\" for null. */\r\nexport function fmtStamp(ms: number | null): string {\r\n  if (ms == null) return \"—\";\r\n  const d = new Date(ms);\r\n  const t = fmtClock(ms);\r\n  const midnight = (x: Date) => { const c = new Date(x); c.setHours(0, 0, 0, 0); return c.getTime(); };\r\n  const today = midnight(new Date());\r\n  const day = midnight(d);\r\n  if (day === today) return `today ${t}`;\r\n  if (day === today - 86_400_000) return `yesterday ${t}`;\r\n  return `${d.toLocaleDateString(undefined, { month: \"short\", day: \"numeric\" })} ${t}`;\r\n}\r\n\r\n/**\r\n * The status-bar summary of armed schedules: how many are armed and the soonest next run\r\n * across them (`null` when none are armed or none have a next run). Pure; drives the live\r\n * Automations status-bar slot (replacing the old hardcoded \"4 schedules armed\").\r\n */\r\nexport function armedSummary(\r\n  automations: ReadonlyArray<{ armed: boolean; nextRunAt: number | null }>,\r\n): { count: number; nextAt: number | null } {\r\n  let count = 0;\r\n  let nextAt: number | null = null;\r\n  for (const a of automations) {\r\n    if (!a.armed) continue;\r\n    count++;\r\n    if (a.nextRunAt != null && (nextAt == null || a.nextRunAt < nextAt)) nextAt = a.nextRunAt;\r\n  }\r\n  return { count, nextAt };\r\n}\r\n",
+  "composes": [
+    "format.ts"
+  ],
+  "domain": "automations",
+  "folder": "features/automations",
+  "id": "automations-format.ts",
+  "name": "format",
+  "provides": "@/features/automations/format",
+  "role": "algorithm",
+  "src": "src/features/automations/format.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "armedSummary (status-bar live data)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { armedSummary } from \"@/features/automations/format\";\n\nconst a = (armed: boolean, nextRunAt: number | null) => ({ armed, nextRunAt });\n\ndescribe(\"armedSummary (status-bar live data)\", () => {\n  it(\"counts only armed schedules and takes the soonest next run\", () => {\n    const r = armedSummary([\n      a(true, 5_000),\n      a(false, 1_000), // disarmed — ignored, even though it's sooner\n      a(true, 3_000),\n      a(true, 9_000),\n    ]);\n    expect(r).toEqual({ count: 3, nextAt: 3_000 });\n  });\n\n  it(\"is zero/null when nothing is armed\", () => {\n    expect(armedSummary([a(false, 1_000), a(false, 2_000)])).toEqual({ count: 0, nextAt: null });\n    expect(armedSummary([])).toEqual({ count: 0, nextAt: null });\n  });\n\n  it(\"counts an armed schedule even when its next run is null\", () => {\n    expect(armedSummary([a(true, null)])).toEqual({ count: 1, nextAt: null });\n    // armed-with-time still wins the nextAt when mixed with armed-without-time\n    expect(armedSummary([a(true, null), a(true, 4_000)])).toEqual({ count: 2, nextAt: 4_000 });\n  });\n});\n\n// fmtClock moved to @/shared/lib/core/format (#2421) — covered in shared/lib/core/format.test.ts.\n"
+    }
+  ],
+  "feature": "automations"
+}

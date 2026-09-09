@@ -1,0 +1,13 @@
+{
+  "code": "// The unlock chime (#3939) — SYNTHESIZED, not sampled.\n//\n// The toast used to play a bundled `achievement-sound.mp3` that was almost certainly the Xbox cue.\n// Generating the sound removes the provenance question entirely and drops a binary from the bundle:\n// two short notes on a triangle wave with a quick exponential decay, which reads as a chime without\n// imitating anyone's.\n//\n// Fail-safe by construction: no AudioContext (an old WebView, a test env) or a blocked autoplay policy\n// simply produces no sound. The toast's visual never depends on it.\n\n/** A rising two-note figure — a perfect fifth, which is the least imitative \"something good happened\". */\nconst NOTES: Array<{ hz: number; at: number; dur: number }> = [\n  { hz: 784, at: 0, dur: 0.16 },     // G5\n  { hz: 1175, at: 0.13, dur: 0.34 }, // D6\n];\n\n/** Play the unlock chime. Never throws, never rejects — audio is decoration here. */\nexport function playAchievementChime(volume = 0.22): void {\n  try {\n    const Ctor: typeof AudioContext | undefined =\n      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;\n    if (!Ctor) return;\n    const ctx = new Ctor();\n    const now = ctx.currentTime;\n    for (const n of NOTES) {\n      const osc = ctx.createOscillator();\n      const gain = ctx.createGain();\n      osc.type = \"triangle\";\n      osc.frequency.value = n.hz;\n      // A quick attack and an exponential decay — a flat envelope would click on start and stop.\n      gain.gain.setValueAtTime(0.0001, now + n.at);\n      gain.gain.exponentialRampToValueAtTime(volume, now + n.at + 0.02);\n      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.at + n.dur);\n      osc.connect(gain).connect(ctx.destination);\n      osc.start(now + n.at);\n      osc.stop(now + n.at + n.dur + 0.02);\n    }\n    // Release the hardware once the figure has finished; leaking contexts eventually stops playback.\n    window.setTimeout(() => void ctx.close().catch(() => {}), 1200);\n  } catch {\n    // No audio is fine — the toast is visual first.\n  }\n}\n",
+  "composes": [],
+  "domain": "core",
+  "folder": "shared/lib/core",
+  "id": "achievement-chime.ts",
+  "name": "achievementChime",
+  "provides": "@/shared/lib/core/achievementChime",
+  "role": "algorithm",
+  "src": "src/shared/lib/core/achievementChime.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

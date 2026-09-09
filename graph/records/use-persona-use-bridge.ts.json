@@ -1,0 +1,16 @@
+{
+  "id": "use-persona-use-bridge.ts",
+  "name": "usePersonaUseBridge",
+  "provides": "@/app/usePersonaUseBridge",
+  "src": "src/app/usePersonaUseBridge.ts",
+  "role": "algorithm",
+  "tech": "typescript",
+  "domain": "shell",
+  "folder": "app",
+  "composes": [
+    "persona-use-bridge.ts",
+    "safe-invoke.ts"
+  ],
+  "code": "// usePersonaUseBridge (#change-a-panes-persona-from-the-cli) — apply a `bsc persona use` request to the\n// store and ACK it.\n//\n// THE ROUND TRIP\n//   bsc persona use → request file → Rust watcher → `bsc://persona-use` → HERE → store → `persona_use_ack`\n//\n// The ack is load-bearing rather than ceremony: applying a persona RELAUNCHES the pane (see\n// `applyPersonaUse`), so a change that silently failed would leave a killed session behind a caller that\n// believes it came back under a new identity. So this ALWAYS acks — success or a stated error.\nimport { useEffect } from \"react\";\nimport { listen } from \"@tauri-apps/api/event\";\nimport { invoke } from \"@tauri-apps/api/core\";\nimport { useAppStore } from \"@/store\";\nimport { safeInvoke } from \"@/shared/lib/core/safeInvoke\";\nimport { log } from \"@/shared/lib/core/log\";\nimport { applyPersonaUse, type PersonaUseRequest, type PersonaUseAck } from \"@/app/personaUseBridge\";\n\n/**\n * Listen for `bsc://persona-use` and apply it. Mounted once by the shell.\n *\n * A thin adapter: the DECISION lives in `personaUseBridge.ts`, unit-testable without Tauri.\n */\nexport function usePersonaUseBridge(): void {\n  useEffect(() => {\n    let disposed = false;\n    const un = listen<PersonaUseRequest & { id: string }>(\"bsc://persona-use\", async (e) => {\n      const { id, ...req } = e.payload;\n      let ack: PersonaUseAck;\n      try {\n        // Read every action off a LIVE getState, not a captured snapshot: zustand hands out a new\n        // object per update, so a stale closure could call into an older tab list.\n        ack = await applyPersonaUse(id, req, {\n          personaIds: () => (useAppStore.getState().personas ?? []).map((p) => p.id),\n          currentPersona: (p) => useAppStore.getState().panePersonas?.[p],\n          setPanePersona: (p, persona) => useAppStore.getState().setPanePersona(p, persona),\n          killPane: async (p) => { await safeInvoke(\"pty_kill\", { paneId: p }, undefined); },\n          wakePane: (p, t) => useAppStore.getState().wakePane(p, t),\n        });\n      } catch (err) {\n        // A throw here would strand the Rust waiter until its timeout. State it instead.\n        ack = {\n          id,\n          error: `persona use threw: ${err instanceof Error ? err.message : String(err)}`,\n          applied: false,\n          relaunched: false,\n        };\n        log.error(`persona use ${id} threw: ${String(err)}`);\n      }\n      void invoke(\"persona_use_ack\", { ack: { ...ack, id } }).catch((e2) => {\n        // Nothing left to do — the caller will time out. Log it so the cause isn't a mystery.\n        log.error(`persona_use_ack failed for ${id}: ${String(e2)}`);\n      });\n    });\n    return () => {\n      disposed = true;\n      void un.then((f) => {\n        if (disposed) f();\n      });\n    };\n  }, []);\n}\n",
+  "feature": "shell"
+}

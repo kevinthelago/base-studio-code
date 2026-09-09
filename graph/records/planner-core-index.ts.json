@@ -1,0 +1,18 @@
+{
+  "code": "export { fnv1a32, fnv1a32hex } from \"@/features/planner/lib/plannerCore/hash\";\r\nexport type { CanonicalFile, PlanManifest, CanonicalSectionState, PlanMeta } from \"@/features/planner/lib/plannerCore/types\";\r\nexport { buildManifest, diffManifests } from \"@/features/planner/lib/plannerCore/manifest\";\r\nexport type { ManifestDiff } from \"@/features/planner/lib/plannerCore/manifest\";\r\nexport { projectId, phaseId, issueId, nodeId } from \"@/features/planner/lib/plannerCore/ids\";\r\n",
+  "composes": [
+    "planner-core-hash.ts",
+    "planner-core-types.ts",
+    "planner-core-manifest.ts",
+    "ids.ts"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/lib/plannerCore",
+  "id": "planner-core-index.ts",
+  "name": "index",
+  "provides": "@/features/planner/lib/plannerCore",
+  "role": "algorithm",
+  "src": "src/features/planner/lib/plannerCore/index.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

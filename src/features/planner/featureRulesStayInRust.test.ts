@@ -21,7 +21,10 @@
 //   bsc plan feature gate [--confirmed] --json
 //     → { count, specified, defined, allSpecified, gateComplete, awaitingConfirm, dependencyCycle }
 import { describe, it, expect } from "vitest";
-import seed from "@data/knowledge/algorithms.json";
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this module compiles
+// from (`retire-the-packaged-seed-directories`).
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 
 /** A predicate that answers a question about plan.db's feature roster. Rust owns every one. */
 const RUST_OWNED = [
@@ -38,7 +41,7 @@ interface Impl {
   code?: string;
   tests?: { src?: string }[];
 }
-const impls = (seed as { implementations: Impl[] }).implementations.filter((i) => i.tech === "typescript");
+const impls = ((loadImplementations() ?? []) as Impl[]).filter((i) => i.tech === "typescript");
 
 describe("the feature rules stay in Rust", () => {
   // A scanner that silently stops matching reports zero offenders, which reads as a pass. Assert the

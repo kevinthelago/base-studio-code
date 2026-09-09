@@ -1,0 +1,16 @@
+{
+  "code": "export function mergeRoleDefaults(embedded, overlaid) { const clampTiers = (base, over) => { const TIER_RANK = { none: 0, read: 1, write: 2 }; const TIER_FIELDS = [\"github\",\"git\",\"code\",\"net\",\"ui\"]; const out = {}; for (const f of TIER_FIELDS) { const bv = base[f], ov = over[f]; if (typeof bv !== \"string\" || typeof ov !== \"string\") continue; if ((TIER_RANK[ov] ?? 0) > (TIER_RANK[bv] ?? 0)) out[f] = bv; } const bg = base.writeGlobs, og = over.writeGlobs; if (Array.isArray(bg) && bg.length > 0 && Array.isArray(og) && og.length === 0) out.writeGlobs = bg; return out; }; const floorLists = (base, over) => { const b = base.harvestRoots; const o = over.harvestRoots; if (!b || !b.length) return {}; return { harvestRoots: [...b, ...(o ?? []).filter((r) => !b.includes(r))] }; }; const out = { ...embedded }; for (const [role, over] of Object.entries(overlaid)) { const base = embedded[role]; if (!base || typeof base !== \"object\" || typeof over !== \"object\" || !over) { out[role] = over; continue; } out[role] = { ...base, ...over, ...floorLists(base, over), ...clampTiers(base, over) }; } return out; }",
+  "composes": [
+    "typescript.map",
+    "typescript.array",
+    "typescript.string"
+  ],
+  "domain": "session",
+  "folder": "shared/lib/session",
+  "id": "merge-role-defaults.ts",
+  "name": "mergeRoleDefaults",
+  "role": "algorithm",
+  "src": "src/shared/lib/session/roleModel.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

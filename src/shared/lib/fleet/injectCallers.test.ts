@@ -17,7 +17,10 @@
 // The list is the honest state of the item, not a claim that the work is done: the launch half is
 // fixed and confirmed, the injection half is still being converted pump by pump.
 import { describe, it, expect } from "vitest";
-import algorithmsSeed from "@data/knowledge/algorithms.json";
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this module compiles
+// from (`retire-the-packaged-seed-directories`).
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 
 /** Every first-party source file, raw. `query: "?raw"` keeps these as TEXT rather than making a module
  *  out of the whole app — the same reason `shadowPages.ts` enumerates its raw globs. */
@@ -42,7 +45,7 @@ const RECORD_SOURCES: Record<string, string> = {};
   for (const rec of Object.values(seeds)) {
     if (typeof rec?.provides === "string" && typeof rec.srcText === "string") RECORD_SOURCES[rec.provides.trim()] = rec.srcText;
   }
-  const algos = (algorithmsSeed as { implementations?: { provides?: string; code?: string }[] }).implementations ?? [];
+  const algos = (loadImplementations() ?? []) as { provides?: string; code?: string }[];
   for (const im of algos) {
     if (typeof im?.provides === "string" && typeof im.code === "string") RECORD_SOURCES[im.provides.trim()] = im.code;
   }

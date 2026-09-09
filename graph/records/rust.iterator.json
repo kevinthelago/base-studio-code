@@ -1,0 +1,10 @@
+{
+  "id": "rust.iterator",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Iterator",
+  "summary": "Lazy sequence adaptor — map/filter/fold that sort/search compose over slices.",
+  "composes": [],
+  "ref": "std::iter::Iterator",
+  "feature": "core"
+}

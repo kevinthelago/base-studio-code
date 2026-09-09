@@ -8,11 +8,14 @@
 // So this is a WIRING guard over the mount's source, and it says so. It proves the switch is read and
 // where; the behaviour behind it is pinned by `planRequestSessions`' own tests.
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this module compiles
+// from (`retire-the-packaged-seed-directories`).
+import { loadStore } from "@scripts/lib/recordStore.mjs";
 
 /** The mount is a RECORD, not a file (docs/records.md) — read it out of the seed it ships in. */
 function mountSource(): string {
-  const seed = JSON.parse(readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8"));
+  const seed = loadStore();
   let found: string | null = null;
   const walk = (o: unknown): void => {
     if (Array.isArray(o)) return void o.forEach(walk);

@@ -1,0 +1,19 @@
+{
+  "code": "// useProjectComplete (#2623) — whether a project's BUILD has finished, for the fleet-drill's preview node.\n// Polls the project's plan.db issues and derives `projectComplete` (every planned issue complete/verified).\n// A null/empty key is never complete. The Glance workspace passes the DRILLED project so the ▷ preview node\n// appears exactly when there's a finished app to render.\nimport { useState } from \"react\";\nimport { usePoll } from \"@/shared/hooks/usePoll\";\nimport { bscJsonShared } from \"@/shared/lib/core/bscShared\";\nimport { projectComplete } from \"@/shared/lib/fleet/streamCompletion\";\nimport type { PlanIssue } from \"@/features/planner/issues/planIssues\";\n\nconst POLL_MS = 20000;\n\nexport function useProjectComplete(projectKey: string | null): boolean {\n  const [complete, setComplete] = useState(false);\n  usePoll(async (isCancelled) => {\n    if (!projectKey) { setComplete(false); return; }\n    const issues = await bscJsonShared<PlanIssue[]>(projectKey, [\"plan\", \"list\", \"--full\", \"--json\"], [], POLL_MS);\n    if (isCancelled()) return;\n    setComplete(projectComplete(issues));\n  }, POLL_MS, [projectKey]);\n  return complete;\n}",
+  "composes": [
+    "use-poll.ts",
+    "bsc.ts",
+    "plan-issues.ts",
+    "bsc-shared.ts",
+    "stream-completion.ts"
+  ],
+  "domain": "glance",
+  "folder": "features/glance/lib",
+  "id": "use-project-complete.ts",
+  "name": "useProjectComplete",
+  "provides": "@/features/glance/lib/useProjectComplete",
+  "role": "algorithm",
+  "src": "src/features/glance/lib/useProjectComplete.ts",
+  "tech": "typescript",
+  "feature": "glance"
+}

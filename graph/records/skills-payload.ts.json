@@ -1,0 +1,15 @@
+{
+  "code": "// Backend payload: resolved SkillDefs → the SkillCfg shape handed to\r\n// `ensure_session_settings` and written into a session's `.claude/skills/<slug>/SKILL.md`.\r\n\r\nimport { skillSlug, type SkillDef } from \"@/features/skills/lib/skillsModel\";\r\n\r\n// ── Backend payload ─────────────────────────────────────────────────────────\r\n// Shape handed to `ensure_session_settings` (field names match the Rust SkillCfg).\r\n\r\nexport interface SkillCfg {\r\n  /** Stable skilldb id — carried so the backend can count an attach as a use (#A). */\r\n  id: string;\r\n  name: string;\r\n  description: string;\r\n  prompt: string;\r\n  tools: string[];\r\n}\r\n\r\n/** Resolved skills → their `.claude/skills/<slug>/SKILL.md` payloads. Skips any\r\n *  skill whose name slugs to empty (nothing to key the directory on). Carries the\r\n *  stable id so the launch path can count an attach as a use (#A). */\r\nexport function toSkillCfgs(defs: SkillDef[]): SkillCfg[] {\r\n  const out: SkillCfg[] = [];\r\n  for (const s of defs) {\r\n    if (!skillSlug(s.name)) continue;\r\n    out.push({ id: s.id, name: s.name, description: s.desc, prompt: s.prompt, tools: s.tools });\r\n  }\r\n  return out;\r\n}\r\n",
+  "composes": [
+    "skills-model.ts"
+  ],
+  "domain": "skills",
+  "folder": "features/skills/lib",
+  "id": "skills-payload.ts",
+  "name": "skillsPayload",
+  "provides": "@/features/skills/lib/skillsPayload",
+  "role": "algorithm",
+  "src": "src/features/skills/lib/skillsPayload.ts",
+  "tech": "typescript",
+  "feature": "skills"
+}

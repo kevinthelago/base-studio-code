@@ -1,0 +1,13 @@
+{
+  "code": "// Opt-in store resets for tests (#3836).\n//\n// The suite has no GLOBAL store reset, and it cannot have one: statically importing `@/store` into\n// `setup.ts` pulls the store into all ~670 test files' module graphs and breaks 28 tests by\n// load-order side effect alone (measured — keeping the import with the reset disabled reproduces\n// every one). So resets are opt-in, and live here so a test file pays for the store import only if\n// it already uses the store.\n//\n// Reach for these in a `beforeEach`. They exist because the recurring order-dependence bug is\n// always the same shape: the file resets SOME store fields but not the one the test reads, so a\n// sibling test's mutation leaks forward. `--sequence.shuffle` is what exposes it.\n\nimport { useAppStore } from \"@/store\";\n\n/**\n * Reset the PAGE-TAB state `usePageTabs` persists — the active tab per page key, the user's tab\n * order, and which sections are torn off.\n *\n * Any test that clicks a page tab mutates `activePageTab[pageKey]`, and every later test in the\n * file then renders THAT page instead of the default one — so an assertion about the default page\n * silently measures the wrong surface. A workspace test should call this in its `beforeEach` even\n * if it never clicks a tab itself, since a sibling might.\n */\nexport function resetPageTabs(): void {\n  useAppStore.setState({ activePageTab: {}, pageTabOrder: {}, detachedSections: {} });\n}\n\n/**\n * Reset the per-pane fleet derivations a launch writes — the write-scope globs, the launched-stream\n * roster, and the per-pane skill/MCP assignments.\n *\n * A test that launches a fleet leaves these populated; a later test asserting on the globs of a\n * DIFFERENT project then reads the earlier launch's entries.\n */\nexport function resetFleetPanes(): void {\n  useAppStore.setState({ paneRoleGlobs: {}, fleetPaneStreams: {}, paneSkills: {} });\n}\n",
+  "composes": [],
+  "domain": "test",
+  "folder": "test",
+  "id": "store-reset.ts",
+  "name": "storeReset",
+  "provides": "@/test/storeReset",
+  "role": "algorithm",
+  "src": "src/test/storeReset.ts",
+  "tech": "typescript",
+  "feature": "store"
+}

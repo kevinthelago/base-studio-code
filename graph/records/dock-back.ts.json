@@ -1,0 +1,13 @@
+{
+  "code": "// dockBack — return a torn-off window's page to the main window (#3919, follows #3917).\n//\n// Tear-off was one-directional: `openDetachedSection` opens the window, and the only way home was CLOSING\n// it, which reads as discarding the page rather than returning it.\n//\n// The obvious fix — drag the tab back onto the main window's strip — cannot work through the DOM. The tab\n// drag is HTML5 drag-and-drop, which is scoped to ONE webview, so a drag begun in the detached window can\n// never deliver a `drop` to the main window's `TabBar`. The signal therefore travels out-of-band, over the\n// Tauri app-global event bus (the same mechanism `useDebugChannel` / `useNavigateBridge` already use).\n//\n// The GESTURE is an inversion of tear-off rather than something new: `TabBar` fires `onTearOff` when a tab\n// is dropped outside its strip, and in a detached window that means the tab is leaving THIS window — i.e.\n// going home. Same affordance, opposite direction.\nimport { emit, listen, type UnlistenFn } from \"@tauri-apps/api/event\";\n\n/** The app-global event a detached window emits to hand its page back. */\nexport const DOCK_BACK_EVENT = \"bsc://dock-back\";\n\n/** Which page/section is coming home. Mirrors `detachedSection`'s shape. */\nexport interface DockBackPayload {\n  page: string;\n  section: string;\n}\n\n/** Ask the main window to take this page back. Best-effort: a failure must never strand the gesture, so\n *  the caller still closes its window and the `tauri://destroyed` re-dock path remains the backstop. */\nexport async function emitDockBack(payload: DockBackPayload): Promise<void> {\n  try {\n    await emit(DOCK_BACK_EVENT, payload);\n  } catch (e) {\n    console.error(\"emitDockBack failed:\", e);\n  }\n}\n\n/** Listen for a page coming home. Returns an unlisten fn, or a no-op when the bus is unavailable (tests,\n *  a browser dev server) — the caller's cleanup must not have to care. */\nexport async function onDockBack(handler: (p: DockBackPayload) => void): Promise<UnlistenFn> {\n  try {\n    return await listen<DockBackPayload>(DOCK_BACK_EVENT, (e) => {\n      const p = e.payload;\n      // The bus is untyped at the wire; ignore anything that isn't the shape we sent.\n      if (p && typeof p.page === \"string\" && typeof p.section === \"string\") handler(p);\n    });\n  } catch {\n    return () => {};\n  }\n}\n",
+  "composes": [],
+  "domain": "core",
+  "folder": "shared/lib/core",
+  "id": "dock-back.ts",
+  "name": "dockBack",
+  "provides": "@/shared/lib/core/dockBack",
+  "role": "algorithm",
+  "src": "src/shared/lib/core/dockBack.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

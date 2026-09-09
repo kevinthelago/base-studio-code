@@ -1,0 +1,20 @@
+{
+  "code": "// The skills feature's graph-platform surface (#3654, epic #3604) — the feature-internal modules a\n// graph-loaded Skills page imports but does NOT redraw: the pure skills domain logic (defs/filter/telemetry/\n// lessons) + the shared style helper. Registered HERE, inside the feature, because the shell must not reach\n// a feature's internals (#1545). The skills host calls this synchronously before the graph page loads.\n// Mirrors the fleet/automations/security/github graph-platforms.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as Skills from \"@/features/skills/lib/skills\";\nimport * as SkillsFilter from \"@/features/skills/lib/skillsFilter\";\nimport * as SkillTelemetry from \"@/features/skills/lib/skillTelemetry\";\nimport * as Lessons from \"@/features/skills/lib/lessons\";\nimport * as SkillStyles from \"@/features/skills/skillStyles\";\nimport * as GraphPlatform from \"@/features/skills/graphPlatform\";\n\n/** Register the skills page's injected graph-platform modules by the specifiers it imports.\n *\n *  Idempotent, and holding NO MODULE STATE on purpose. `registerAppModule` is a Map set, so calling\n *  this twice writes the same entries twice and changes nothing — the `done` flag this used to carry\n *  saved Map writes, it never guarded correctness. It had to go: `bsc graph impl set` refuses a\n *  `provides` from a stateful record onto a REGISTERED specifier, because the record wins over the\n *  registry and would vendor a second copy of that state to every graph consumer.\n */\nexport function registerSkillsPlatform(): void {\n  registerAppModule(\"@/features/skills/lib/skills\", Skills);\n  registerAppModule(\"@/features/skills/lib/skillsFilter\", SkillsFilter);\n  registerAppModule(\"@/features/skills/lib/skillTelemetry\", SkillTelemetry);\n  registerAppModule(\"@/features/skills/lib/lessons\", Lessons);\n  registerAppModule(\"@/features/skills/skillStyles\", SkillStyles);\n  registerAppModule(\"@/features/skills/graphPlatform\", GraphPlatform);\n}",
+  "composes": [
+    "lib-skills.ts",
+    "skills-filter.ts",
+    "skill-telemetry.ts",
+    "lessons.ts",
+    "skill-styles.ts",
+    "module-registry.ts"
+  ],
+  "domain": "skills",
+  "folder": "features/skills",
+  "id": "skills-graph-platform.ts",
+  "name": "graphPlatform",
+  "provides": "@/features/skills/graphPlatform",
+  "role": "algorithm",
+  "src": "src/features/skills/graphPlatform.ts",
+  "tech": "typescript",
+  "feature": "skills"
+}

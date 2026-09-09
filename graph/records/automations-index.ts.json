@@ -1,0 +1,18 @@
+{
+  "code": "// The automations feature's PUBLIC API — re-exports only, plus the stylesheet the page needs.\n//\n// The Automations screen itself (#142) is the `automationspage` RECORD, mounted by\n// AutomationsGraphHost — which is what `lazyWorkspaces` resolves the `AutomationsWorkspace` symbol\n// to, in both App.tsx and DetachedWindow. The copy that used to live in this file was a dead\n// duplicate: nothing imported it.\n//\n// Note for anyone pruning `@/features/mcp`: that record's Hooks tab imports the REAL `HooksView`\n// from the mcp barrel and resolves it through the graph platform, so the export is load-bearing at\n// runtime even though no FILE imports it any more. A file-import search will call it dead. It isn't.\n\n// Re-exported feature surface — this index is the automations feature's public API barrel (#1309).\nexport { AutomationsGraphHost } from \"@/features/automations/AutomationsGraphHost\"; // the graph-hosted workspace (#3642)\nexport { AutomationsStatus } from \"@/features/automations/AutomationsStatus\";\nexport { useScheduler } from \"@/features/automations/useScheduler\";\n\n// #1545: public API for cross-feature consumers (tunnel).\nexport { type Automation, type AutomationWhen } from \"@/features/automations/lib/scheduler\";\nexport { isValidCron } from \"@/features/automations/lib/cron\";\nexport { dispatchSchedule } from \"@/features/automations/lib/dispatch\";\n",
+  "composes": [
+    "use-scheduler.ts",
+    "scheduler.ts",
+    "cron.ts",
+    "dispatch.ts"
+  ],
+  "domain": "automations",
+  "folder": "features/automations",
+  "id": "automations-index.ts",
+  "name": "index",
+  "provides": "@/features/automations",
+  "role": "algorithm",
+  "src": "src/features/automations/index.ts",
+  "tech": "typescript",
+  "feature": "automations"
+}

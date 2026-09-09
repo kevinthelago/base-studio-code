@@ -470,9 +470,17 @@ the graph** (they carry `build = "../graph-materialize/build.rs"`; count them wi
 `graph-promote-check` goes red for every session on the box, or worse, the change is silently inert.
 
     ~/.base-studio-code/knowledge/algorithms.json   RUNTIME store — per-user, SHARED BY EVERY SESSION
-    <repo>/graph/algorithms.json                    REPO store — what the BUILD compiles
-    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS and what a fresh install reconciles
-    .bsc-records/                                   EMITTED — rebuilt from the seed; never hand-edited
+    <repo>/graph/{algorithms.json,records/*.json}   REPO store — what the BUILD compiles, BOTH halves
+    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS; NOT a build input any more
+    .bsc-records/                                   EMITTED — rebuilt from the REPO store; never hand-edited
+
+**STEP 4 IS NO LONGER LOAD-BEARING FOR A FRONTEND MODULE** (`retire-the-packaged-seed-directories`).
+`bsc-emit` used to materialize `.bsc-records/` from the packaged seed, so a TypeScript record needed the
+seed write to reach `tsc`, `vitest` and `vite build` while a Rust record needed the repo store — two
+answers to "which write makes my edit compile". It reads the REPO store now, so **step 3 is the one that
+matters for both**, and the seed's remaining job is the starting library a fresh install begins with.
+A `*.rs` record was never seed material at all (`--seed` lands it featureless and reddens the `bsc-graph`
+coverage gate).
 
 The sequence, which is the same for a Rust CLI or a frontend module:
 
@@ -495,9 +503,10 @@ bsc graph promote --id <id> --root "$PWD"
 BSC_DATA_DIR="$PWD/src-tauri/data" bsc graph promote --id <id> --seed --root "$PWD"
 ```
 
-Then build. `crates/graph-materialize/build.rs` reads `<repo_root>/graph/algorithms.json` and
-materializes each record into `$OUT_DIR/crate.rs`, so **step 3 is what makes your edit compile** —
-after step 2 alone, `cargo check` still sees the old code and nothing says so.
+Then build. `crates/graph-materialize/build.rs` reads `<repo_root>/graph/algorithms.json` merged with
+`graph/records/*.json` and materializes each record into `$OUT_DIR/crate.rs`; `crates/bsc-emit` reads the
+same pair to write `.bsc-records/`. So **step 3 is what makes your edit compile**, whichever half it is in
+— after step 2 alone, `cargo check` and `tsc` both still see the old code and nothing says so.
 
 **Verify you touched exactly what you meant.** A line count cannot tell you: these files are one long
 JSON line, so any edit shows as `1 +/- 1`. Diff the PARSED store instead —

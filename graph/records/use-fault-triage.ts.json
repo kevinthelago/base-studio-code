@@ -1,0 +1,13 @@
+{
+  "code": "// The runtime fault-fix loop actuator (#2265, part of #2258). Polls each live project's runtime-fault\n// store (`bsc errors list --unresolved --json`, the errordb #2260) on a slow cadence and, when the\n// per-project auto-triage toggle is ON, routes a bounded, deduped set of fixes into that project's\n// DIRECTOR pane — which captures + assigns each via the existing coordination emitters (bsc-issue →\n// bsc-assign) and resolves it on land. The gate/dedup/rate-limit decisions are the pure\n// `planFaultDispatch` (shared/lib/fleet/faultTriage.ts); this is the thin Tauri/React poll+inject layer,\n// mounted once in ConsoleWorkspace (stays mounted across screens) beside useDirectorPump / useCoordinator.\n// It lives in app/console (not shared/) because it reads the app's pane-identity + director-drive state.\n//\n// Projects with the toggle OFF (the default) are SURFACE-ONLY here — nothing is dispatched; the fault\n// count still shows on the Glance node (useGlanceFaults). A project with no live director pane is also\n// effectively surface-only (there's nowhere to route), which is the correct degrade.\n//\n// INERT since #app-stops-pushing-prompts. Its entire body was a poll that dispatched threshold-crossing runtime faults into the owning lane's pane. The fault store (errordb) is unchanged and the director protocol already tells the director to read it on its own cadence with `bsc errors list --unresolved`.\n//\n// The export SURVIVES deliberately: this module is registered in graphPlatform/appModules so graph\n// RECORDS can import it, and removing the export breaks record compilation at runtime. Inert-but-\n// exported is the shape useFleetGate took for the same reason when its launch pump was killed —\n// deleting the hook is not the fix, doing nothing is.\n\n/** Does nothing. See the note above. */\nexport function useFaultTriage(): void {\n  // Intentionally empty: no poll, no evaluation, no injection.\n}\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console",
+  "id": "use-fault-triage.ts",
+  "name": "useFaultTriage",
+  "provides": "@/app/console/useFaultTriage",
+  "role": "algorithm",
+  "src": "src/app/console/useFaultTriage.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

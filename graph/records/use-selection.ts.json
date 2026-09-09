@@ -1,0 +1,13 @@
+{
+  "code": "// usePageSelection — the Pages-tier internal selection hook (#2505): the controlled/uncontrolled\r\n// selection idiom the Layouts tier established (Tree/Sequence — controlled when the `selectedId`\r\n// prop is PRESENT, may be null = none; else internal state seeded by `defaultSelectedId`), extracted\r\n// once so the five selecting pages don't re-implement it.\r\nimport { useState } from \"react\";\r\n\r\nexport interface PageSelection {\r\n  /** The live selected id — the prop when controlled, internal state otherwise. */\r\n  selected: string | null;\r\n  /** Select an id: updates internal state when uncontrolled; always notifies `onSelect`. */\r\n  select: (id: string) => void;\r\n}\r\n\r\nexport function usePageSelection(\r\n  selectedId: string | null | undefined,\r\n  defaultSelectedId: string | undefined,\r\n  onSelect?: (id: string) => void,\r\n): PageSelection {\r\n  const [inner, setInner] = useState<string | null>(defaultSelectedId ?? null);\r\n  const controlled = selectedId !== undefined;\r\n  const selected = controlled ? selectedId : inner;\r\n  const select = (id: string) => {\r\n    if (!controlled) setInner(id);\r\n    onSelect?.(id);\r\n  };\r\n  return { selected, select };\r\n}\r\n",
+  "composes": [],
+  "domain": "ui",
+  "folder": "shared/ui/pages",
+  "id": "use-selection.ts",
+  "name": "useSelection",
+  "provides": "@/shared/ui/pages/useSelection",
+  "role": "algorithm",
+  "src": "src/shared/ui/pages/useSelection.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

@@ -22,11 +22,14 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, posix } from "node:path";
+import { loadStore } from "@scripts/lib/recordStore.mjs";
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, "src");
 const APP_RECORDS = join(ROOT, "src-tauri/data/components/app");
-const IMPLS = join(ROOT, "src-tauri/data/knowledge/algorithms.json");
+// Reads the COMMITTED record store, not the packaged seed — `bsc-emit` materializes `.bsc-records/`
+// from `graph/algorithms.json` + `graph/records/*.json` now, so that is the copy this asserts about
+// (`retire-the-packaged-seed-directories`).
 
 /** `src/a/b.tsx` → `@/a/b`; anything else → undefined. */
 function specOf(src: string): string | undefined {
@@ -89,7 +92,7 @@ if (existsSync(APP_RECORDS)) {
 }
 
 // ── implementation records ────────────────────────────────────────────────────
-const impls = JSON.parse(readFileSync(IMPLS, "utf8")) as {
+const impls = loadStore() as {
   implementations: { provides?: string; code?: string; tests?: { src?: string }[] }[];
   edges?: { src?: string; tests?: { src?: string }[] }[];
 };

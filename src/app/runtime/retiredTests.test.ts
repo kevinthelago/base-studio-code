@@ -23,8 +23,9 @@
 import { describe, it, expect } from "vitest";
 import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
 import { planRecords } from "../../../scripts/emit-records.mjs";
+import { loadStore, loadImplementations } from "@scripts/lib/recordStore.mjs";
 import { blankComments } from "../../../scripts/lib/recordSource.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 /** Every packaged seed, as the record objects the app would load. */
@@ -55,12 +56,19 @@ const isOwnSpecifier = (spec: string) =>
 
 const countAssertions = (src: string) => (src.match(/^\s*(it|test)\(/gm) ?? []).length;
 
-/** Every packaged algorithm implementation, beside the component records globbed above. */
-const allImpls = (
-  JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8")) as {
-    implementations?: (typeof seeds)[string][];
-  }
-).implementations;
+/** Every algorithm implementation the build compiles, beside the component records globbed above.
+ *
+ *  THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`): `bsc-emit`
+ *  materializes `.bsc-records/` from `graph/algorithms.json` + `graph/records/*.json` now, so a guard
+ *  reading the seed would be asking its question of a copy nothing emits. Still git-tracked, so the
+ *  original reason for preferring the seed — hold on a fresh clone, hold in CI, and never redden for
+ *  everyone because of someone else's half-finished session in the shared RUNTIME store — is intact. */
+const allImpls = loadImplementations() as unknown as (typeof seeds)[string][];
+
+/** The committed store's edges — the same document half, read the same way. `store split` moves only
+ *  `implementations` out to `graph/records/`, so every edge is still in the store file. */
+const committedEdges = (): { id?: string; src?: string; tests?: unknown[] }[] =>
+  (loadStore().edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
 
 describe("a retired module keeps its tests in the gate", () => {
   it("every RETIRED record that carries tests has them EXECUTED — from src/, or from the emitted record", () => {
@@ -200,9 +208,7 @@ describe("an edge test is executed, not merely stored", () => {
   // redden this for everyone; only a COMMITTED one can.
   it("no edge test's file has come back to src/ — a shadowed edge is a second copy of the assertions", () => {
     const plan = planRecords();
-    const seedEdges: { id?: string; src?: string; tests?: unknown[] }[] =
-      (JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"))
-        .edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
+    const seedEdges = committedEdges();
     const srcOf = new Map(seedEdges.map((e) => [e.id ?? "", e.src ?? "(no src)"]));
     expect(
       plan.edgeShadowed.map((id: string) => `${id} — ${srcOf.get(id)} is back on disk`),
@@ -234,9 +240,7 @@ describe("an edge test is executed, not merely stored", () => {
   // have. So the rule is about the stored `src`, checked against the SEED directly — one assertion
   // that cannot be satisfied by a nicer error message.
   it("every packaged edge stores a `src` bsc-emit or cargo can place — an absolute one runs nowhere", () => {
-    const seedEdges: { id?: string; src?: string; tests?: unknown[] }[] =
-      (JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"))
-        .edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
+    const seedEdges = committedEdges();
     const carrying = seedEdges.filter((e) => (e.tests ?? []).length > 0);
     const bad = carrying
       // NOT `existsSync` — the file is DELETED by the migration, which is the point of the tier. What

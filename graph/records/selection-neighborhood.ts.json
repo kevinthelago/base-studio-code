@@ -1,0 +1,15 @@
+{
+  "code": "// Selection neighborhood (#2523, promoted to shared #2719) — a pure graph query used by every graph\n// canvas that highlights a selection: given the edge set and a selected node id, return the edges\n// incident to it and the nodes on the far end of those edges. React-free and layout-agnostic (it\n// only needs `from`/`to`/`id` on each edge), so it lives alongside the other shared graph model\n// helpers rather than in any one feature.\nimport type { GraphEdge } from \"@/shared/lib/graph/types\";\n\nexport interface SelectionNeighborhood {\n  /** Edge ids incident to the selected node (`from === selId || to === selId`). */\n  incidentEdges: Set<string>;\n  /** Node ids directly connected to the selected node — the selection itself is never included. */\n  relatedNodes: Set<string>;\n}\n\n/** The selection neighborhood of a node: the edges touching it and the nodes on the far end. A\n *  GraphView highlights the incident edges in accent and softly rings the related nodes. Empty when\n *  `selId` is falsy (nothing selected). A self-loop never marks the selection as its own relation. */\nexport function selectionNeighborhood(edges: readonly GraphEdge[], selId: string): SelectionNeighborhood {\n  const incidentEdges = new Set<string>();\n  const relatedNodes = new Set<string>();\n  if (!selId) return { incidentEdges, relatedNodes };\n  for (const e of edges) {\n    if (e.from === selId) { incidentEdges.add(e.id); relatedNodes.add(e.to); }\n    else if (e.to === selId) { incidentEdges.add(e.id); relatedNodes.add(e.from); }\n  }\n  relatedNodes.delete(selId); // a self-loop must not mark the selection as its own relation\n  return { incidentEdges, relatedNodes };\n}\n",
+  "composes": [
+    "graph-types.ts"
+  ],
+  "domain": "graph",
+  "folder": "shared/lib/graph",
+  "id": "selection-neighborhood.ts",
+  "name": "selectionNeighborhood",
+  "provides": "@/shared/lib/graph/selectionNeighborhood",
+  "role": "algorithm",
+  "src": "src/shared/lib/graph/selectionNeighborhood.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

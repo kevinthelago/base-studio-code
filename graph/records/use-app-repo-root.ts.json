@@ -1,0 +1,15 @@
+{
+  "code": "import { useEffect } from \"react\";\r\nimport { useAppStore } from \"@/store\";\r\nimport { safeInvoke } from \"@/shared/lib/core/safeInvoke\";\r\n\r\n/**\r\n * Resolves the base-studio-code source tree this app was built from, ONCE per app run (#3509).\r\n *\r\n * A role declares its harvest roots symbolically (`app-repo`) because a role is machine-independent;\r\n * turning that into a real path is the launch's job, and `buildAgentEnv` is synchronous. So the path\r\n * is resolved here at boot and parked in the store, where any later launch can read it without an\r\n * await. Returns null on a shipped binary (no source tree) — a role whose only declared root cannot\r\n * be resolved simply gets no harvest roots, which fails CLOSED.\r\n */\r\nexport function useAppRepoRoot(): void {\r\n  const appRepoRoot = useAppStore((s) => s.appRepoRoot);\r\n  const setAppRepoRoot = useAppStore((s) => s.setAppRepoRoot);\r\n\r\n  useEffect(() => {\r\n    if (appRepoRoot !== null) return;\r\n    let cancelled = false;\r\n    void safeInvoke<string | null>(\"debug_repo_root\", undefined, null, () => {}).then((root) => {\r\n      if (!cancelled && root) setAppRepoRoot(root);\r\n    });\r\n    return () => {\r\n      cancelled = true;\r\n    };\r\n  }, [appRepoRoot, setAppRepoRoot]);\r\n}\r\n",
+  "composes": [
+    "safe-invoke.ts"
+  ],
+  "domain": "hooks",
+  "folder": "shared/hooks",
+  "id": "use-app-repo-root.ts",
+  "name": "useAppRepoRoot",
+  "provides": "@/shared/hooks/useAppRepoRoot",
+  "role": "algorithm",
+  "src": "src/shared/hooks/useAppRepoRoot.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

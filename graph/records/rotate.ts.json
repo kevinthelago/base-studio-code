@@ -1,0 +1,14 @@
+{
+  "id": "rotate.ts",
+  "domain": "graphics",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "rotate",
+  "kind": "transform",
+  "summary": "Rotate a square matrix 90° clockwise in place — a four-way cycle per ring (all four cells move together). Animated cell-by-cell in the Matrix visualization (#3221).",
+  "composes": [
+    "typescript.number"
+  ],
+  "code": "export function rotate90(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a.length;\n  for (let l = 0; l < Math.floor(n / 2); l++) {\n    const f = l, e = n - 1 - l;\n    for (let i = f; i < e; i++) {\n      const o = i - f, t = a[f][i];\n      a[f][i] = a[e - o][f];\n      a[e - o][f] = a[e][e - o];\n      a[e][e - o] = a[i][e];\n      a[i][e] = t;\n    }\n  }\n  return a;\n}\n",
+  "feature": "reference"
+}

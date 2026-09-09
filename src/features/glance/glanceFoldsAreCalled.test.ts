@@ -15,6 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { loadStore } from "@scripts/lib/recordStore.mjs";
 
 /** Every module body the app ships — records live in the SEED, not on disk (docs/records.md). */
 function sources(): { name: string; text: string }[] {
@@ -32,9 +33,12 @@ function sources(): { name: string; text: string }[] {
   const comp = "src-tauri/data/components";
   walk(comp, (p) => p.endsWith(".json"));
 
-  // The algorithms seed: many records in one file. Kept whole — we only ever substring-search it, and
-  // splitting it per record would need a schema this guard has no reason to know.
-  out.push({ name: "algorithms.json", text: readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8") });
+  // The COMMITTED record store, which is where the algorithm records live and what `bsc-emit`
+  // materializes from (`retire-the-packaged-seed-directories`). Serialized whole rather than walked —
+  // this guard only ever substring-searches it, and re-splitting it per record would need a schema it
+  // has no reason to know. `loadStore` merges the document with `graph/records/*.json`, so the text
+  // covers every record regardless of which layout the checkout is in.
+  out.push({ name: "algorithms.json", text: JSON.stringify(loadStore()) });
 
   // …and the modules still on disk.
   walk("src", (p) => (p.endsWith(".ts") || p.endsWith(".tsx")) && !/\.(test|spec)\./.test(p));
@@ -107,7 +111,7 @@ describe("every projection a graph library exports is called somewhere", () => {
   /** The modules whose whole job is projecting store rows into graph nodes. */
   const PROJECTION_RECORDS = ["feature-nodes.ts", "surface-nodes.ts"];
 
-  const seed = JSON.parse(readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8")) as {
+  const seed = loadStore() as {
     implementations: { id: string; code?: string }[];
   };
   const byId = new Map(seed.implementations.map((i) => [i.id, i.code ?? ""]));

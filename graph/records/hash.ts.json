@@ -1,0 +1,22 @@
+{
+  "code": "// The glance sample-data hash (#2421) — the one home for the private copies glanceData.ts and\r\n// glanceFleet.ts each carried, derived from the shared `hashString` (shared/lib/core/format.ts)\r\n// instead of re-implementing the loop.\r\n//\r\n// NOT plain `hashString`: the glance copies truncated each step with `| 0` (signed) and took a\r\n// final `Math.abs`, while `hashString` truncates with `>>> 0` (unsigned). The per-step low 32 bits\r\n// track identically either way (the 2^32 offset vanishes mod 2^32 under `* 31 + c`), so the two\r\n// differ only in the FINAL reduction: when the sign bit is set, `Math.abs(h | 0)` = 2^32 − hashString.\r\n// Reinterpreting `hashString`'s result as signed and abs-ing it therefore reproduces the historical\r\n// values EXACTLY — which matters because the sample role / worker-count / status assignments\r\n// (`hashAbs(id) % n`) must stay stable for existing projects.\r\nimport { hashString } from \"@/shared/lib/core/format\";\r\n\r\n/** Stable small hash of a string → non-negative int (deterministic sample role/status/count\r\n *  assignment). Same outputs as the former private `hash()` copies — see the header. */\r\nexport function hashAbs(s: string): number {\r\n  return Math.abs(hashString(s) | 0);\r\n}\r\n",
+  "composes": [
+    "format.ts"
+  ],
+  "domain": "glance",
+  "folder": "features/glance/lib",
+  "id": "hash.ts",
+  "name": "hash",
+  "provides": "@/features/glance/lib/hash",
+  "role": "algorithm",
+  "src": "src/features/glance/lib/hash.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "hashAbs — byte-compatible with the former glance hash()",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { hashAbs } from \"@/features/glance/lib/hash\";\n\n/** The former private copy in glanceData.ts / glanceFleet.ts, verbatim — the reference\n *  implementation hashAbs must reproduce exactly (#2421). */\nfunction legacyHash(s: string): number {\n  let h = 0;\n  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;\n  return Math.abs(h);\n}\n\ndescribe(\"hashAbs — byte-compatible with the former glance hash()\", () => {\n  const samples = [\n    \"\", \"a\", \"director\", \"worker-1\", \"worker-2p-abc123\",\n    \"p-lxq8-9k2f4a\", \"reporting\", \"analytics\",\n    // Long strings overflow into the sign bit, where `>>> 0` vs `| 0`+abs diverge —\n    // exactly the case the derivation must get right.\n    \"a-much-longer-project-identifier-that-overflows-32-bits\",\n    \"worker-3p-m4nifest-2421\", \"🚀 non-ascii too\",\n  ];\n\n  it(\"matches the legacy implementation on every sample (incl. sign-bit overflows)\", () => {\n    for (const s of samples) {\n      expect(hashAbs(s), JSON.stringify(s)).toBe(legacyHash(s));\n    }\n  });\n\n  it(\"is non-negative and deterministic\", () => {\n    for (const s of samples) {\n      expect(hashAbs(s)).toBeGreaterThanOrEqual(0);\n      expect(hashAbs(s)).toBe(hashAbs(s));\n    }\n  });\n\n  it(\"keeps the modulo assignments the samples rely on stable\", () => {\n    // Pin a few concrete values so a future \"simplification\" to >>>0 (which flips\n    // sign-bit cases) fails loudly rather than silently recoloring sample data.\n    expect(hashAbs(\"director\") % 3).toBe(legacyHash(\"director\") % 3);\n    expect(hashAbs(\"a-much-longer-project-identifier-that-overflows-32-bits\") % 4)\n      .toBe(legacyHash(\"a-much-longer-project-identifier-that-overflows-32-bits\") % 4);\n  });\n});\n"
+    }
+  ],
+  "feature": "glance"
+}

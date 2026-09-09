@@ -1,0 +1,16 @@
+{
+  "code": "import { useEffect, useState } from \"react\";\nimport { logsTail } from \"@/shared/lib/core/logsBridge\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { useAppStore } from \"@/store\";\nimport { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from \"@/features/skills/lib/skillTelemetry\";\n\n/**\n * Live Skills KPIs for the app status bar (Skills page) — replaces the old hardcoded\n * `SKILL_KPIS` mock. Reads the real skill-usage telemetry (`bsc logs tail skill`, the same source\n * the Skills screen uses) plus the live library size.\n */\nexport function SkillsStatus() {\n  const skillCount = useAppStore((s) => s.skills.length);\n  const [stats, setStats] = useState<Record<string, SkillStats>>({});\n\n  useEffect(() => {\n    let cancelled = false;\n    logsTail(\"skill\", 4000)\n      .then((lines) => {\n        if (!cancelled) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join(\"\\n\")), new Date()));\n      });\n    return () => { cancelled = true; };\n  }, []);\n\n  const { loaded, invToday, worst } = skillStatusKpis(skillCount, stats);\n  return (\n    <>\n      <Box as=\"span\" className=\"s\"><i /> {loaded} {loaded === 1 ? \"skill\" : \"skills\"} loaded</Box>\n      <Box as=\"span\" className=\"s\"><i /> {invToday} {invToday === 1 ? \"invocation\" : \"invocations\"} today</Box>\n      {worst && <Box as=\"span\" className=\"s\"><i className=\"warn\" /> {worst.skill} {worst.rate}%</Box>}\n    </>\n  );\n}\n",
+  "composes": [
+    "logs-bridge.ts",
+    "skill-telemetry.ts"
+  ],
+  "domain": "skills",
+  "folder": "features/skills",
+  "id": "skills-status.ts",
+  "name": "SkillsStatus",
+  "provides": "@/features/skills/SkillsStatus",
+  "role": "algorithm",
+  "src": "src/features/skills/SkillsStatus.tsx",
+  "tech": "typescript",
+  "feature": "skills"
+}

@@ -1,0 +1,13 @@
+{
+  "code": "// The studio-network pump (#2940): drives the app-owned studio-session network so a `bsc-commission`\n// emitted by one session (the planner, or the designer) is fulfilled by another (designer/librarian)\n// and the authored artifact id is delivered back — all while the user stays in the planning surface.\n//\n// Two actuations, both re-derived from the FULL coord log every tick (restart-safe), guarded so each\n// message injects exactly once:\n//   1. AUTHOR TASK  — an open commission's spec → the TARGET studio pane, once the target has been\n//      reachable for the settle window (the lazy-mount host has had time to launch the session; Claude\n//      queues input typed mid-boot). Pure decision: studioNetworkDrive.authorInjections.\n//   2. DELIVER-BACK — a `deliver`-stamped commission's artifact id → the REQUESTER's pane (a live\n//      session). Pure decision: studioNetworkDrive.deliverBackInjections.\n//\n// REACHABILITY is on-demand: the pump publishes `activeStudioTargets` (targets with open commissions)\n// to the store; ConsoleWorkspace's <StudioNetworkHosts> lazy-mounts each target's terminal (launching\n// the session) and unmounts it when the list empties (ending the session). No idle studio sessions.\n//\n// Mounted once in ConsoleWorkspace (stays mounted across screens). Pure logic lives in\n// studioNetworkDrive.ts; this is the thin Tauri/React actuator, like useDirectorPump.\n//\n// INERT since #app-stops-pushing-prompts. Its entire body was a poll that injected studio commissions and deliver-backs — and it also LAZY-MOUNTED a commission target, which is the app launching a session, forbidden twice over.\n//\n// The export SURVIVES deliberately: this module is registered in graphPlatform/appModules so graph\n// RECORDS can import it, and removing the export breaks record compilation at runtime. Inert-but-\n// exported is the shape useFleetGate took for the same reason when its launch pump was killed —\n// deleting the hook is not the fix, doing nothing is.\n\n/** Does nothing. See the note above. */\nexport function useStudioNetworkPump(): void {\n  // Intentionally empty: no poll, no evaluation, no injection.\n}\n",
+  "composes": [],
+  "domain": "shell",
+  "folder": "app/console",
+  "id": "use-studio-network-pump.ts",
+  "name": "useStudioNetworkPump",
+  "provides": "@/app/console/useStudioNetworkPump",
+  "role": "algorithm",
+  "src": "src/app/console/useStudioNetworkPump.ts",
+  "tech": "typescript",
+  "feature": "shell"
+}

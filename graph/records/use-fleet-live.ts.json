@@ -1,0 +1,16 @@
+{
+  "code": "// Live Fleet view model (#412). Reads the running fleet from the store\n// (`fleetPaneStreams` roster + live `paneStatus`) and polls the coordination log\n// (`read_coord_log` → `ingestCoordLog`) for blocked/asking/waiting, then assembles\n// the worker roster via the pure mappers in lib/fleetLive.\nimport { useMemo } from \"react\";\nimport { useAppStore } from \"@/store\";\nimport { useCoordLog } from \"@/shared/lib/fleet/useCoordLog\";\nimport { buildLiveWorkers, deriveFleetKpis, statusCounts, type LiveWorker, type FleetKpis } from \"@/shared/lib/fleet/fleetLive\";\n\nexport interface UseFleetLive {\n  workers: LiveWorker[];\n  kpis: FleetKpis;\n  counts: Partial<Record<LiveWorker[\"status\"], number>>;\n  hasFleet: boolean;\n}\n\nexport function useFleetLive(): UseFleetLive {\n  const fleetPaneStreams = useAppStore(s => s.fleetPaneStreams);\n  const paneStatus       = useAppStore(s => s.paneStatus);\n  const tabs             = useAppStore(s => s.tabs);\n  const disabledPanes    = useAppStore(s => s.disabledPanes);\n  const profiles         = useAppStore(s => s.agentProfiles);\n\n  // The coordination log is the fleet's own activity feed (blocked/asking/waiting,\n  // landed/merged). Polled while the screen is mounted — no store wiring needed.\n  const { state: coord } = useCoordLog({ limit: 1000 });\n\n  const workers = useMemo(\n    () => buildLiveWorkers({ fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles }),\n    [fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles],\n  );\n  const kpis = useMemo(() => deriveFleetKpis(workers), [workers]);\n  const counts = useMemo(() => statusCounts(workers), [workers]);\n\n  return { workers, kpis, counts, hasFleet: workers.length > 0 };\n}\n",
+  "composes": [
+    "fleet-live.ts",
+    "use-coord-log.ts"
+  ],
+  "domain": "hooks",
+  "folder": "shared/hooks",
+  "id": "use-fleet-live.ts",
+  "name": "useFleetLive",
+  "provides": "@/shared/hooks/useFleetLive",
+  "role": "algorithm",
+  "src": "src/shared/hooks/useFleetLive.ts",
+  "tech": "typescript",
+  "feature": "core"
+}

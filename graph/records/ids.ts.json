@@ -1,0 +1,15 @@
+{
+  "code": "import { fnv1a32hex } from \"@/features/planner/lib/plannerCore/hash\";\r\n\r\n/**\r\n * Stable project identifier from a sanitized project name.\r\n * Format: \"proj-{8 hex chars}\" — deterministic, collision-resistant for typical\r\n * project-name spaces, and stable across renames only if the name doesn't change.\r\n * Stored in plan.json on first access so the id survives future title edits.\r\n */\r\nexport function projectId(sanitizedTitle: string): string {\r\n  return `proj-${fnv1a32hex(sanitizedTitle)}`;\r\n}\r\n\r\n/**\r\n * Stable phase identifier from a phase name.\r\n * Format: \"pid-{8 hex chars}\". Used by the merge engine to key phase records.\r\n */\r\nexport function phaseId(phaseName: string): string {\r\n  return `pid-${fnv1a32hex(phaseName)}`;\r\n}\r\n\r\n/**\r\n * Stable issue identifier — the canonical `id` field for the merge engine.\r\n * Maps directly from the desktop's `PlanIssue.ref` with no transformation:\r\n * the ref IS the stable id (the planner assigns it; it doesn't change).\r\n *\r\n * Parity point: the issue id field is \"id\" in the canonical model; desktop\r\n * calls it \"ref\". The bridge renames at the serialization boundary.\r\n */\r\nexport function issueId(ref: string): string {\r\n  return ref;\r\n}\r\n\r\n/**\r\n * Stable PlanNode identifier for the adaptive planning tree (#201).\r\n * Format: \"{kind}-{8 hex chars of title}\". Deterministic across sessions so\r\n * the merge engine can key tree nodes stably.\r\n */\r\nexport function nodeId(kind: string, title: string): string {\r\n  return `${kind}-${fnv1a32hex(title)}`;\r\n}\r\n",
+  "composes": [
+    "planner-core-hash.ts"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/lib/plannerCore",
+  "id": "ids.ts",
+  "name": "ids",
+  "provides": "@/features/planner/lib/plannerCore/ids",
+  "role": "algorithm",
+  "src": "src/features/planner/lib/plannerCore/ids.ts",
+  "tech": "typescript",
+  "feature": "planner"
+}

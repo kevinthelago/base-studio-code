@@ -1,0 +1,22 @@
+{
+  "code": "// Resolve the GitHub assignee for a published issue (#847). A worker/stream is an agent\r\n// session, not a GitHub user, so the assignee is a human/collaborator login configured per\r\n// stream (`AgentStream.assignee`), falling back to the account running the publish. The\r\n// `stream:<id>` label stays as the agent-ownership marker; this drives the first-class\r\n// GitHub assignee field. Pure + unit-tested; the publish flow applies it best-effort.\r\n\r\nimport type { AgentStream } from \"@/features/planner/fleet/planFleet\";\r\n\r\n/**\r\n * The GitHub login to assign an issue to, given its owning stream id.\r\n *\r\n * - The owning stream's configured `assignee`, when set and non-empty.\r\n * - Otherwise the publishing account (`viewerLogin`) — so issues are never left unassigned.\r\n * - `null` only when there's no stream login AND no viewer login (assignment is then skipped).\r\n *\r\n * Trims whitespace; an all-whitespace stream assignee is treated as unset.\r\n */\r\nexport function resolveIssueAssignee(\r\n  streamId: string | undefined,\r\n  streams: readonly AgentStream[],\r\n  viewerLogin: string,\r\n): string | null {\r\n  const stream = streamId ? streams.find((s) => s.id === streamId) : undefined;\r\n  const streamLogin = stream?.assignee?.trim();\r\n  if (streamLogin) return streamLogin;\r\n  const viewer = viewerLogin.trim();\r\n  return viewer || null;\r\n}\r\n",
+  "composes": [
+    "plan-fleet.ts"
+  ],
+  "domain": "planner",
+  "folder": "features/planner/fleet",
+  "id": "fleet-assignee.ts",
+  "name": "fleetAssignee",
+  "provides": "@/features/planner/fleet/fleetAssignee",
+  "role": "algorithm",
+  "src": "src/features/planner/fleet/fleetAssignee.ts",
+  "tech": "typescript",
+  "tests": [
+    {
+      "ext": ".ts",
+      "name": "resolveIssueAssignee (#847)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { resolveIssueAssignee } from \"@/features/planner/fleet/fleetAssignee\";\nimport type { AgentStream } from \"@/features/planner/fleet/planFleet\";\n\nconst stream = (over: Partial<AgentStream>): AgentStream => ({\n  id: \"auth-ui\", name: \"Auth UI\", repo: \"own/web\", owns: [], issues: [], dependsOn: [], ...over,\n});\n\ndescribe(\"resolveIssueAssignee (#847)\", () => {\n  const streams = [\n    stream({ id: \"auth-ui\", assignee: \"alice\" }),\n    stream({ id: \"api\", assignee: \"  bob  \" }),\n    stream({ id: \"infra\" }), // no assignee\n  ];\n\n  it(\"uses the owning stream's configured login\", () => {\n    expect(resolveIssueAssignee(\"auth-ui\", streams, \"owner\")).toBe(\"alice\");\n  });\n\n  it(\"trims the stream login\", () => {\n    expect(resolveIssueAssignee(\"api\", streams, \"owner\")).toBe(\"bob\");\n  });\n\n  it(\"falls back to the viewer when the stream has no assignee\", () => {\n    expect(resolveIssueAssignee(\"infra\", streams, \"owner\")).toBe(\"owner\");\n  });\n\n  it(\"falls back to the viewer when the issue has no owning stream\", () => {\n    expect(resolveIssueAssignee(undefined, streams, \"owner\")).toBe(\"owner\");\n    expect(resolveIssueAssignee(\"nonexistent\", streams, \"owner\")).toBe(\"owner\");\n  });\n\n  it(\"returns null only when there is neither a stream login nor a viewer\", () => {\n    expect(resolveIssueAssignee(\"infra\", streams, \"\")).toBeNull();\n    expect(resolveIssueAssignee(\"infra\", streams, \"   \")).toBeNull();\n  });\n\n  it(\"prefers the stream login even when a viewer exists\", () => {\n    expect(resolveIssueAssignee(\"auth-ui\", streams, \"owner\")).not.toBe(\"owner\");\n  });\n});\n"
+    }
+  ],
+  "feature": "planner"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "rust.option",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "Option",
+  "summary": "Option<T> — Some(x) | None; the presence/absence primitive a search returns.",
+  "composes": [],
+  "ref": "std::option::Option",
+  "feature": "core"
+}

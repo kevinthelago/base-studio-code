@@ -1,0 +1,10 @@
+{
+  "id": "rust.vecdeque",
+  "tech": "rust",
+  "role": "primitive",
+  "name": "VecDeque",
+  "summary": "VecDeque<T> — a double-ended queue; the FIFO frontier BFS and Kahn's algorithm pop from.",
+  "composes": [],
+  "ref": "std::collections::VecDeque",
+  "feature": "core"
+}
