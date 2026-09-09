@@ -41,6 +41,7 @@
 
 include!("plan.rs");
 include!("emit.rs");
+include!("sqlite_read.rs");
 
 fn main() {
     emit();
