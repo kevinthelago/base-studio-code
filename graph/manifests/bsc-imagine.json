@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-imagine\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The imagination feed — what the ear heard, as pictures. One entry is a thought: the transcript that arrived, the scene inferred from it, and the image rendered for that scene. Pure: the tier ladder, what is worth drawing, and the bound on how long a thought is kept. Rendering and the transcript tail wrap this crate; they never live inside it.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_imagine\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# PURE. No I/O, no clock, no GPU, no model, no microphone — time and the feed's contents are",
@@ -75,11 +83,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# The feed is append-only JSONL beside its images — see the `store` module."
@@ -87,6 +97,7 @@
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# The CLI half: the renderer and the scene model are separate processes this crate talks to."
@@ -94,16 +105,19 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [],
           "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"json\", \"rustls-tls\"] }"
         },
         {
+          "cont": [],
           "key": "base64",
           "lead": [],
           "value": "\"0.23\""
@@ -117,6 +131,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
@@ -130,11 +145,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [],
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [],
           "value": "\"deny\""

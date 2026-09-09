@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-lan-stream\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc lan` one-way multicast wire contract: the datagram every emit-only sensor sends and every subscriber verifies. Pure codec — no sockets, no filesystem, no async runtime.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,6 +57,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_lan_stream\""
@@ -64,21 +71,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "thiserror",
           "lead": [],
           "value": "\"2\""
         },
         {
+          "cont": [],
           "key": "chacha20poly1305",
           "lead": [
             "# Confidentiality: a GROUP key, so one emission serves N subscribers."
@@ -86,6 +97,7 @@
           "value": "\"0.10\""
         },
         {
+          "cont": [],
           "key": "ed25519-dalek",
           "lead": [
             "# Authenticity: the sensor signs. A subscriber holding the group key can READ",
@@ -108,11 +120,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"wire_contract\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"../graph-materialize/test_root.rs\""
@@ -139,6 +153,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "ed25519-dalek",
           "lead": [
             "# Test-only: constructing a Sensor needs a signing key."
@@ -154,6 +169,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "unsafe_code",
           "lead": [
             "# NO UNSAFE, FORBID rather than deny — see bsc-lan-sense. Moved here from `#![forbid(unsafe_code)]`",
@@ -172,11 +188,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [],
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [],
           "value": "\"deny\""

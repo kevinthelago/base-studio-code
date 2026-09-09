@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"graph-materialize\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [
             "# NO build script of its own. `build.rs` in this directory is the SHARED script 54 other crates point",
@@ -35,6 +39,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

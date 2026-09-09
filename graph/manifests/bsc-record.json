@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-record\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The record STAMP shared by every bsc store (#72) — rev, author, timestamp, per-write history, and the retained rungs `revert` reads. Lifted out of bsc-component so the algorithms graph stamps writes the SAME way rather than growing a second implementation that drifts.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_record\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"../graph-materialize/crate_root.rs\""
@@ -69,11 +77,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The epoch↔ISO clock pair. bsc-util is the dependency-free leaf, so this stays a two-dep crate."
@@ -81,6 +91,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "regex",
           "lead": [
             "# For `record_source` only. bsc-record is depended on by just bsc-graph and bsc-component, so this",

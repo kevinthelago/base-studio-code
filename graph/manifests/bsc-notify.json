@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-notify\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Push delivery for incidents — turns a coalesced bsc-incident Incident into a phone notification. ntfy first: a self-hosted push server, so a POST from here becomes a real OS notification on a phone whose app is closed, with no Apple/Google account and nothing leaving your own infrastructure. The Incident→message mapping is pure and tested; the POST sits behind a transport trait.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_notify\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "",
@@ -76,16 +84,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-incident",
           "lead": [],
           "value": "{ path = \"../bsc-incident\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [],
           "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
@@ -97,6 +108,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

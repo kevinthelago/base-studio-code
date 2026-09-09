@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-rf\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF denial-of-service against 2.4/5 GHz WiFi from a commodity adapter. Reads the radio's own telemetry (nl80211 survey occupancy, monitor-mode radiotap frame statistics) and fuses several weak signals into a verdict that carries its evidence. Nothing here transmits — there is no injection, no deauth and no active probing path, and a test asserts it.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_rf\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "",
@@ -76,11 +84,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-rf\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"src/main.rs\""
@@ -92,6 +102,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# The shared CLI scaffold (#1762): CmdDoc help catalog + the emit/absent-marker conventions every",
@@ -100,16 +111,19 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "thiserror",
           "lead": [
             "# Proc-macro only: no runtime weight, and tests/lean.rs still pins the closure."

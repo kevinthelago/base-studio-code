@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-mcp\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"MCP server store (SQLite at ~/.base-studio-code/mcp.db) for base-studio-code — a thin MCP-specific shim over the shared bsc-json-store, plus the persona ASSIGNMENT verbs. A server reaches a session because a persona carries it; there is no project or per-pane scoping.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_mcp\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store + CLI scaffold — this crate supplies only the MCP-specific",
@@ -82,6 +91,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold: `CmdDoc` for the per-command help catalog + store-path resolution."
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# `bsc_base_dir` — the one definition of ~/.base-studio-code."
@@ -96,6 +107,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# Assignment is a read-modify-write of the PERSONA record, so this crate parses persona JSON."

@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-lan-core\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc lan` domain vocabulary and adapter traits for the LAN control plane. Pure types and traits; no I/O. Folded from the networkmonitor repo's bsc-lan-core (2026-09-04) when the stack collapsed onto suricata + one native process.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,6 +57,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_lan_core\""
@@ -64,16 +71,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "thiserror",
           "lead": [],
           "value": "\"2\""
@@ -92,6 +102,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [
             "# Adding an `Action` variant must fail to compile until every exhaustive",
@@ -106,6 +117,7 @@
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [
             "# ...and its blind spot, MEASURED 2026-09-04 during the fold. `wildcard_enum_match_arm`",

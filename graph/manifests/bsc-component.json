@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-component\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Component-library store (SQLite stores at ~/.base-studio-code/components.db + kits.db) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc ui` CLI (#2469 — its store verbs mount under `bsc ui`; `bsc component` is the deprecated alias).\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_component\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-runtime",
           "lead": [
             "# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens reads what the app OBSERVED",
@@ -83,11 +92,13 @@
           "value": "{ path = \"../bsc-runtime\" }"
         },
         {
+          "cont": [],
           "key": "bsc-record",
           "lead": [],
           "value": "{ path = \"../bsc-record\" }"
         },
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the two",
@@ -96,6 +107,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog."
@@ -103,6 +115,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# The `eslint-preset` generator reads each stored component's JSON + emits the eslint config (#2279)."
@@ -110,6 +123,7 @@
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-sound",
           "lead": [
             "# The versioned sound-kit release store (#3412) — `bsc ui doctor --sound-kit` reads a PINNED kit's",
@@ -118,6 +132,7 @@
           "value": "{ path = \"../bsc-sound\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The `usage` consumer-index store (#2277) resolves ~/.base-studio-code (bsc_base_dir)."
@@ -125,6 +140,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-graph",
           "lead": [
             "# The ALGORITHMS store (materialize-a-records-record-closure) — a test materialization resolves a",

@@ -36,6 +36,13 @@ pub struct Entry {
     /// Kept verbatim on purpose: re-quoting a TOML value is a second chance to be wrong about
     /// escaping, and nothing here needs the value's interior.
     pub value: String,
+    /// The CONTINUATION lines of a value spread over several lines, verbatim and with their own
+    /// indentation. `src-tauri` has one: `windows-sys = { version = "0.61", features = [` runs to a
+    /// closing `] }` three lines later.
+    ///
+    /// Stored raw rather than reflowed because the indentation is the only thing making the rendered
+    /// file byte-identical, and there is no formatting decision here that we would want to own.
+    pub cont: Vec<String>,
     pub lead: Lead,
 }
 
@@ -142,27 +149,47 @@ impl Manifest {
         }
         let mut sections: Vec<Section> = Vec::new();
         let mut lead: Lead = Vec::new();
-        for (i, raw) in lines.iter().enumerate() {
+        let mut i = 0usize;
+        while i < lines.len() {
+            let raw = lines[i];
             let s = raw.trim();
             if is_header(s) {
                 sections.push(Section { name: s.to_string(), entries: Vec::new(), lead: std::mem::take(&mut lead) });
             } else if s.is_empty() || s.starts_with('#') {
-                lead.push((*raw).to_string());
+                lead.push(raw.to_string());
             } else if let Some((k, v)) = s.split_once('=') {
-                let Some(cur) = sections.last_mut() else {
-                    return Err(Unmodelled { line_no: i + 1, line: (*raw).to_string() });
-                };
-                if !is_balanced(v.trim()) {
-                    return Err(Unmodelled { line_no: i + 1, line: (*raw).to_string() });
+                let started_at = i;
+                if sections.last().is_none() {
+                    return Err(Unmodelled { line_no: i + 1, line: raw.to_string() });
                 }
+                // A value whose brackets do not close continues onto the following lines. Consume them
+                // VERBATIM until the whole thing balances; running out of file is an error rather than
+                // an implicit close, because a truncated value would render as valid-looking TOML that
+                // says something different.
+                let value = v.trim().to_string();
+                let mut cont: Vec<String> = Vec::new();
+                while !is_balanced(&std::iter::once(value.as_str())
+                    .chain(cont.iter().map(String::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n"))
+                {
+                    i += 1;
+                    if i >= lines.len() {
+                        return Err(Unmodelled { line_no: started_at + 1, line: lines[started_at].to_string() });
+                    }
+                    cont.push(lines[i].to_string());
+                }
+                let cur = sections.last_mut().expect("checked above");
                 cur.entries.push(Entry {
                     key: k.trim().to_string(),
-                    value: v.trim().to_string(),
+                    value,
+                    cont,
                     lead: std::mem::take(&mut lead),
                 });
             } else {
-                return Err(Unmodelled { line_no: i + 1, line: (*raw).to_string() });
+                return Err(Unmodelled { line_no: i + 1, line: raw.to_string() });
             }
+            i += 1;
         }
         Ok(Manifest { sections, tail: lead, ends_nl })
     }
@@ -180,6 +207,9 @@ impl Manifest {
                     let _ = writeln!(out, "{l}");
                 }
                 let _ = writeln!(out, "{} = {}", e.key, e.value);
+                for c in &e.cont {
+                    let _ = writeln!(out, "{c}");
+                }
             }
         }
         for l in &self.tail {
@@ -249,7 +279,7 @@ impl Manifest {
                     "name": s.name,
                     "lead": s.lead,
                     "entries": s.entries.iter().map(|e| serde_json::json!({
-                        "key": e.key, "value": e.value, "lead": e.lead,
+                        "key": e.key, "value": e.value, "cont": e.cont, "lead": e.lead,
                     })).collect::<Vec<_>>(),
                 })
             })
@@ -292,6 +322,7 @@ impl Manifest {
                         .and_then(|x| x.as_str())
                         .ok_or("an entry has no `value`")?
                         .to_string(),
+                    cont: strs(e.get("cont"), "cont")?,
                     lead: strs(e.get("lead"), "lead")?,
                 });
             }
@@ -376,6 +407,9 @@ pub fn topo_order(crates: &[CrateRecord]) -> Result<Vec<String>, String> {
 /// and also be a valid package name.
 pub const WORKSPACE: &str = "_workspace";
 
+/// The app crate, a workspace member that does not live under `crates/`.
+pub const APP: &str = "src-tauri";
+
 /// The directory holding one manifest record per crate.
 pub fn manifests_dir(repo_root: &Path) -> PathBuf {
     repo_root.join("graph").join("manifests")
@@ -458,13 +492,27 @@ pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, Strin
     // only file with no record.
     let mut dirs: Vec<String> = dirs;
     dirs.insert(0, WORKSPACE.to_string());
+    // `src-tauri` is a workspace member like any other, it just does not live under `crates/`. Leaving
+    // it out would make the migration 81-of-82 and leave the app's own manifest as the one file still
+    // authoritative over its record — the exact split this change exists to remove.
+    if repo_root.join(APP).join("Cargo.toml").is_file() {
+        dirs.insert(1, APP.to_string());
+    }
 
     for d in dirs {
-        let toml = if d == WORKSPACE { repo_root.join("Cargo.toml") } else { crates.join(&d).join("Cargo.toml") };
+        let toml = match d.as_str() {
+            WORKSPACE => repo_root.join("Cargo.toml"),
+            APP => repo_root.join(APP).join("Cargo.toml"),
+            _ => crates.join(&d).join("Cargo.toml"),
+        };
         let text = std::fs::read_to_string(&toml)
             .map_err(|e| format!("cannot read {}: {e}", toml.display()))?;
         let m = Manifest::parse(&text).map_err(|e| format!("{}: {e}", toml.display()))?;
-        let src = if d == WORKSPACE { "Cargo.toml".to_string() } else { format!("crates/{d}/Cargo.toml") };
+        let src = match d.as_str() {
+            WORKSPACE => "Cargo.toml".to_string(),
+            APP => format!("{APP}/Cargo.toml"),
+            _ => format!("crates/{d}/Cargo.toml"),
+        };
         let body = encode(&m.to_json(&src))?;
         let dest = manifest_record_path(repo_root, &d);
         seen.push(d.clone());
@@ -591,10 +639,39 @@ mod tests {
     /// that is subtly wrong while every line it kept still round-trips.
     #[test]
     fn an_unmodelled_line_is_an_error() {
-        let bad = "[dependencies]\nserde = { version = \"1\",\n  features = [\"derive\"] }\n";
-        let err = Manifest::parse(bad).expect_err("a multi-line value must not parse silently");
-        assert_eq!(err.line_no, 2, "the error names where the unbalanced value STARTS");
-        assert!(format!("{err}").contains("multi-line"), "the error must say what assumption broke");
+        let bad = "[dependencies]\nthis line is not a key value pair\n";
+        let err = Manifest::parse(bad).expect_err("an unmodelled line must not parse silently");
+        assert_eq!(err.line_no, 2);
+        assert!(format!("{err}").contains("neither blank"), "the error must say what shapes ARE covered");
+    }
+
+    /// A MULTI-LINE value round-trips, continuation lines and indentation intact.
+    ///
+    /// This shape was refused until `src-tauri` turned out to have one —
+    /// `windows-sys = { version = "0.61", features = [` closing three lines later. The refusal was
+    /// right (mis-parsing it silently loses the indentation) and the fix is to model it, not to
+    /// exclude the crate.
+    #[test]
+    fn a_multi_line_value_round_trips_with_its_indentation() {
+        let src = "[dependencies]\nwin = { version = \"1\", features = [\n  \"a\",\n  \"b\",\n] }\n";
+        let m = Manifest::parse(src).expect("a multi-line value must parse");
+        assert_eq!(m.render(), src, "it must render back byte-identically, indentation included");
+        let e = &m.sections[0].entries[0];
+        assert_eq!(e.key, "win");
+        assert_eq!(e.cont.len(), 3, "three continuation lines");
+        assert_eq!(e.cont[0], "  \"a\",", "indentation is preserved verbatim");
+        // …and it survives the record form.
+        let back = Manifest::from_json(&m.to_json("x")).unwrap();
+        assert_eq!(back.render(), src);
+    }
+
+    /// A value that never closes is an error, not an implicit close — a truncated value renders as
+    /// valid-looking TOML that says something different.
+    #[test]
+    fn an_unterminated_value_is_refused() {
+        let bad = "[dependencies]\nwin = { version = \"1\", features = [\n  \"a\",\n";
+        let err = Manifest::parse(bad).expect_err("an unterminated value must not parse");
+        assert_eq!(err.line_no, 2, "the error names where the value STARTS, not where the file ends");
     }
 
     /// A key/value before any section header has nowhere to go and must not be dropped.

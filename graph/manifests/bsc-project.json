@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-project\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Cross-project hub lifecycle for base-studio-code (#1720) — list the on-disk projects + read/set the `.published` marker across ALL projects (not tied to one plan.db). Shared by the `bsc-project` session CLI.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -52,11 +58,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_project\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -73,6 +81,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the ONE home-dir / `~/.base-studio-code` resolver, so this CLI and",
@@ -82,6 +91,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): the byte-identical `main` wrapper (`cli_main`)."
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite-CLI helpers (#1621): `default_store_path` + the app↔CLI busy_timeout `open_db`",
@@ -98,6 +109,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "plandb",
           "lead": [
             "# The per-project plan store (#4052) — `progress` reads each hub's plan.db issue counts. Depended on",
@@ -106,6 +118,7 @@
           "value": "{ path = \"../plandb\" }"
         },
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store (#2158) — read-only here, to VALIDATE that a",
@@ -115,16 +128,19 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# `bundled` compiles SQLite from source (matches src-tauri/plandb/compliance) for cross-platform reliability."

@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-network\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"User network store (SQLite store at ~/.base-studio-code/networks.db) for base-studio-code — a NETWORK is a domain that owns a set of projects and exactly one architect session. A thin network-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's Glance tabs and the session-facing `bsc network` CLI. The ASSIGNMENT of a project to a network is not here — it is the `network` column on the project row in bsc-project, mirroring how `architect` already works.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly. NOT via bsc_graph: a build script must not depend",
@@ -54,11 +60,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_network\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -75,6 +83,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
@@ -83,6 +92,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog."
@@ -90,6 +100,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The ONE home-dir resolver (#1646), for the custom `new`/`rename` verbs."
@@ -97,6 +108,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# `new`/`rename` compose and patch the stored row without a typed model."

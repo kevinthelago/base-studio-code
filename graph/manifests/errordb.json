@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"errordb\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Per-project runtime-fault store (SQLite) for base-studio-code (#2258/#2260) — the fingerprinted sink `bsc errors` reads and the (slice-2) collector writes.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"errordb\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,16 +82,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability."
@@ -91,6 +102,7 @@
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — the same app/CLI-share connection",
@@ -99,6 +111,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system."
@@ -106,6 +119,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "sysinfo",
           "lead": [
             "# The process-tree RSS sampler behind `bsc errors run`'s cost measurement. `default-features = false`",
@@ -116,6 +130,7 @@
           "value": "{ version = \"0.39\", default-features = false, features = [\"system\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The ONE home-dir resolver (#1646) — `--project <key>` and `projects` derive a hub path the same way",

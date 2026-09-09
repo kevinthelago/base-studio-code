@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The unified base-studio-code CLI (#1877): one binary, `bsc <command>` dispatching to every state store / tool that used to be its own `bsc-*` sidecar.\""
@@ -36,11 +41,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"../graph-materialize/crate_root.rs\""
@@ -55,6 +62,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "default",
           "lead": [
             "# `bsc data …` (the DuckDB canonical model) is on by default for the shipped app; a lean build can",
@@ -63,6 +71,7 @@
           "value": "[\"data\"]"
         },
         {
+          "cont": [],
           "key": "data",
           "lead": [],
           "value": "[\"dep:bsc-data\"]"
@@ -76,11 +85,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# The shared CLI scaffold (#1762): help dispatch + the unknown-command renderer."
@@ -88,6 +99,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The shared dangerous-command registry (#1844) + JSON parsing, for `bsc hook bash-deny` (#1916)."
@@ -95,11 +107,13 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-project",
           "lead": [
             "# Subcommand crates — each exposes `cli::run(args, prog)` (#1877)."
@@ -107,61 +121,73 @@
           "value": "{ path = \"../bsc-project\" }"
         },
         {
+          "cont": [],
           "key": "skilldb",
           "lead": [],
           "value": "{ path = \"../skilldb\" }"
         },
         {
+          "cont": [],
           "key": "compliance",
           "lead": [],
           "value": "{ path = \"../compliance\" }"
         },
         {
+          "cont": [],
           "key": "bsc-blueprint",
           "lead": [],
           "value": "{ path = \"../bsc-blueprint\" }"
         },
         {
+          "cont": [],
           "key": "bsc-fin",
           "lead": [],
           "value": "{ path = \"../bsc-fin\" }"
         },
         {
+          "cont": [],
           "key": "bsc-rf",
           "lead": [],
           "value": "{ path = \"../bsc-rf\" }"
         },
         {
+          "cont": [],
           "key": "bsc-persona",
           "lead": [],
           "value": "{ path = \"../bsc-persona\" }"
         },
         {
+          "cont": [],
           "key": "bsc-memory",
           "lead": [],
           "value": "{ path = \"../bsc-memory\" }"
         },
         {
+          "cont": [],
           "key": "bsc-imprint",
           "lead": [],
           "value": "{ path = \"../bsc-imprint\" }"
         },
         {
+          "cont": [],
           "key": "bsc-bluetooth",
           "lead": [],
           "value": "{ path = \"../bsc-bluetooth\" }"
         },
         {
+          "cont": [],
           "key": "bsc-secret",
           "lead": [],
           "value": "{ path = \"../bsc-secret\" }"
         },
         {
+          "cont": [],
           "key": "bsc-mem",
           "lead": [],
           "value": "{ path = \"../bsc-mem\" }"
         },
         {
+          "cont": [],
           "key": "bsc-work",
           "lead": [
             "# The WORK loop (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it) — the seam",
@@ -170,11 +196,13 @@
           "value": "{ path = \"../bsc-work\" }"
         },
         {
+          "cont": [],
           "key": "bsc-self",
           "lead": [],
           "value": "{ path = \"../bsc-self\" }"
         },
         {
+          "cont": [],
           "key": "bsc-github",
           "lead": [
             "# `bsc github` — the read-only derived-rules surface (`the-github-domains-pure-logic-lives-in-bsc-github`).",
@@ -184,21 +212,25 @@
           "value": "{ path = \"../bsc-github\" }"
         },
         {
+          "cont": [],
           "key": "bsc-resolve",
           "lead": [],
           "value": "{ path = \"../bsc-resolve\" }"
         },
         {
+          "cont": [],
           "key": "bsc-perms",
           "lead": [],
           "value": "{ path = \"../bsc-perms\" }"
         },
         {
+          "cont": [],
           "key": "bsc-disk",
           "lead": [],
           "value": "{ path = \"../bsc-disk\" }"
         },
         {
+          "cont": [],
           "key": "atlasdb",
           "lead": [
             "# The relational feature-inventory corpus (bsc atlas)."
@@ -206,6 +238,7 @@
           "value": "{ path = \"../atlasdb\" }"
         },
         {
+          "cont": [],
           "key": "llm",
           "lead": [
             "# `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for."
@@ -213,16 +246,19 @@
           "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
         },
         {
+          "cont": [],
           "key": "bsc-mcp",
           "lead": [],
           "value": "{ path = \"../bsc-mcp\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sound",
           "lead": [],
           "value": "{ path = \"../bsc-sound\" }"
         },
         {
+          "cont": [],
           "key": "bsc-say",
           "lead": [
             "# `bsc say` — speech as a command surface, so an agent/hook/automation can speak and not only the UI."
@@ -230,6 +266,7 @@
           "value": "{ path = \"../bsc-say\" }"
         },
         {
+          "cont": [],
           "key": "bsc-ear",
           "lead": [
             "# `bsc ear` — the listening half of the local voice loop."
@@ -237,21 +274,25 @@
           "value": "{ path = \"../bsc-ear\" }"
         },
         {
+          "cont": [],
           "key": "bsc-imagine",
           "lead": [],
           "value": "{ path = \"../bsc-imagine\" }"
         },
         {
+          "cont": [],
           "key": "bsc-teams",
           "lead": [],
           "value": "{ path = \"../bsc-teams\" }"
         },
         {
+          "cont": [],
           "key": "bsc-network",
           "lead": [],
           "value": "{ path = \"../bsc-network\" }"
         },
         {
+          "cont": [],
           "key": "bsc-studio",
           "lead": [
             "# `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state."
@@ -259,26 +300,31 @@
           "value": "{ path = \"../bsc-studio\" }"
         },
         {
+          "cont": [],
           "key": "bsc-component",
           "lead": [],
           "value": "{ path = \"../bsc-component\" }"
         },
         {
+          "cont": [],
           "key": "bsc-ui",
           "lead": [],
           "value": "{ path = \"../bsc-ui\" }"
         },
         {
+          "cont": [],
           "key": "logs",
           "lead": [],
           "value": "{ path = \"../logs\" }"
         },
         {
+          "cont": [],
           "key": "bsc-files",
           "lead": [],
           "value": "{ path = \"../bsc-files\" }"
         },
         {
+          "cont": [],
           "key": "bsc-shot",
           "lead": [
             "# `bsc shot` — capture the running app's real pixels via a webview snapshot (#3261, epic #3260)."
@@ -286,6 +332,7 @@
           "value": "{ path = \"../bsc-shot\" }"
         },
         {
+          "cont": [],
           "key": "bsc-navigate",
           "lead": [
             "# `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260)."
@@ -293,11 +340,13 @@
           "value": "{ path = \"../bsc-navigate\" }"
         },
         {
+          "cont": [],
           "key": "bsc-fleet",
           "lead": [],
           "value": "{ path = \"../bsc-fleet\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sandbox",
           "lead": [
             "# `bsc sandbox` — a caged session's rendered launch argv: inspect or replay it outside the app (#135)."
@@ -305,6 +354,7 @@
           "value": "{ path = \"../bsc-sandbox\" }"
         },
         {
+          "cont": [],
           "key": "bsc-session",
           "lead": [
             "# `bsc session` — start/stop/list the app-owned SYSTEM SESSIONS over a closed registry",
@@ -314,6 +364,7 @@
           "value": "{ path = \"../bsc-session\" }"
         },
         {
+          "cont": [],
           "key": "bsc-debug",
           "lead": [
             "# Read-only inspection of the RUNNING app (#3437) — the third leg beside shot + navigate."
@@ -321,6 +372,7 @@
           "value": "{ path = \"../bsc-debug\" }"
         },
         {
+          "cont": [],
           "key": "bsc-loop",
           "lead": [
             "# `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260)."
@@ -328,6 +380,7 @@
           "value": "{ path = \"../bsc-loop\" }"
         },
         {
+          "cont": [],
           "key": "bsc-request",
           "lead": [
             "# `bsc request` — the improvement-request store: the designer→debug channel for bsc ui gaps (#3295, epic #3260)."
@@ -335,11 +388,13 @@
           "value": "{ path = \"../bsc-request\" }"
         },
         {
+          "cont": [],
           "key": "bsc-runtime",
           "lead": [],
           "value": "{ path = \"../bsc-runtime\" }"
         },
         {
+          "cont": [],
           "key": "bsc-graph",
           "lead": [
             "# `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only."
@@ -347,6 +402,7 @@
           "value": "{ path = \"../bsc-graph\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cad",
           "lead": [
             "# `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL."
@@ -354,31 +410,37 @@
           "value": "{ path = \"../bsc-cad\" }"
         },
         {
+          "cont": [],
           "key": "bsc-deploy",
           "lead": [],
           "value": "{ path = \"../bsc-deploy\" }"
         },
         {
+          "cont": [],
           "key": "bsc-capability",
           "lead": [],
           "value": "{ path = \"../bsc-capability\" }"
         },
         {
+          "cont": [],
           "key": "bsc-lan",
           "lead": [],
           "value": "{ path = \"../bsc-lan\" }"
         },
         {
+          "cont": [],
           "key": "bsc-widget",
           "lead": [],
           "value": "{ path = \"../bsc-widget\" }"
         },
         {
+          "cont": [],
           "key": "plandb",
           "lead": [],
           "value": "{ path = \"../plandb\" }"
         },
         {
+          "cont": [],
           "key": "bsc-publish",
           "lead": [
             "# `bsc publish` — push a plan's GitHub structure with no frontend involved",
@@ -388,11 +450,13 @@
           "value": "{ path = \"../bsc-publish\" }"
         },
         {
+          "cont": [],
           "key": "errordb",
           "lead": [],
           "value": "{ path = \"../errordb\" }"
         },
         {
+          "cont": [],
           "key": "usagedb",
           "lead": [
             "# `bsc usage` — the per-project usage-events store (#3812, epic #3809): a running/generated app records",
@@ -401,6 +465,7 @@
           "value": "{ path = \"../usagedb\" }"
         },
         {
+          "cont": [],
           "key": "bsc-data",
           "lead": [
             "# DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877)."
@@ -408,6 +473,7 @@
           "value": "{ path = \"../data\", optional = true }"
         },
         {
+          "cont": [],
           "key": "research",
           "lead": [
             "# `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each",
@@ -416,6 +482,7 @@
           "value": "{ path = \"../research\" }"
         },
         {
+          "cont": [],
           "key": "channel",
           "lead": [
             "# `bsc mcp channel-mock` — the Marketer's mock marketing channel (#3146, epic #3145): records",
@@ -424,6 +491,7 @@
           "value": "{ path = \"../channel\" }"
         },
         {
+          "cont": [],
           "key": "bsc-security",
           "lead": [
             "# `bsc cve` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a",
@@ -432,6 +500,7 @@
           "value": "{ path = \"../bsc-security\" }"
         },
         {
+          "cont": [],
           "key": "bsc-news",
           "lead": [
             "# `bsc news` — the LOW-TRUST news layer. Deliberately separate from `research`: that crate holds",
@@ -440,6 +509,7 @@
           "value": "{ path = \"../bsc-news\" }"
         },
         {
+          "cont": [],
           "key": "bsc-survival",
           "lead": [
             "# The caveman network's offline survival corpus — procedures + natural remedies (#the-caveman-network)."
@@ -447,11 +517,13 @@
           "value": "{ path = \"../bsc-survival\" }"
         },
         {
+          "cont": [],
           "key": "mcp-rpc",
           "lead": [],
           "value": "{ path = \"../mcp-rpc\" }"
         },
         {
+          "cont": [],
           "key": "bsc-config",
           "lead": [
             "# `bsc config` — read/adopt verbs for the runtime config-seed mirror diverging from the packaged seed",
@@ -460,6 +532,7 @@
           "value": "{ path = \"../bsc-config\" }"
         },
         {
+          "cont": [],
           "key": "bsc-app",
           "lead": [
             "# `bsc app` — the APP's own lifecycle: status (is the built app behind main), promote (fast-forward",
@@ -476,6 +549,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."

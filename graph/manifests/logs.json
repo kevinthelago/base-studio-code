@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"logs\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Unified log-query engine for base-studio-code (#1607) — reads the app's per-session event streams (tools/skills/mcp/hooks/cost/coord/activity) and powers the `bsc-logs` CLI + the desktop observability commands.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -52,11 +58,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"logs\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -73,6 +81,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the one home-dir resolver + civil-date parsing."
@@ -80,16 +89,19 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `emit` (the lean-TSV-vs-JSON dispatch",
@@ -98,6 +110,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# Read-only access to the metrics DB (perf.db) for `bsc-logs perf` (#1716). `bundled` matches the",
@@ -106,6 +119,7 @@
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
+          "cont": [],
           "key": "plandb",
           "lead": [
             "# Project completion (issues done/total) for `bsc metrics` (#3449) — Tauri-free, bundled SQLite."
@@ -121,6 +135,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "llm",
           "lead": [
             "# TEST-ONLY, and only for one test. `the_reader_parses_exactly_what_the_emitter_writes` drives the",

@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-sqlite-util\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Shared helpers for the base-studio-code SQLite CLI+lib trio (plandb/skilldb/logs and their bsc-* binaries) — JSON value-list (de)serialization, home-dir resolution, JSON printing, and object-or-array stdin reads (#1621).\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -52,11 +58,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_sqlite_util\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -73,6 +81,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "conn",
           "lead": [
             "# `conn` pulls in rusqlite and the shared connection PLUMBING (open + busy_timeout, `:memory:`-aware",
@@ -91,6 +100,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the single source of truth for `home_dir` (re-exported below)."
@@ -98,16 +108,19 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# Only under `conn`: `bundled` compiles SQLite from source (matches plandb/skilldb/compliance/research)",

@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-llm\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
@@ -31,6 +35,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -47,11 +52,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"llm\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -68,6 +75,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [
             "# `blocking` is for the `bsc llm` CLI only: it is a synchronous command, and pulling tokio in as a",
@@ -76,16 +84,19 @@
           "value": "{ version = \"0.12\", features = [\"json\", \"stream\", \"blocking\"] }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "regex",
           "lead": [
             "# Tolerant recovery of tool calls a local model emits as text (toolparse.rs)."
@@ -93,6 +104,7 @@
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "futures-util",
           "lead": [
             "# Streaming the Ollama native /api/chat NDJSON response token-by-token to the PTY (#1832)."
@@ -100,6 +112,7 @@
           "value": "{ version = \"0.3\", default-features = false, features = [\"std\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# `bsc llm bench`: `now_ms()` for the per-run nonce, and the shared `emit` so --json/--pretty behave",
@@ -108,6 +121,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
@@ -121,6 +135,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "tokio",
           "lead": [
             "# Async runtime for the live-socket mock-HTTP integration tests (offline; #1744)."

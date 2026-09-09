@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-graph\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-runtime",
           "lead": [
             "# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens. For an IMPLEMENTATION the",
@@ -45,16 +51,19 @@
           "value": "{ path = \"../bsc-runtime\" }"
         },
         {
+          "cont": [],
           "key": "bsc-record",
           "lead": [],
           "value": "{ path = \"../bsc-record\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-data",
           "lead": [
             "# The DATA GRAPH (the-data-graph-a-global-third-pillar) — `doctor` holds a node to the entities it",
@@ -73,6 +82,7 @@
           "value": "{ path = \"../data\", default-features = false }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "",
@@ -82,11 +92,13 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# `preserve_order` — LOAD-BEARING for `impl sync-seed`. The packaged seed",
@@ -101,21 +113,25 @@
           "value": "{ version = \"1\", features = [\"preserve_order\"] }"
         },
         {
+          "cont": [],
           "key": "tree-sitter",
           "lead": [],
           "value": "\"0.26\""
         },
         {
+          "cont": [],
           "key": "tree-sitter-typescript",
           "lead": [],
           "value": "\"0.23\""
         },
         {
+          "cont": [],
           "key": "tree-sitter-rust",
           "lead": [],
           "value": "\"0.24\""
         },
         {
+          "cont": [],
           "key": "graph-materialize",
           "lead": [
             "# The MATERIALIZER, promoted from a dev-dependency to a real one because `repo_store` now READS the",
@@ -135,6 +151,7 @@
           "value": "{ path = \"../graph-materialize\" }"
         },
         {
+          "cont": [],
           "key": "bsc-graph-store",
           "lead": [
             "# THE DATABASE the records are moving into (`epic-retire-json-ledgers-for-db-and-git-drivers`).",
@@ -152,6 +169,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -167,6 +185,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",

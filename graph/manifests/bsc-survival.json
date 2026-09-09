@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-survival\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The caveman network's offline survival corpus for base-studio-code — PROCEDURES (water, fire, shelter, signalling, navigation, bleeding control) and natural REMEDIES (antiseptics, hemostatics, analgesics) as structured rows, queryable by the materials in hand, by function, and by location, and compilable into one offline field manual. LOCAL: the corpus is packaged, the store is on this machine, and no verb here reaches the network.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_survival\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the one epoch clock (`now_secs`)."
@@ -81,6 +90,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite-CLI helpers: `print_json` / `read_stdin_json` for the house JSON-on-stdout style, and",
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch + `resolve_store_path`."
@@ -96,16 +107,19 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "include_dir",
           "lead": [
             "# Embed the packaged corpus (`corpus/**/*.json`) at compile time (#1614), so the field knowledge is",
@@ -114,6 +128,7 @@
           "value": "\"0.7\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# The user-owned store the packaged corpus seeds into, so a person can add what they learned on their",

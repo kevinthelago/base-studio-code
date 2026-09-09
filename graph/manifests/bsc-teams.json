@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-teams\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"User teams store (SQLite store at ~/.base-studio-code/orgs.db) for base-studio-code (#2193, #2700) — the persona-relationship graph: positions connected by relationship archetypes that expand into communication forms. A thin teams-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's teams bridge and the session-facing `bsc teams` CLI (with the deprecated `bsc org` alias). The on-disk store dir stays `orgs/` so existing saved data is not orphaned.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_teams\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
@@ -82,6 +91,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog, and `resolve_store_path`",
@@ -90,6 +100,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The ONE home-dir resolver (#1646) — AND the canonical model-tier registry `model` validates",
@@ -98,6 +109,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-llm",
           "lead": [
             "# `model` validates a non-tier name against what the LOCAL RUNTIME has installed — THE ONE RULE",
@@ -108,6 +120,7 @@
           "value": "{ path = \"../llm\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# `model` patches ONE position of the stored team without re-serializing a typed model."

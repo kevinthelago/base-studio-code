@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-perms\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
@@ -31,11 +35,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# `scope::DENY_ALL` and `scope_verdict` — the write-scope vocabulary, already a crate."
@@ -43,16 +49,19 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-config",
           "lead": [
             "# The RUNTIME CONFIG OVERLAY, so `write-locks.json` is read exactly as the app reads it. Verified",
@@ -63,6 +72,7 @@
           "value": "{ path = \"../bsc-config\" }"
         },
         {
+          "cont": [],
           "key": "log",
           "lead": [
             "# One `warn!` on an unreadable write-locks.json. Kept rather than dropped in the move: losing it would",
@@ -87,6 +97,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -102,6 +113,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -118,6 +130,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "graph-materialize",
           "lead": [
             "# The MATERIALIZER, for its merged-store loader ONLY. `the_field_names_match_the_consumer` reads",

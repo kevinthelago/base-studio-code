@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-widget\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc widget` — a widget is a NODE: one toggleable UI surface, the stream it subscribes to, and the verb that turns it on or off.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_widget\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -72,11 +80,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-appchan",
           "lead": [
             "# The ONE channel for asking the running app to do something (#3274)."
@@ -84,11 +94,13 @@
           "value": "{ path = \"../bsc-appchan\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
@@ -102,11 +114,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [],
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [],
           "value": "\"deny\""

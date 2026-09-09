@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"channel\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Marketing channel MCP servers for the Marketer (#3146, epic #3145). A marketing channel IS an MCP server: its tools ARE the channel actions (send_email / post / schedule / get_metrics), assigned to the marketer stream via the normal MCP lifecycle. Ships the MOCK channel first — it RECORDS every call to a JSONL log instead of sending, so the whole plan→draft→approve→publish→metrics loop is testable end-to-end with ZERO real sends. Real adapters (Resend email, Bluesky) land later behind the same tool surface. Behind the shared mcp_rpc stdio core.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"channel\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -72,6 +80,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "mcp-rpc",
           "lead": [
             "# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, run-loop + `arg_str`.",
@@ -80,6 +89,7 @@
           "value": "{ path = \"../mcp-rpc\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

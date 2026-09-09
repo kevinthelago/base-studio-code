@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-util\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Tiny dependency-free leaf crate for base-studio-code (#1646) — the ONE definition of home-dir resolution, the `~/.base-studio-code` base dir, epoch clocks (secs/ms), and the epoch-ms↔ISO-8601 civil-date pair. Shared by the desktop app and every `bsc-*` CLI so they all resolve the same on-disk store.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -52,11 +58,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_util\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "",
@@ -79,6 +87,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

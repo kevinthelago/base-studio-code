@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-studio\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Studio store (SQLite store at ~/.base-studio-code/studios.db) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc studio` CLI.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_studio\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# Read each sibling library collection (blueprints/personas/teams/components/variants/themes) DIRECTLY",
@@ -82,6 +91,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the one `~/.base-studio-code` base-dir resolver every store agrees on."
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# `conn` for the SQLite handle a FULL-scope backup needs. A store must be copied with `VACUUM INTO`",
@@ -99,6 +110,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch / unknown-command renderer."
@@ -106,11 +118,13 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-lan\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc lan` — the command surface for the emit-only LAN sensor: what this host exposes, the keys the stream needs, and a socket-free dry run over real Suricata output.\""
@@ -31,6 +35,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_lan\""
@@ -44,11 +49,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-lan\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"src/main.rs\""
@@ -65,11 +72,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-appchan",
           "lead": [
             "# The ONE channel for asking the running app to do something (#3274)."
@@ -77,31 +86,37 @@
           "value": "{ path = \"../bsc-appchan\" }"
         },
         {
+          "cont": [],
           "key": "bsc-lan-sense",
           "lead": [],
           "value": "{ path = \"../bsc-lan-sense\" }"
         },
         {
+          "cont": [],
           "key": "bsc-lan-stream",
           "lead": [],
           "value": "{ path = \"../bsc-lan-stream\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "ed25519-dalek",
           "lead": [],
           "value": "{ version = \"2\", default-features = false, features = [\"std\"] }"
         },
         {
+          "cont": [],
           "key": "getrandom",
           "lead": [
             "# Key material must come from the OS CSPRNG. Nothing else is acceptable here and",
@@ -110,6 +125,7 @@
           "value": "\"0.4\""
         },
         {
+          "cont": [],
           "key": "libc",
           "lead": [
             "# The monitor-mode capture socket (src/capture.rs). AF_PACKET has no std",
@@ -118,6 +134,7 @@
           "value": "\"0.2\""
         },
         {
+          "cont": [],
           "key": "bsc-rf",
           "lead": [
             "# What a captured frame MEANS — parsing only; this crate owns the socket."
@@ -133,6 +150,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "unsafe_code",
           "lead": [
             "# DENY, NOT FORBID, and the difference is load-bearing. One audited module here holds a raw file",
@@ -153,11 +171,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [],
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [],
           "value": "\"deny\""

@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-disk\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
@@ -31,21 +35,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "sha2",
           "lead": [
             "# The dedup GUARD, not an optimization: identical name and size is a hint, a hash is the proof. The",
@@ -55,6 +63,7 @@
           "value": "\"0.11\""
         },
         {
+          "cont": [],
           "key": "filetime",
           "lead": [
             "# A hard link shares metadata, so the shared inode has to adopt the group's NEWEST mtime or every",
@@ -76,6 +85,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -91,6 +101,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -107,11 +118,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"real_trees_parity\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"../graph-materialize/test_root.rs\""

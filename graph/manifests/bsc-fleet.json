@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-fleet\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Ask the RUNNING app which fleet panes are actually alive (#4098): the `bsc fleet` CLI + its request/result contract. `bsc-fleet` (the shell helper) reads a LAUNCH MANIFEST and can only report coord.log activity, so a pane whose process exited an hour ago printed the same as a live one; this reports real liveness. Tauri-free; rides the shared bsc-appchan transport.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_fleet\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -72,26 +80,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-appchan",
           "lead": [
             "# The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`, so there is no second transport."
@@ -99,6 +112,7 @@
           "value": "{ path = \"../bsc-appchan\" }"
         },
         {
+          "cont": [],
           "key": "plandb",
           "lead": [
             "# plan.db is the SOLE fleet store (#1805), so it is where fleet MEMBERSHIP comes from: the launched-",
@@ -109,6 +123,7 @@
           "value": "{ path = \"../plandb\" }"
         },
         {
+          "cont": [],
           "key": "bsc-project",
           "lead": [
             "# The hub's clone primitive (#the-director-can-clone-its-projects-repos) — `bsc fleet clone` and the",
@@ -118,6 +133,7 @@
           "value": "{ path = \"../bsc-project\" }"
         },
         {
+          "cont": [],
           "key": "logs",
           "lead": [
             "# The coord log (#the-director-can-see-which-streams-are-held) — tier 3 of the dependency gate is a",
@@ -127,6 +143,7 @@
           "value": "{ path = \"../logs\" }"
         },
         {
+          "cont": [],
           "key": "llm",
           "lead": [
             "# `bsc fleet launch-config` derives the provider command from `llm::launch_cmd`. The derivation lives",
@@ -136,6 +153,7 @@
           "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sandbox",
           "lead": [
             "# `doctor --fix` repairs a caged hook floor through the SAME `rewrite_guest_hooks` the launch path",
@@ -153,6 +171,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "libc",
           "lead": [],
           "value": "\"0.2\""
@@ -170,6 +189,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "windows-sys",
           "lead": [],
           "value": "{ version = \"0.61\", features = [\"Win32_Foundation\", \"Win32_System_Threading\"] }"

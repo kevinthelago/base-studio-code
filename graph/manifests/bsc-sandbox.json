@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-sandbox\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Renders an agent's isolation spec into an exec-ready argv: a systemd-run cgroup scope wrapping a bubblewrap namespace. Replaces the WSL2 subsystem in src-tauri/src/session/sandbox (phase-2-kernel-isolation-replaces-the-hook-floor). Tauri-free, and the RENDER is platform-independent so its tests run everywhere - only execution is Linux-gated. Also owns `bsc sandbox replay` (#135): a launch's rendered argv is persisted alongside the pane's other per-session state so it can be inspected or replayed outside the app.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_sandbox\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "",
@@ -78,16 +86,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
@@ -99,6 +110,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "tempfile",
           "lead": [],
           "value": "\"3\""

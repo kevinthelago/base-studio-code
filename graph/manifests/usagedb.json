@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"usagedb\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Per-app usage-events store (SQLite) for base-studio-code (#3812, epic #3809) — the per-project sink a running/generated app records usage events to, and `bsc usage` reads, so an agent can query what users do. The dev-process analogue of crates/errordb (`bsc errors`).\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"usagedb\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,16 +82,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability."
@@ -91,6 +102,7 @@
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — so a CLI write never races the app."
@@ -98,6 +110,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system."

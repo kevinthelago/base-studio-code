@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-ear\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"`bsc ear` — always-on local capture: segments a live microphone into speech-only audio within a retention bound it enforces rather than documents.\""
@@ -31,6 +35,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_ear\""
@@ -44,16 +49,19 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-incident",
           "lead": [
             "# The incident model — the ear raises Detections into the same ledger the network sensors use."
@@ -61,16 +69,19 @@
           "value": "{ path = \"../bsc-incident\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "cpal",
           "lead": [
             "# Cross-platform capture. On Linux this is the ALSA backend, which is why libasound2-dev is a build",
@@ -79,6 +90,7 @@
           "value": "\"0.15\""
         },
         {
+          "cont": [],
           "key": "hound",
           "lead": [
             "# WAV read/write. Segments are wav rather than raw so they are inspectable with any player and",
@@ -87,6 +99,7 @@
           "value": "\"3.5\""
         },
         {
+          "cont": [],
           "key": "libc",
           "lead": [
             "# For silencing ALSA's own diagnostics at the fd level while enumerating. Already in the tree via",
@@ -95,6 +108,7 @@
           "value": "\"0.2\""
         },
         {
+          "cont": [],
           "key": "nnnoiseless",
           "lead": [
             "# Learned speech denoiser (pure-Rust RNNoise port): no model download, no C, no ort. Handles the",
@@ -103,6 +117,7 @@
           "value": "\"0.5\""
         },
         {
+          "cont": [],
           "key": "ort",
           "lead": [
             "# DeepFilterNet3 clarity engine: ort runs the fused ONNX graph (same runtime as bsc-say/Kokoro);",
@@ -112,6 +127,7 @@
           "value": "{ version = \"2.0.0-rc.10\", features = [\"download-binaries\"] }"
         },
         {
+          "cont": [],
           "key": "realfft",
           "lead": [],
           "value": "\"3\""
@@ -125,11 +141,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "wildcard_enum_match_arm",
           "lead": [],
           "value": "\"deny\""
         },
         {
+          "cont": [],
           "key": "match_wildcard_for_single_variants",
           "lead": [],
           "value": "\"deny\""

@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"research\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Native literature research for base-studio-code (#1196) — arXiv · Semantic Scholar · PubMed/PMC · Crossref search/retrieval, native PDF extraction, and citation-grounded semantic search. Shipped as the bundled `bsc-research-mcp` stdio MCP server so the planner can ground plans & skills in real sources with no download/build/Docker.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"research\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): the one epoch clock (`now_secs`)."
@@ -81,6 +90,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite plumbing (#1863): the `:memory:`-aware open + default-path + JSON-blob row helpers",
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "mcp-rpc",
           "lead": [
             "# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, and run-loop. This crate",
@@ -97,16 +108,19 @@
           "value": "{ path = \"../mcp-rpc\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [
             "# Blocking HTTP for the source clients — keeps the server a simple synchronous stdin loop (no tokio)."
@@ -114,6 +128,7 @@
           "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"json\", \"rustls-tls\"] }"
         },
         {
+          "cont": [],
           "key": "roxmltree",
           "lead": [
             "# Read-only XML DOM for the Atom (arXiv) + E-utilities (PubMed/PMC) responses — pure Rust, no codegen."
@@ -121,6 +136,7 @@
           "value": "\"0.21\""
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# Local on-disk cache of fetched records + extracted full text (keyed by canonical id), so repeated",
@@ -129,6 +145,7 @@
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
+          "cont": [],
           "key": "pdf-extract",
           "lead": [
             "# Native PDF text extraction (no Docker/GROBID) for arXiv/PMC-OA/publisher full text."

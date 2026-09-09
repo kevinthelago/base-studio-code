@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-storefs\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Projects the plan store as a read-only file tree, so an agent reads its plan with cat and ls instead of a CLI grammar (phase-3-store-surfaces-are-filesystems). The projection is PURE - store rows in, relative-path/content pairs out - so its tests run on any host; only materialize() touches a filesystem.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -51,11 +57,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_storefs\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "",
@@ -76,11 +84,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
@@ -92,6 +102,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-sandbox",
           "lead": [],
           "value": "{ path = \"../bsc-sandbox\" }"

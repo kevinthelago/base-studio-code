@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-persona\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"User persona store (SQLite store at ~/.base-studio-code/personas.db) for base-studio-code (#2094) — the agent-identity library (start prompt + skills + model, over a referenced role), a thin persona-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's persona bridge and the session-facing `bsc persona` CLI.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -53,11 +59,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_persona\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -74,6 +82,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
@@ -82,6 +91,7 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog."
@@ -89,6 +99,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-llm",
           "lead": [
             "# `model` validates a non-tier name against what the LOCAL RUNTIME has installed — the one rule lives",
@@ -97,6 +108,7 @@
           "value": "{ path = \"../llm\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# `set` reads its own payload (stdin/`--file`) so it can carry a builtin's `proseSeal`/`replacedProse`",
@@ -106,6 +118,7 @@
           "value": "{ path = \"../bsc-sqlite-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# The ONE home-dir resolver (#1646) — `rename` resolves the persona store the same way the shared",
@@ -115,6 +128,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-appchan",
           "lead": [
             "# `rename` patches ONE field of the stored record without re-serializing a typed model.",
@@ -126,11 +140,13 @@
           "value": "{ path = \"../bsc-appchan\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""

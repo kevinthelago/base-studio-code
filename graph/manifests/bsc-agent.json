@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-agent\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
@@ -31,11 +35,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-agent\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [],
           "value": "\"../graph-materialize/crate_root.rs\""
@@ -52,6 +58,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [
             "# Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting."
@@ -59,6 +66,7 @@
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# `.claude/session.json` resolution — how a session that nobody configured finds out what it is.",
@@ -67,6 +75,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "plandb",
           "lead": [
             "# #3279: the worker's own open issues (stream-scoped) folded into each turn's system prompt — the",
@@ -75,6 +84,7 @@
           "value": "{ path = \"../plandb\" }"
         },
         {
+          "cont": [],
           "key": "bsc-files",
           "lead": [
             "# The file-structure engine, reused IN-PROCESS by the `list_files`/`file_info` tools (the standalone",
@@ -83,6 +93,7 @@
           "value": "{ path = \"../bsc-files\" }"
         },
         {
+          "cont": [],
           "key": "llm",
           "lead": [
             "# The two-scope agent todo store (#1872): `render_active_from_env()` re-renders the active checklist's",
@@ -91,26 +102,31 @@
           "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "glob",
           "lead": [],
           "value": "\"0.3\""
         },
         {
+          "cont": [],
           "key": "regex",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [
             "# rustls-tls (no native-tls) + blocking — matches the research crate so the workspace",
@@ -120,6 +136,7 @@
           "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
         },
         {
+          "cont": [],
           "key": "tokio",
           "lead": [],
           "value": "{ version = \"1\", features = [\"rt-multi-thread\", \"macros\", \"process\", \"io-util\", \"sync\", \"time\"] }"
@@ -133,6 +150,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."

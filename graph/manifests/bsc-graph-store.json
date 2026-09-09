@@ -5,26 +5,31 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-graph-store\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "build",
           "lead": [],
           "value": "\"../graph-materialize/build.rs\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"The graph's RECORD STORE, as a database (epic-retire-json-ledgers-for-db-and-git-drivers). One row per record, queried by id; every version ever written kept as rows and appended by TRIGGER, so no write path can skip recording history and a bad write is recoverable by moving back a version. Replaces the 27.5 MB committed JSON ledger, the 50 MB runtime blob, and the four-copy propagation between them.\""
@@ -36,6 +41,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# The shared SQLite helpers every store in this workspace opens through (plandb/skilldb/logs/json-store),",
@@ -45,6 +51,7 @@
           "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         },
         {
+          "cont": [],
           "key": "rusqlite",
           "lead": [
             "# The same rusqlite every SQLite store here links (plandb/skilldb/compliance): `bundled` so the store",
@@ -53,11 +60,13 @@
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# `vendored::sha256_hex` — the ONE content-hash form in this workspace, for the ledger's signature."
@@ -65,11 +74,13 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# `preserve_order` — LOAD-BEARING, and not merely inherited. This crate's promise is that exporting",
@@ -89,6 +100,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
@@ -104,6 +116,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",

@@ -5,21 +5,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc-data\""
         },
         {
+          "cont": [],
           "key": "version",
           "lead": [],
           "value": "\"0.1.0\""
         },
         {
+          "cont": [],
           "key": "edition",
           "lead": [],
           "value": "\"2021\""
         },
         {
+          "cont": [],
           "key": "description",
           "lead": [],
           "value": "\"Canonical Data Model store (DuckDB) + connector framework for the base-studio-code data platform (#781/#784).\""
@@ -31,6 +35,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "graph-materialize",
           "lead": [
             "# GRAPH MATERIALIZATION, as a real build-dependency. A package gets exactly ONE build",
@@ -49,11 +54,13 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "name",
           "lead": [],
           "value": "\"bsc_data\""
         },
         {
+          "cont": [],
           "key": "path",
           "lead": [
             "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
@@ -70,6 +77,7 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "default",
           "lead": [
             "# DuckDB-backed store is on by default. The schema / DDL / connector / coercion",
@@ -79,6 +87,7 @@
           "value": "[\"duckdb-store\"]"
         },
         {
+          "cont": [],
           "key": "duckdb-store",
           "lead": [],
           "value": "[\"dep:duckdb\"]"
@@ -92,21 +101,25 @@
     {
       "entries": [
         {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
         {
+          "cont": [],
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "csv",
           "lead": [],
           "value": "\"1\""
         },
         {
+          "cont": [],
           "key": "bsc-cli-util",
           "lead": [
             "# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper), `resolve_store_path` (--db→env→default),",
@@ -115,6 +128,7 @@
           "value": "{ path = \"../bsc-cli-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-json-store",
           "lead": [
             "# The DATA GRAPH's global entity store (the-data-graph-a-global-third-pillar) — the same",
@@ -124,11 +138,13 @@
           "value": "{ path = \"../bsc-json-store\" }"
         },
         {
+          "cont": [],
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
         },
         {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "",
@@ -139,6 +155,7 @@
           "value": "{ path = \"../bsc-sqlite-util\" }"
         },
         {
+          "cont": [],
           "key": "duckdb",
           "lead": [
             "# `bundled` compiles DuckDB from source (mirrors how rusqlite is bundled in",
@@ -147,6 +164,7 @@
           "value": "{ version = \"1\", features = [\"bundled\"], optional = true }"
         },
         {
+          "cont": [],
           "key": "reqwest",
           "lead": [
             "# Connector dev-loop transport (#1963): the `bsc data connector probe/try` verbs do authed,",
@@ -156,6 +174,7 @@
           "value": "{ version = \"0.12\", features = [\"json\", \"blocking\"] }"
         },
         {
+          "cont": [],
           "key": "keyring",
           "lead": [],
           "value": "{ version = \"3\", features = [\"apple-native\", \"windows-native\"] }"
