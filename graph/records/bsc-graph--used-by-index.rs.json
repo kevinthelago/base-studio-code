@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--used-by-index.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "used_by_index",
+  "src": "crates/bsc-graph/src/used_by_index.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--implementations-of.rs"
+  ],
+  "code": "use super::*;\n\n/// The composes-INVERSE (#3594): implementation id → the ids of implementations that list it in\n/// `composes` (sorted + deduped). The algorithm graph's USAGE signal — how load-bearing an impl is —\n/// keyed by id (algorithms compose by id; there are no kits, unlike the component graph). Computed live\n/// from the graph, so it is never a placeholder. The measure step a `merge` decision reads.\npub fn used_by_index(g: &Value) -> std::collections::BTreeMap<String, Vec<String>> {\n    let mut idx: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();\n    for im in implementations_of(g) {\n        let Some(consumer) = im.get(\"id\").and_then(Value::as_str).filter(|s| !s.is_empty()) else { continue };\n        for dep in im.get(\"composes\").and_then(Value::as_array).into_iter().flatten() {\n            if let Some(dep_id) = dep.as_str().filter(|s| !s.is_empty()) {\n                idx.entry(dep_id.to_string()).or_default().push(consumer.to_string());\n            }\n        }\n    }\n    for consumers in idx.values_mut() {\n        consumers.sort();\n        consumers.dedup();\n    }\n    idx\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

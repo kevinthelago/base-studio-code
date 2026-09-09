@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--module-is-cfg-test.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "module_is_cfg_test",
+  "src": "crates/bsc-graph/src/module_is_cfg_test.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Is this record's MODULE compiled out of production builds — `#[cfg(test)]` on its declaration?\n///\n/// The auditor's half of the test scheme (see [`ROLES`]). Whitespace-insensitive, because a record must\n/// not change classification because somebody reformatted the attribute. A FEATURE gate is not a test\n/// gate: `crates/data` gates three modules on `#[cfg(feature = \"duckdb-store\")]` and those are\n/// production logic that happens to be optional.\npub fn module_is_cfg_test(im: &Value) -> bool {\n    im.get(\"moduleAttrs\")\n        .and_then(Value::as_array)\n        .into_iter()\n        .flatten()\n        .filter_map(Value::as_str)\n        .any(|a| a.chars().filter(|c| !c.is_whitespace()).collect::<String>() == \"#[cfg(test)]\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

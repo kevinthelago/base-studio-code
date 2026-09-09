@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--get.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "get",
+  "src": "crates/bsc-graph-store/src/get.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get-in.rs"
+  ],
+  "code": "use super::*;\n\n/// [`get_in`] on `main`.\npub fn get(conn: &Connection, id: &str) -> Result<Option<Value>, String> {\n    get_in(conn, MAIN, id)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

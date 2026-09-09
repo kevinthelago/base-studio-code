@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--tier-in.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tier_in",
+  "src": "crates/bsc-graph-store/src/tier_in.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// The tier `id` is already recorded on in `lane`, or [`TIER_IMPL`] if it is not recorded at all.\n///\n/// Every write that CONTINUES a record — a tombstone, a revert — has to carry the tier forward rather\n/// than assume one. Both of those used to assume `impl` (a revert through [`put`], a tombstone through\n/// the column's `DEFAULT 'impl'`), which silently reclassified an EDGE as an implementation: it\n/// vanished from `document()[\"edges\"]` and reappeared among the implementations, where a build would\n/// try to compile it.\npub fn tier_in(conn: &Connection, lane: &str, id: &str) -> Result<String, String> {\n    conn.query_row(\n        \"SELECT tier FROM record_revs WHERE id = ?1 AND lane = ?2 ORDER BY rev DESC LIMIT 1\",\n        params![id, lane],\n        |r| r.get::<_, String>(0),\n    )\n    .or_else(|e| match e {\n        rusqlite::Error::QueryReturnedNoRows => Ok(TIER_IMPL.to_string()),\n        other => Err(format!(\"cannot read the tier of '{id}' in lane '{lane}': {other}\")),\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store",
+  "crateDeps": [
+    "rusqlite"
+  ]
+}

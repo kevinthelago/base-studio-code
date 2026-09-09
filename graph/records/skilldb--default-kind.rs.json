@@ -1,0 +1,12 @@
+{
+  "id": "skilldb--default-kind.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "default_kind",
+  "src": "crates/skilldb/src/default_kind.rs",
+  "folder": "crates/skilldb/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn default_kind() -> String {\n    \"workflow\".into()\n}\n",
+  "feature": "skills"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--theme-by-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "theme_by_id",
+  "src": "crates/bsc-ui/src/theme_by_id.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--themes.rs"
+  ],
+  "code": "use super::*;\n\n/// One theme by id, or `None`.\npub fn theme_by_id(id: &str) -> Option<Value> {\n    themes().into_iter().find(|t| t.get(\"id\").and_then(Value::as_str) == Some(id))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

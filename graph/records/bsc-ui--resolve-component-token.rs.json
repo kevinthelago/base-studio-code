@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--resolve-component-token.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolve_component_token",
+  "src": "crates/bsc-ui/src/resolve_component_token.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--flatten-tokens.rs"
+  ],
+  "code": "use super::*;\n\n/// Resolve a component's SHORT token key (+ optional variant) to its full custom-property name — e.g.\n/// (`btn`, `Some(\"primary\")`, `bg`) → `--btn-primary-bg`, (`card`, `None`, `radius`) → `--card-radius`.\n/// `None` when the descriptor has no such token, so `bsc ui component <c> set-token <key>` addresses\n/// tokens by the discoverable keys `bsc ui components` reports — never the naming convention itself.\npub fn resolve_component_token(component: &str, variant: Option<&str>, key: &str) -> Option<String> {\n    flatten_tokens().into_iter().find_map(|row| {\n        let same_comp = row.get(\"component\").and_then(Value::as_str) == Some(component);\n        let same_key = row.get(\"key\").and_then(Value::as_str) == Some(key);\n        let same_variant = row.get(\"variant\").and_then(Value::as_str) == variant;\n        (same_comp && same_key && same_variant)\n            .then(|| row.get(\"name\").and_then(Value::as_str).map(str::to_owned))\n            .flatten()\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -3,7 +3,8 @@
   "composes": [
     "bsc-publish--token.rs",
     "bsc-publish--lib.rs",
-    "bsc-publish--repo-for.rs"
+    "bsc-publish--repo-for.rs",
+    "bsc-publish--viewer-login.rs"
   ],
   "domain": "bsc-publish",
   "folder": "crates/bsc-publish/src",

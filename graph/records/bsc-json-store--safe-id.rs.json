@@ -1,0 +1,11 @@
+{
+  "id": "bsc-json-store--safe-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "safe_id",
+  "src": "crates/bsc-json-store/src/safe_id.rs",
+  "folder": "crates/bsc-json-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Slugify a record id into a single safe segment: keep `[A-Za-z0-9_-]`, replace every other char with\n/// `_`, and reject an id with no real content (so it can never escape the store, exactly as the old\n/// filename guard did). Same output as `platform/fsx.rs::safe_dir_segment` for every id carrying an\n/// alphanumeric (kept duplicated because that helper lives in the (Tauri) app crate) — this copy is\n/// stricter only for degenerate all-punctuation ids, which it rejects instead of collapsing to `_`.\n///\n/// Idempotent over its own output (a slug of `[A-Za-z0-9_-]` maps to itself), so a legacy filename stem\n/// re-slugs to the same key.\npub(crate) fn safe_id(id: &str, noun: &str) -> Result<String, String> {\n    let safe: String = id\n        .chars()\n        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })\n        .collect();\n    // A dot can never survive the mapper above, so the fsx-style post-slug `.`/`..` match would be\n    // dead code here; requiring an alphanumeric rejects the same traversal shapes (`..` slugs to `__`)\n    // and keeps all-punctuation ids from colliding onto one underscores-only key.\n    if !safe.chars().any(|c| c.is_ascii_alphanumeric()) {\n        return Err(format!(\"{noun} id is empty/invalid\"));\n    }\n    Ok(safe)\n}\n"
+}

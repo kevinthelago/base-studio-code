@@ -1,0 +1,18 @@
+{
+  "id": "bsc-graph-store--mark-document-exported.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mark_document_exported",
+  "src": "crates/bsc-graph-store/src/mark_document_exported.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs",
+    "bsc-graph-store--rev-holding.rs"
+  ],
+  "code": "use super::*;\n\n/// Mark every id in `doc` as exported at its CURRENT main head — the files and the ledger now agree.\n///\n/// Called from exactly two places, and the distinction is load-bearing: after the export WRITES the\n/// files, and after `store import --refresh` adopts the files into the ledger. Both end with the two\n/// sides equal, which is the only moment a watermark is true.\n///\n/// [`sync_document`] deliberately does NOT call this, even though it looks like the same shape:\n/// `save()` reaches it on every `impl set`, where the document is the graph in MEMORY and the files\n/// have not moved at all. Marking there would claim the files matched a body they have never held, and\n/// [`export_drift`] would then report every `impl set` as a file-side edit — the exact inversion of\n/// what it is for.\npub fn mark_document_exported(conn: &Connection, doc: &Value) -> Result<usize, String> {\n    let mut n = 0;\n    for key in [\"implementations\", \"edges\"] {\n        for rec in doc.get(key).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {\n            let Some(id) = rec.get(\"id\").and_then(Value::as_str) else { continue };\n            // At the rev whose body the file actually HOLDS — not blindly at head. After an export or\n            // a refresh those are the same thing. On a ledger another session has written past they\n            // are not, and marking at head would claim the file matched a body it has never held,\n            // which reads back as a file-side edit on the very next export.\n            let body = import::body_of(rec);\n            if let Some(rev) = rev_holding(conn, id, &body)? {\n                mark_exported(conn, id, rev)?;\n                n += 1;\n            }\n        }\n    }\n    Ok(n)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--edges-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "edges_of",
+  "src": "crates/bsc-graph/src/edges_of.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The edges of a graph document. READ-ONLY on purpose: unlike `ensure_array`, this never inserts the\n/// key, so merely LOOKING at a store with no edges cannot add `\"edges\": []` to it.\npub fn edges_of(g: &Value) -> Vec<Value> {\n    g.get(\"edges\").and_then(Value::as_array).cloned().unwrap_or_default()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

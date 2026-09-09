@@ -1,0 +1,18 @@
+{
+  "id": "bsc-studio--resolve-base.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolve_base",
+  "src": "crates/bsc-studio/src/resolve_base.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Resolve the base `~/.base-studio-code` directory every store lives under. `flag` (the `--dir`\n/// override, used by tests + power users) wins; else the shared home resolver. `Err` when no home dir\n/// resolves (matching the `bsc-*` CLI convention). NOTE: for `bsc studio`, `--dir` is the BASE dir (the\n/// snapshot reads its sibling collections under it), not a single collection dir.\npub fn resolve_base(flag: &Option<String>) -> Result<PathBuf, String> {\n    match flag {\n        Some(d) => Ok(PathBuf::from(d)),\n        None => bsc_util::bsc_base_dir()\n            .ok_or_else(|| \"could not resolve a home directory; set HOME/USERPROFILE\".to_string()),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

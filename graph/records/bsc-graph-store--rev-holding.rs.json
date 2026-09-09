@@ -1,0 +1,21 @@
+{
+  "id": "bsc-graph-store--rev-holding.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rev_holding",
+  "src": "crates/bsc-graph-store/src/rev_holding.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs",
+    "bsc-graph-store--same-body.rs"
+  ],
+  "code": "use super::*;\n\n/// The newest main rev of `id` whose body equals `body`, if any.\n///\n/// This is what lets a ledger with no watermarks answer correctly instead of refusing everything. A\n/// file holding a body the ledger HAS held at some point was written by an export, not edited by hand\n/// — so it is safe to overwrite. Only a body the ledger has never held is an outside edit.\n///\n/// It is also what makes the watermark self-healing: a ledger imported before watermarks existed (or\n/// one another session has written past) needs no migration step, because the matching rev IS the\n/// watermark, recoverable from the history at any time.\n///\n/// The one thing it cannot see is a file edited BACK to an older body. The exact watermark covers that\n/// once a record has been exported through this path; this is the fallback, not the primary.\npub fn rev_holding(conn: &Connection, id: &str, body: &Value) -> Result<Option<i64>, String> {\n    let mut st = conn\n        .prepare(\"SELECT rev, json FROM record_revs WHERE id = ?1 AND lane = 'main' AND json IS NOT NULL ORDER BY rev DESC\")\n        .map_err(|e| e.to_string())?;\n    let rows = st\n        .query_map(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))\n        .map_err(|e| e.to_string())?;\n    for row in rows {\n        let (rev, text) = row.map_err(|e| e.to_string())?;\n        let v: Value = serde_json::from_str(&text).map_err(|e| format!(\"rev {rev} of '{id}': {e}\"))?;\n        if same_body(&v, body) {\n            return Ok(Some(rev));\n        }\n    }\n    Ok(None)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

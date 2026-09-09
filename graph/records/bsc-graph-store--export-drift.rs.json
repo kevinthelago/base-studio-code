@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--export-drift.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "export_drift",
+  "src": "crates/bsc-graph-store/src/export_drift.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs",
+    "bsc-graph-store--rev-holding.rs",
+    "bsc-graph-store--body-at.rs",
+    "bsc-graph-store--same-body.rs"
+  ],
+  "code": "use super::*;\n\n/// Records in `doc` that an export would OVERWRITE WITH SOMETHING ELSE — a file-side edit the ledger\n/// has never seen.\n///\n/// `doc` is the committed store as it is on disk. For each record in it:\n///\n/// - **not on main at all** — the files hold a record the ledger never saw. An export deletes it.\n/// - **changed since it was exported** — the file no longer matches the body that was written to it,\n///   so somebody edited the file. An export overwrites that edit.\n/// - **never exported and already differing** — no watermark to compare against and the file does not\n///   match the head either, so nothing can vouch for it.\n///\n/// A record whose file still matches what was last written is NOT drift, however far main has moved\n/// since: that is the ledger being ahead, which is the direction the export exists to serve.\npub fn export_drift(conn: &Connection, doc: &Value) -> Result<Vec<Drift>, String> {\n    let mut out = Vec::new();\n    for (key, _tier) in [(\"implementations\", TIER_IMPL), (\"edges\", TIER_EDGE)] {\n        for rec in doc.get(key).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {\n            let Some(id) = rec.get(\"id\").and_then(Value::as_str) else { continue };\n            let on_disk = import::body_of(rec);\n            if get(conn, id)?.is_none() {\n                out.push(Drift {\n                    id: id.to_string(),\n                    why: \"the ledger has no record with this id — the export would DELETE the file\"\n                        .to_string(),\n                });\n                continue;\n            }\n            let mark: Option<i64> = conn\n                .query_row(\"SELECT rev FROM exported WHERE id = ?1\", params![id], |r| r.get(0))\n                .ok();\n            match mark {\n                Some(rev) => {\n                    let was = body_at(conn, id, rev)?;\n                    if !was.as_ref().is_some_and(|w| same_body(w, &on_disk)) {\n                        out.push(Drift {\n                            id: id.to_string(),\n                            why: format!(\n                                \"the file no longer matches what was written to it at rev {rev} — it was edited outside the ledger\"\n                            ),\n                        });\n                    }\n                }\n                // No watermark — an import from before watermarks existed, or a record another\n                // session has written past. The HISTORY answers it: a file holding a body this ledger\n                // has held was written by an export, not edited by hand.\n                None if rev_holding(conn, id, &on_disk)?.is_none() => out.push(Drift {\n                    id: id.to_string(),\n                    why: \"the file holds a body this ledger has never held — it was edited outside it\"\n                        .to_string(),\n                }),\n                None => {}\n            }\n        }\n    }\n    out.sort_by(|a, b| a.id.cmp(&b.id));\n    Ok(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

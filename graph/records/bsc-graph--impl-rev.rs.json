@@ -1,0 +1,19 @@
+{
+  "id": "bsc-graph--impl-rev.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "impl_rev",
+  "src": "crates/bsc-graph/src/impl_rev.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--implementations-of.rs"
+  ],
+  "code": "use super::*;\n\n/// The record's current `rev`, or 0 when it is absent from the store — the same\n/// \"absent reads as rev 0\" contract [`bsc_record::read_rev`] gives a record with no stamp.\n///\n/// So `--if-version 0` is the correct guard for a record that has never been written since #72, and\n/// for one that does not exist yet. That is why the 695 records carrying no stamp need no backfill to\n/// be safe under optimistic concurrency: they already answer 0, and a guard reading 0 is telling the\n/// truth about them.\npub fn impl_rev(g: &Value, id: &str) -> i64 {\n    implementations_of(g)\n        .iter()\n        .find(|x| x.get(\"id\").and_then(Value::as_str) == Some(id))\n        .map(bsc_record::read_rev)\n        .unwrap_or(0)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_record"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-json-store--get-record.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "get_record",
+  "src": "crates/bsc-json-store/src/get_record.rs",
+  "folder": "crates/bsc-json-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Fetch one record's verbatim json by `id`, or `None` on a miss (or any read error — lenient, matching\n/// the old `NotFound ⇒ None` file read).\npub(crate) fn get_record(conn: &Connection, id: &str) -> Option<String> {\n    conn.query_row(\"SELECT json FROM records WHERE id = ?1\", [id], |r| r.get(0)).ok()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

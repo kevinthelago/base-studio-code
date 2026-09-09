@@ -1,0 +1,17 @@
+{
+  "id": "bsc-json-store--record-count.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "record_count",
+  "src": "crates/bsc-json-store/src/record_count.rs",
+  "folder": "crates/bsc-json-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The number of records currently in the table.\npub(crate) fn record_count(conn: &Connection) -> rusqlite::Result<i64> {\n    conn.query_row(\"SELECT COUNT(*) FROM records\", [], |r| r.get(0))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "rusqlite"
+  ]
+}

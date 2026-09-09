@@ -1,0 +1,14 @@
+{
+  "id": "bsc-json-store--list-records.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "list_records",
+  "src": "crates/bsc-json-store/src/list_records.rs",
+  "folder": "crates/bsc-json-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every record's verbatim json, ordered by id (deterministic). Whitespace-only values are skipped (the\n/// old `list` skipped blank files); a prepare/query failure ⇒ empty.\npub(crate) fn list_records(conn: &Connection) -> Vec<String> {\n    let mut out = Vec::new();\n    if let Ok(mut stmt) = conn.prepare(\"SELECT json FROM records ORDER BY id\") {\n        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) {\n            for json in rows.flatten() {\n                if !json.trim().is_empty() {\n                    out.push(json);\n                }\n            }\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

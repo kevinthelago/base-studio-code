@@ -1,0 +1,11 @@
+{
+  "id": "bsc-widget--window-url.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "window_url",
+  "src": "crates/bsc-widget/src/window_url.rs",
+  "folder": "crates/bsc-widget/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The URL a widget window loads. A detached page, so the app renders minimal\n/// chrome instead of a second full shell.\npub fn window_url(id: &str) -> String {\n    format!(\"index.html?detach=widget&section={id}\")\n}\n"
+}

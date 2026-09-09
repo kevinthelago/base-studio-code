@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--validate-spec.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_spec",
+  "src": "crates/bsc-ui/src/validate_spec.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Validate a UI spec against the embedded primitive contract. Returns a list of human-readable\n/// errors, empty when the spec is valid. Every node is `{ type, props, children, binds, actions }`\n/// naming a real kit primitive; the rules live in [`general_node`].\npub fn validate_spec(node: &Value) -> Vec<String> {\n    crate::general_node::validate_general_node(node)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

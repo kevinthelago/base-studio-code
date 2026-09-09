@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--signature.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "signature",
+  "src": "crates/bsc-graph-store/src/signature.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// A content signature over the ledger's HEADS — what changes when any record does.\n///\n/// Over `(id, rev)` rather than over bodies, and that is the whole point: a rev moves if and only if a\n/// record was written, so this answers \"has anything changed\" without reading a single body. The\n/// signature the app polls used to require serialising the entire projected document first.\npub fn signature(conn: &Connection) -> Result<String, String> {\n    let mut st = conn\n        .prepare(\"SELECT id, rev FROM records ORDER BY id\")\n        .map_err(|e| e.to_string())?;\n    let rows = st\n        .query_map([], |r| Ok(format!(\"{}:{}\", r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))\n        .map_err(|e| e.to_string())?;\n    let joined = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?.join(\"\\u{1e}\");\n    Ok(bsc_cli_util::vendored::sha256_hex(joined.as_bytes()))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store",
+  "crateDeps": [
+    "bsc_cli_util"
+  ]
+}

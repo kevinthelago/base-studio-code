@@ -1,0 +1,14 @@
+{
+  "id": "mcp-rpc--arg-str.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "arg_str",
+  "src": "crates/mcp-rpc/src/arg_str.rs",
+  "folder": "crates/mcp-rpc/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A required, non-empty string argument. (Crate-specific parsers — arrays, enums, domains — stay in\n/// their own crate; this one is identical across servers.)\npub fn arg_str(args: &Value, key: &str) -> Result<String, String> {\n    args.get(key)\n        .and_then(|v| v.as_str())\n        .map(|s| s.to_string())\n        .filter(|s| !s.trim().is_empty())\n        .ok_or_else(|| format!(\"missing required string argument '{key}'\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

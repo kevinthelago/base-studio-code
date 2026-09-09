@@ -1,0 +1,19 @@
+{
+  "id": "bsc-studio--read-collection.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "read_collection",
+  "src": "crates/bsc-studio/src/read_collection.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Read one sibling json-store collection under `base` (`base/<segment>/*.json`) as parsed records.\n/// Lenient (matching `Store::list`): an unparseable file is skipped, a missing dir ⇒ empty.\npub(crate) fn read_collection(base: &Path, segment: &str, noun: &'static str) -> Vec<Value> {\n    let store = bsc_json_store::Store::new(base.join(segment), noun);\n    store\n        .list()\n        .iter()\n        .filter_map(|j| serde_json::from_str::<Value>(j).ok())\n        .collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_json_store",
+    "serde_json"
+  ]
+}

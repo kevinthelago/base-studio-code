@@ -1,0 +1,23 @@
+{
+  "id": "bsc-studio--apply.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "apply",
+  "src": "crates/bsc-studio/src/apply.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-studio--set.rs",
+    "bsc-studio--get.rs",
+    "bsc-studio--remove.rs"
+  ],
+  "code": "use super::*;\n\n/// Apply a saved Studio by `id` — RE-SEED the app's libraries from its captured snapshot. The inverse\n/// of [`save`]/[`build_snapshot`]: it writes back through the SAME `(system key → on-disk segment)`\n/// [`bsc_json_store::Store`] mapping the snapshot was read through, so the `teams` system re-seeds the\n/// on-disk `orgs/` store, etc.\n///\n/// For EACH system PRESENT in the studio's `snapshot`, it REPLACES that system's store: every existing\n/// record is removed ([`bsc_json_store::Store`] has no `clear`, so we `list()` the current records,\n/// read each one's `id`, and `remove` it), then every record in the snapshot array is written\n/// (`set(record.id, record)`). A snapshot record with no string `id` is SKIPPED (it cannot key a file)\n/// rather than aborting the whole apply, and a listed live record with no readable `id` is left in\n/// place (it cannot be addressed for removal). Only systems the snapshot actually contains are touched\n/// — a PARTIAL studio (a snapshot missing a system, or carrying a subset) leaves every unlisted system\n/// untouched. A snapshot key outside the [`SYSTEMS`] roster is ignored.\n///\n/// Returns a summary `{ \"applied\": { \"<system>\": <count> }, \"id\": \"<id>\", \"name\": \"<name>\" }` where\n/// each count is how many records were written for that system. `Err` when no studio is stored for\n/// `id` (or a stored record is unreadable, via [`get`]).\npub fn apply(base: &Path, id: &str) -> Result<Value, String> {\n    let studio = get(base, id)?.ok_or_else(|| format!(\"apply: studio '{id}' not found\"))?;\n    let name = studio.get(\"name\").and_then(Value::as_str).unwrap_or_default().to_string();\n    let mut applied = serde_json::Map::new();\n\n    if let Some(snapshot) = studio.get(\"snapshot\").and_then(Value::as_object) {\n        for &(key, segment, noun) in SYSTEMS {\n            // Only touch a system the snapshot actually carries (partial studios are safe).\n            let Some(records) = snapshot.get(key).and_then(Value::as_array) else { continue };\n            let store = bsc_json_store::Store::new(base.join(segment), noun);\n\n            // REPLACE step 1 — drop every existing record (addressed by its own `id`).\n            for existing in store.list() {\n                if let Some(eid) = serde_json::from_str::<Value>(&existing)\n                    .ok()\n                    .as_ref()\n                    .and_then(|v| v.get(\"id\"))\n                    .and_then(Value::as_str)\n                {\n                    store.remove(eid)?;\n                }\n            }\n\n            // REPLACE step 2 — write the snapshot's records (skip any with no string `id`).\n            let mut count: u64 = 0;\n            for rec in records {\n                let Some(rid) = rec.get(\"id\").and_then(Value::as_str) else { continue };\n                let json = serde_json::to_string(rec).map_err(|e| format!(\"apply: {e}\"))?;\n                store.set(rid, &json)?;\n                count += 1;\n            }\n            applied.insert(key.to_string(), Value::from(count));\n        }\n    }\n\n    Ok(serde_json::json!({ \"applied\": applied, \"id\": id, \"name\": name }))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_json_store",
+    "serde_json"
+  ]
+}

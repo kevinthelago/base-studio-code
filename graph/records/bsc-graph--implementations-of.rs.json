@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--implementations-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "implementations_of",
+  "src": "crates/bsc-graph/src/implementations_of.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The implementation objects of `g`.\n///\n/// Suppression does NOT live here. The first cut parked a `{ id, suppressed: true }` tombstone inside\n/// this array — borrowing the component store's trick, where occupying the id is what makes the seed\n/// reconcile skip the packaged record — and filtered it out in this one function, on the reasoning that\n/// every read funnels through here. That was true of RUST. The frontend reads the same JSON directly\n/// and had never heard of `suppressed`, so the Algorithms graph iterated a tombstone, called `.join` on\n/// its missing `composes`, and died on render.\n///\n/// The lesson is about SHAPE, not about a missing filter: a record parked in an array of\n/// implementations will eventually be read by something that does not know to skip it, and the next\n/// such reader is as likely to be a chart or an export as a page. So the list below is the only place\n/// suppression exists, and this array holds implementations and nothing else.\npub fn implementations_of(g: &Value) -> Vec<Value> {\n    g.get(\"implementations\").and_then(Value::as_array).cloned().unwrap_or_default()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

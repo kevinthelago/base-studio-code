@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--count.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "count",
+  "src": "crates/bsc-graph-store/src/count.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// How many records are CURRENT — one row per live id.\npub fn count(conn: &Connection) -> Result<i64, String> {\n    conn.query_row(\"SELECT COUNT(*) FROM records\", [], |r| r.get(0)).map_err(|e| e.to_string())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

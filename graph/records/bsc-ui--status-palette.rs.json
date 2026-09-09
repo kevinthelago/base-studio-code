@@ -1,0 +1,11 @@
+{
+  "id": "bsc-ui--status-palette.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "status_palette",
+  "src": "crates/bsc-ui/src/status_palette.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The STATUS palette (#2634): health/state keys → the SEMANTIC base tokens, so status colours compose\n/// with the active theme rather than freezing a raw hue. `warning` rides `--accent` (the app's amber) —\n/// there is no dedicated warning base token.\npub fn status_palette() -> Vec<(&'static str, &'static str)> {\n    vec![\n        (\"idle\", \"var(--info)\"),\n        (\"healthy\", \"var(--success)\"),\n        (\"warning\", \"var(--accent)\"),\n        (\"error\", \"var(--danger)\"),\n    ]\n}\n"
+}

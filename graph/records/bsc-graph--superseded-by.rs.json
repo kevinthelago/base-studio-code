@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--superseded-by.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "superseded_by",
+  "src": "crates/bsc-graph/src/superseded_by.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--suppressions-of.rs"
+  ],
+  "code": "use super::*;\n\n/// What retired `id`, if anything did — the tombstone's `supersededBy`.\npub fn superseded_by(g: &Value, id: &str) -> Option<String> {\n    suppressions_of(g)\n        .iter()\n        .find(|t| t.get(\"id\").and_then(Value::as_str) == Some(id))\n        .and_then(|t| t.get(\"supersededBy\").and_then(Value::as_str).map(str::to_owned))\n        .filter(|s| !s.trim().is_empty())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

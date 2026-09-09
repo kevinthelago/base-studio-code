@@ -1,0 +1,16 @@
+{
+  "id": "bsc-memory--parse-tags.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_tags",
+  "src": "crates/bsc-memory/src/parse_tags.rs",
+  "folder": "crates/bsc-memory/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-memory--parse-csv.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse a `--tag a,b,c` value into normalized tags: trimmed, lowercased, de-duplicated, no blanks.\npub fn parse_tags(s: &str) -> Vec<String> {\n    parse_csv(s, true)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
