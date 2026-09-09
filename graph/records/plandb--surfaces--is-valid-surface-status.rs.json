@@ -1,0 +1,14 @@
+{
+  "id": "plandb--surfaces--is-valid-surface-status.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_valid_surface_status",
+  "src": "crates/plandb/src/surfaces/is_valid_surface_status.rs",
+  "folder": "crates/plandb/src/surfaces",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether `s` is a status this section can hold.\npub fn is_valid_surface_status(s: &str) -> bool {\n    SURFACE_STATUSES.contains(&s)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
