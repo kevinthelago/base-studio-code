@@ -1,0 +1,125 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-bluetooth\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"bsc bluetooth — DEFENSIVE Bluetooth intrusion analysis (#bluetooth). The RADIO-FREE brain: an Observation model (one BLE advertising-plane packet), a learned per-device baseline of NORMAL operation, and passive detectors for the two threats worth caring about — SPOOFING (address-twin, rssi-deviation, interval-anomaly, service-mismatch) and malicious/abusive signals (rogue active-scan, unwanted-tracker non-rotation). Everything that DECIDES is pure and needs no radio to test; capture (BlueZ) and the widget feed it later. Its Observation/Finding types are the wire contract the radio-analyzer widget renders.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_bluetooth\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold: CmdDoc + help."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-bluetooth/Cargo.toml",
+  "tail": []
+}

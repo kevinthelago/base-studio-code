@@ -1,0 +1,141 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"skilldb\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Global skills + task-groups store (SQLite) for base-studio-code (#1338, instance of #1325) — shared by the Tauri app and the `bsc-skill` CLI.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri) so a tiny CLI can reuse it without dragging the whole desktop app in."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"skilldb\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the one home-dir resolver."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# Embeds the packaged-skill JSON data files (src-tauri/data/skills/*.json) at compile time so a",
+            "# fresh skills.db seeds them on first open — the SAME files the frontend reads via import.meta.glob",
+            "# (#1715). Mirrors planner/directives.rs::STAGES_DIR.",
+            "# `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the home-dir / stdin",
+            "# helpers the `bsc-skill` CLI shares with `bsc-plan` / `bsc-logs`. `conn` adds the open + busy_timeout",
+            "# connection plumbing the store shares with plandb/compliance/research (#1863)."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default)."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/skilldb/Cargo.toml",
+  "tail": []
+}

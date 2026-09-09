@@ -1,0 +1,141 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-memory\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"bsc memory — the session-memory surface (#memory): capture the findings, decisions, lessons and parked threads a session generates but has no plan item for, so they don't evaporate when the terminal closes. A thin, tagged, TYPED-EDGE log over the shared bsc-json-store (memory.db). Entries carry a horizon (now vs future) and typed links — {ref, rel} to another memory, a graph record id, a symbol anchor, or a plan ref — so memory is a graph you traverse, told apart from a flat pile of notes.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_memory\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-json-store",
+          "lead": [
+            "# Shared verbatim-JSON-per-id store (memory.db) — the same one bsc-persona/bsc-blueprint ride."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold: CmdDoc + help."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# The one ~/.base-studio-code resolver, so this surface agrees with every other store on where it lives."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-memory/Cargo.toml",
+  "tail": []
+}

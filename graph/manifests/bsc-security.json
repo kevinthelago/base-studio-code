@@ -1,0 +1,173 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-security\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"The CVE / vulnerability data layer for base-studio-code (supply-chain #2433, #3797) — queries OSV.dev for known advisories against a package/version or a whole lockfile, caches results in SQLite, and is reachable from any live session as `bsc cve …` + the `bsc mcp cve` server. The data layer the install-time `bsc-supply` hook builds on.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri) so the CLI + MCP stay lean and the parse/severity/engine logic is",
+        "# unit-testable against recorded OSV fixtures with no live network."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_security\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the one epoch clock (`now_secs`)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite-CLI helpers: `print_json` + `read_stdin_json`, plus the `conn` `:memory:`-aware open +",
+            "# default-store-path resolver the cache shares (#1863) — the compliance/research house style."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `cli_main` + `resolve_store_path` + the help catalog dispatch."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "mcp-rpc",
+          "lead": [
+            "# Shared stdio JSON-RPC 2.0 core (#1622): handshake, builders, dispatch, run-loop for `bsc mcp cve`."
+          ],
+          "value": "{ path = \"../mcp-rpc\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# Local on-disk cache of OSV query results (keyed by ecosystem:name:version), so a repeat scan is fast",
+            "# + offline-friendly. `bundled` matches compliance/research/plandb."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "reqwest",
+          "lead": [
+            "# Blocking HTTP for the OSV.dev client — keeps the CLI + MCP server a simple synchronous flow (no tokio),",
+            "# exactly as the research source clients do."
+          ],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"json\", \"rustls-tls\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "tempfile",
+          "lead": [
+            "# Fixture git repositories for the history scan — the only way to prove a secret that exists ONLY in",
+            "# an earlier commit is still found, which is the whole reason the history walk exists."
+          ],
+          "value": "\"3\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-security/Cargo.toml",
+  "tail": []
+}

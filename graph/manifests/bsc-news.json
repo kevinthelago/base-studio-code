@@ -1,0 +1,151 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-news\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Low-trust news ingestion for base-studio-code — poll a fixed roster of outlets over RSS/news-sitemaps, retain every fetched version, and derive the framing signals (corroboration with wire ancestry, term-choice matrix, agency deletion) mechanically. Deliberately NOT `research`: an Article is a claim to be corroborated, a Paper is a citable source, and no verb converts one into the other.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_news\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities: the one epoch clock (`now_secs`)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite plumbing: the `:memory:`-aware open + default-store-path resolver."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# The shared CLI scaffold: help dispatch + the unknown-command renderer."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "reqwest",
+          "lead": [
+            "# Blocking HTTP for the feed clients — the poller is a synchronous loop, no tokio."
+          ],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
+        },
+        {
+          "cont": [],
+          "key": "roxmltree",
+          "lead": [
+            "# Read-only XML DOM for RSS 2.0 / Atom / Google News sitemaps — pure Rust, no codegen."
+          ],
+          "value": "\"0.21\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# The article store. `bundled` matches plandb/research."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-news/Cargo.toml",
+  "tail": []
+}

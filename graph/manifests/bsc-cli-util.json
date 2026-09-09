@@ -1,0 +1,140 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-cli-util\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Shared scaffold for the base-studio-code state CLIs (#1762) — the byte-identical `main` wrapper (`cli_main`), the flag→env→default store-path resolver (`resolve_store_path`), and the lean-vs-JSON output dispatch (`emit`). NOT SQLite-specific (bsc-data is DuckDB, bsc-project is fs), so it lives beside `bsc-sqlite-util` rather than inside it. The hyphenated package name maps to the `bsc_cli_util` crate name.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Lib only — no binaries. The hyphenated package name maps to the `bsc_cli_util` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_cli_util\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "sha2",
+          "lead": [
+            "# The vendored-file provenance stamp (#4192) — ONE content-hash form shared by every `emit`",
+            "# surface, so `bsc ui emit` and `bsc graph emit` cannot drift into two look-alike contracts."
+          ],
+          "value": "\"0.11\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "graph-materialize",
+          "lead": [
+            "# The MATERIALIZER, for its merged-store loader ONLY. The committed graph store is one file plus",
+            "# `graph/records/<id>.json` per record (`epic-retire-json-ledgers-for-db-and-git-drivers`), and the",
+            "# tree-wide source guard in this crate must see every record — a reader that parses the store file",
+            "# alone reports a shrunken population and passes over what is left. `graph_materialize` is what the",
+            "# BUILD reads, so going through it is what stops this guard and the compiler disagreeing about which",
+            "# records exist. Dev-only: not propagated to anything that links this crate."
+          ],
+          "value": "{ path = \"../graph-materialize\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-cli-util/Cargo.toml",
+  "tail": []
+}

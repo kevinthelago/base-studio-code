@@ -1,0 +1,149 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-json-store\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Shared verbatim-JSON-per-id user store + CLI scaffold (#2158) for base-studio-code. bsc-blueprint and bsc-persona were byte-identical stores with a byte-identical `bsc <noun>` CLI; this is their single home, so each is a thin shim over one implementation. Backed by SQLite (#2983, one `<segment>.db` per store) with a one-time import of the legacy `<segment>/<id>.json` files; the public API + CLI are unchanged.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri — SQLite-backed record CRUD + a small CLI dispatch) so the tiny wrapper",
+        "# crates reuse it without dragging the desktop app in. The hyphenated package name maps to the",
+        "# `bsc_json_store` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_json_store\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so",
+            "# every store CLI agrees on which dir it reads/writes."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared CLI + SQLite helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read",
+            "# the `set`-style command takes) AND, under `conn` (#2983), the connection plumbing this store now rides",
+            "# on — `open_db` (open + parent-dir create + busy_timeout) and `open_in_memory_db` (tests)."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `CmdDoc`/`handle_help`/`unknown_command` help system + `resolve_store_path`."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# `preserve_order` — serde_json's Map becomes an insertion-ordered IndexMap instead of a BTreeMap.",
+            "#",
+            "# WHY IT IS HERE, AND WHY IT IS WORKSPACE-WIDE. This crate is the one whose job is reading and writing",
+            "# JSON records, so how a record SERIALIZES is its concern. But cargo unifies features per build, and 47",
+            "# crates in this workspace declare serde_json — so enabling it here enables it for all of them. That is",
+            "# the intended effect, stated out loud, because the alternative is it being switched on somewhere",
+            "# incidental and nobody knowing why key order suddenly matters.",
+            "#",
+            "# WHAT IT FIXES. Without it every re-serialization re-sorts keys alphabetically, so writing ONE field",
+            "# onto a seed record rewrites the whole file. Measured: placing `feature` on 294 packaged component",
+            "# seeds churned the key order in 280 of them, and the one line that actually changed was unreviewable",
+            "# inside the diff. `record_key_order_is_preserved` in this crate pins the behaviour."
+          ],
+          "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# The SQLite backend (#2983): `bundled` compiles SQLite from source (matches plandb/skilldb/compliance)",
+            "# for cross-platform reliability. Same version as the sibling SQLite stores so the workspace shares one build."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-json-store/Cargo.toml",
+  "tail": []
+}

@@ -1,0 +1,67 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"graph-materialize\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [
+            "# NO build script of its own. `build.rs` in this directory is the SHARED script 54 other crates point",
+            "# their `build =` key at; auto-detection would run it FOR THIS PACKAGE, which owns no records, and the",
+            "# \"opted in but no record\" hard error would fail the build of the materializer itself."
+          ],
+          "value": "false"
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# `graph-materialize` — the materializer that turns records in the committed graph store into the",
+        "# `crate.rs` a migrated crate `include!`s (files-to-zero, 2026-08-19).",
+        "#",
+        "# IT USED TO BE ONE FILE and no package: a bare `build.rs` pointed at by `build = \"../graph-materialize/",
+        "# build.rs\"`. That is still how the 54 existing adopters reach it — the file is unchanged in role, and",
+        "# its output is byte-identical — but a shared FILE cannot be taken as a `[build-dependencies]` entry and",
+        "# CALLED, which is what a crate that already owns a build script needs. `src-tauri` is exactly that",
+        "# crate, and it is the largest un-migrated body in the repo.",
+        "#",
+        "# LEAN ON PURPOSE: `serde_json` and nothing else. This is a build-dependency of ~54 crates, so anything",
+        "# added here is compiled before any of them can start."
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/graph-materialize/Cargo.toml",
+  "tail": []
+}

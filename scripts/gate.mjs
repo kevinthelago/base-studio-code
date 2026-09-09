@@ -244,6 +244,26 @@ if (!plan.full) {
   if (verdict.reason) process.stdout.write(`gate: ${verdict.reason}\n`);
 }
 
+// Materialize every `Cargo.toml` from its record BEFORE any cargo step. The manifests are generated
+// and git-ignored (`graph/manifests/` is the source), and a fresh `git worktree add` checks out only
+// TRACKED files — so without this line a new worktree has no manifests at all and every cargo leg
+// fails with something that names a missing file rather than a missing build step.
+//
+// Placed here for the same reason the sweep below is: the gate is the ONE command every worktree agent
+// runs. It is idempotent and writes nothing when the tree is already in sync, so the cost on a warm
+// tree is one directory read.
+{
+  const emit = spawnSync(process.execPath, [join(REPO, "scripts/emit-manifests.mjs"), REPO], {
+    encoding: "utf8",
+  });
+  if (emit.status !== 0) {
+    process.stderr.write(`\ngate: REFUSED — cannot materialize the crate manifests:\n${emit.stderr ?? ""}\n`);
+    process.exit(2);
+  }
+  const wrote = /^(\d+) written/m.exec(emit.stdout ?? "")?.[1];
+  if (wrote && wrote !== "0") process.stdout.write(`gate: materialized ${wrote} manifest(s) from records\n`);
+}
+
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been

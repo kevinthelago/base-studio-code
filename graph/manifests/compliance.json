@@ -1,0 +1,158 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"compliance\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Native compliance-standards source of truth for base-studio-code (#1005) — the single, user-updatable store of current regulation / accessibility / user-protection standards (WCAG 2.2, GDPR, CCPA, SOC 2, …). Shipped as the bundled `bsc-compliance-mcp` stdio MCP server so the planner can bake the right requirements into every plan, and standards can be refreshed without an app release.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri, no async runtime) so the bundled MCP binary stays lean and the",
+        "# store/parse logic is unit-testable against in-memory fixtures with no live network."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"compliance\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the one epoch clock (`now_secs`)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite-CLI helpers (#1621): `print_json` (compact/--pretty stdout) + `read_stdin_json`",
+            "# (object-or-array), so the `bsc-compliance` CLI matches the `bsc-plan`/`bsc-skill` house style.",
+            "# `conn` adds the `:memory:`-aware open + default-path + JSON-blob row plumbing the store shares (#1863)."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default)."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "mcp-rpc",
+          "lead": [
+            "# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, and run-loop. This crate",
+            "# supplies its own `tool_schemas` + `call_tool` + arg parsers via the `ToolServer` trait."
+          ],
+          "value": "{ path = \"../mcp-rpc\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "include_dir",
+          "lead": [
+            "# Embed the baseline standards corpus (`corpus/*.json`) at compile time (#1614), so the seed is",
+            "# versioned, editable data rather than Rust literals — the same pattern as `data/stages/*.json`."
+          ],
+          "value": "\"0.7\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# Local on-disk store of the standards corpus (keyed by canonical id), so the rules the planner",
+            "# bakes in are user-owned + updatable without an app release. `bundled` matches plandb/research."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/compliance/Cargo.toml",
+  "tail": []
+}

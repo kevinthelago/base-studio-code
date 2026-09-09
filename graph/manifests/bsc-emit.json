@@ -1,0 +1,131 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-emit\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# `bsc-emit` — materialize retired modules from their packaged seeds into the generated tree.",
+        "#",
+        "# DELIBERATELY LEAN, and that is the whole reason this is its own crate rather than a module inside",
+        "# `bsc-ui`. It runs from the BUILD TREE — seven npm entries and the vite plugin — and on CI, where the",
+        "# frontend job is Node-only today. Linking it into `bsc` alone would mean the frontend CI job had to",
+        "# build `bsc`, which pulls `bsc-data` and so bundled DuckDB: CLAUDE.md measures a first",
+        "# `cargo build -p bsc --bin bsc` at 343s plus ~1.8 GB of C++ output. Paying that on every frontend PR",
+        "# to run a file-copying step is not defensible.",
+        "#",
+        "# `bsc-record` is a three-dependency crate (serde_json, regex, bsc-util) with no DuckDB, no arrow and",
+        "# no tree-sitter, so a binary over it builds in a fraction of that. Same reason `bsc-agent` and",
+        "# `bsc-hook` are already separate binaries."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_emit\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-emit\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [],
+          "value": "\"src/main.rs\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The BUILD-TREE entry point. `bsc ui emit records` is the agent-facing door over the same lib; this",
+        "# one exists so `npm run typecheck` never has to link DuckDB."
+      ],
+      "name": "[[bin]]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-record",
+          "lead": [
+            "# `relative_specifiers` + `alias_for_dir` — the SAME implementation every `bsc` verb reads, which is",
+            "# the entire point of this port: it is what lets `scripts/lib/recordSource.mjs` die."
+          ],
+          "value": "{ path = \"../bsc-record\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-emit/Cargo.toml",
+  "tail": []
+}

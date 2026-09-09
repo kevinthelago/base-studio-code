@@ -1,0 +1,115 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-cad\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Rust-native mesh/SDF geometry kernel (#2621) — a declarative implicit CSG op-tree evaluated as a signed-distance field, polygonized (surface nets) to a watertight mesh, exported to binary STL. Metric (mm). Tauri-free; reached from a live session as the `bsc cad` subcommand (#3387). Foundation for the Design Studio's AI-authored 3D objects; icebox #2620 splits it into its own package.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Library only — no `[[bin]]`. The standalone `bsc-cad` binary was retired in #3387: only `bsc` and",
+        "# `bsc-agent` are bundled with the app (tauri.conf.json `externalBin`), so a second sidecar was",
+        "# unreachable from a live session. `cli::run` is dispatched by the unified `bsc` binary, matching every",
+        "# other tool crate (bsc-shot, bsc-navigate, bsc-graph, bsc-ui, …). A WASM build reuses the same lib."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_cad\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# The shared CLI scaffold (#1762): CmdDoc help dispatch, the unknown-command renderer, `emit`."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-cad/Cargo.toml",
+  "tail": []
+}

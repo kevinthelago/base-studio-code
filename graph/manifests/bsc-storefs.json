@@ -1,0 +1,121 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-storefs\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Projects the plan store as a read-only file tree, so an agent reads its plan with cat and ls instead of a CLI grammar (phase-3-store-surfaces-are-filesystems). The projection is PURE - store rows in, relative-path/content pairs out - so its tests run on any host; only materialize() touches a filesystem.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_storefs\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "",
+            "# serde only. Deliberately no SQLite dependency: the projection consumes the JSON that",
+            "# `bsc plan get --json` already emits, so this crate never opens plan.db and never pulls the",
+            "# DuckDB-shaped part of the workspace into its build.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-sandbox",
+          "lead": [],
+          "value": "{ path = \"../bsc-sandbox\" }"
+        }
+      ],
+      "lead": [
+        "",
+        "# examples only. launch.rs composes the projection with the sandbox launcher; the library",
+        "# itself stays free of that dependency."
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-storefs/Cargo.toml",
+  "tail": []
+}

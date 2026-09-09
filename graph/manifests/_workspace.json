@@ -1,0 +1,204 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "members",
+          "lead": [],
+          "value": "[\"src-tauri\", \"crates/bsc\", \"crates/bsc-util\", \"crates/bsc-record\", \"crates/bsc-sqlite-util\", \"crates/data\", \"crates/plandb\", \"crates/errordb\", \"crates/usagedb\", \"crates/skilldb\", \"crates/llm\", \"crates/bsc-agent\", \"crates/mcp-rpc\", \"crates/research\", \"crates/compliance\", \"crates/logs\", \"crates/bsc-json-store\", \"crates/bsc-blueprint\", \"crates/bsc-persona\", \"crates/bsc-mcp\", \"crates/bsc-sound\", \"crates/bsc-teams\", \"crates/bsc-network\", \"crates/bsc-component\", \"crates/bsc-ui\", \"crates/bsc-project\", \"crates/bsc-files\", \"crates/bsc-cli-util\", \"crates/bsc-tunnel\", \"crates/bsc-cad\", \"crates/bsc-graph\", \"crates/bsc-graph-store\", \"crates/bsc-graph-layout\", \"crates/graph-materialize\", \"crates/bsc-studio\", \"crates/bsc-shot\", \"crates/bsc-appchan\", \"crates/bsc-navigate\", \"crates/bsc-fleet\", \"crates/bsc-debug\", \"crates/bsc-loop\", \"crates/bsc-request\", \"crates/bsc-runtime\", \"crates/bsc-storefs\", \"crates/bsc-sandbox\", \"crates/bsc-hook\", \"crates/bsc-session\", \"crates/channel\", \"crates/bsc-security\", \"crates/bsc-github\", \"crates/bsc-publish\", \"crates/atlasdb\", \"crates/bsc-config\", \"crates/bsc-mem\", \"crates/bsc-work\", \"crates/bsc-secret\", \"crates/bsc-self\", \"crates/bsc-resolve\", \"crates/bsc-perms\", \"crates/bsc-emit\", \"crates/bsc-app\", \"crates/bsc-disk\", \"crates/bsc-fin\", \"crates/bsc-rf\", \"crates/bsc-lan-core\", \"crates/bsc-lan-stream\", \"crates/bsc-lan-sense\", \"crates/bsc-lan\", \"crates/bsc-widget\", \"crates/bsc-deploy\", \"crates/bsc-capability\", \"crates/bsc-news\", \"crates/bsc-say\", \"crates/bsc-ear\", \"crates/bsc-incident\", \"crates/bsc-notify\", \"crates/bsc-imagine\", \"crates/bsc-survival\", \"crates/bsc-memory\", \"crates/bsc-bluetooth\", \"crates/bsc-imprint\"]"
+        },
+        {
+          "cont": [],
+          "key": "resolver",
+          "lead": [],
+          "value": "\"2\""
+        }
+      ],
+      "lead": [],
+      "name": "[workspace]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "opt-level",
+          "lead": [],
+          "value": "1"
+        },
+        {
+          "cont": [],
+          "key": "debug",
+          "lead": [
+            "# `debug = \"line-tables-only\"` for our own crates. Dependencies are exempt below (`debug = false`).",
+            "#",
+            "# THIS WAS REJECTED ONCE, AS A SPEED LEVER, AND THE REJECTION STANDS ON ITS OWN TERMS — the original",
+            "# note is kept verbatim below because its reasoning is still correct about speed. It was taken ON MSVC,",
+            "# where debug info lives in a separate PDB, and it closed with the exact instruction this change",
+            "# follows: \"If disk ever becomes the constraint (target/ is ~28 GB per worktree x 11 worktrees),",
+            "# revisit it as a SPACE lever with its own numbers, not as a speed one.\"",
+            "#",
+            "# Disk became the constraint. MEASURED 2026-09-01 on Linux, where debug info lives INSIDE the artifact",
+            "# rather than beside it: 57% of every large build artifact was debug info — `base-studio-code` 349 MB",
+            "# of which 213 MB (61%), the `bsc` test binary 289 MB of which 153 MB (52%). Across 17 worktrees the",
+            "# repo held 554 GB, 513 GB of it build cache.",
+            "#",
+            "# A/B on `cargo build -p bsc-graph --tests`, interleaved B/A/B/A so drift would show:",
+            "#",
+            "#                        debug = true      line-tables-only",
+            "#   cold build              103s              72s        -30%  FASTER",
+            "#   touch-one-line       803 / 750ms       760 / 879ms   a wash (within-arm spread is larger)",
+            "#   tree size               735 MB            584 MB     -21%",
+            "#",
+            "# So the original finding REPRODUCES — rebuild time is unchanged — and the platform difference is what",
+            "# is new: on Linux there is no PDB, so a smaller artifact is less to write and link, and the cold build",
+            "# gets meaningfully quicker instead of staying flat. The size win is the point.",
+            "#",
+            "# Debuggability: a panic backtrace still names file and line (the original note verified this on our",
+            "# own frames). What is lost is inspecting locals in a debugger, which is the same trade the original",
+            "# weighed and declined only because it bought nothing at the time.",
+            "#",
+            "# ── the original note, kept because its measurement is still the reason speed is not the argument ──",
+            "# `debug = \"line-tables-only\"` was the obvious next lever and was MEASURED AND REJECTED",
+            "# — do not re-attempt it without new evidence.",
+            "#",
+            "# Quiet machine, arms interleaved B/A/B so drift would show, min of 3 touch-one-line rebuilds each",
+            "# (within-arm spread was ~0.1%, so these differences are real, not noise):",
+            "#",
+            "#                          debug = true    line-tables-only",
+            "#   touch bsc/src/main.rs      4450ms          4846ms      +9%  SLOWER",
+            "#   touch src-tauri/src/lib.rs 12490ms         11691ms     -6%  faster",
+            "#",
+            "# It halves the PDBs (base_studio_code 152.6→84.2 MB, bsc 128.1→80.2 MB) and changes rebuild time by",
+            "# roughly nothing, in OPPOSITE directions on the two binaries. On MSVC the debug info lives in the PDB",
+            "# rather than the image, so shrinking it moves disk, not the link's critical path. Since it also costs",
+            "# a developer the ability to inspect locals, a wash is not worth paying for.",
+            "#",
+            "# The repeat arm is the part worth keeping: B1 and B2 agreed (4936/4846 and 11734/11691), which is what",
+            "# makes the single A arm between them trustworthy. A panic backtrace under line-tables-only DOES still",
+            "# name file and line (verified on our own frames, not std's) — so debuggability was not the blocker.",
+            "# If disk ever becomes the constraint (target/ is ~28 GB per worktree × 11 worktrees), revisit it as a",
+            "# SPACE lever with its own numbers, not as a speed one."
+          ],
+          "value": "\"line-tables-only\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Fast dev builds WITHOUT release (#3622). The default `tauri dev` compiles at opt-level 0, so the whole",
+        "# backend — the per-second coord-log parses, PTY byte handling, JSON serialization — ran 5-20× slower than",
+        "# it needs to, pinning the Rust host at ~37% while idle and delaying every `invoke`. Fix: our own crates at",
+        "# opt-level 1 (big runtime win, incremental edit→rebuild stays fast); DEPENDENCIES at opt-level 3 (compiled",
+        "# ONCE then cached — near-release backend speed in dev). First rebuild recompiles the Rust deps at opt-3 once."
+      ],
+      "name": "[profile.dev]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "debug",
+          "lead": [],
+          "value": "false"
+        },
+        {
+          "cont": [],
+          "key": "opt-level",
+          "lead": [],
+          "value": "3"
+        }
+      ],
+      "lead": [
+        "",
+        "# Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).",
+        "# Bundled DuckDB's `-g` C++ objects + arrow bloat the test-binary link so much that the",
+        "# CI linker OOM'd with SIGBUS (#795). `debug = false` also forwards `DEBUG=false` to",
+        "# libduckdb-sys's cc build, dropping `-g` from its C++ objects. `test` is listed",
+        "# explicitly because its package overrides don't inherit from `dev`. opt-level 3 (#3622)",
+        "# optimizes deps to release speed; debug = false keeps the linker memory low (no OOM regression)."
+      ],
+      "name": "[profile.dev.package.\"*\"]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "debug",
+          "lead": [],
+          "value": "false"
+        },
+        {
+          "cont": [],
+          "key": "opt-level",
+          "lead": [
+            "# ...and the SAME opt-level as the dev override above, or every dependency compiles TWICE per worktree.",
+            "# Package overrides do not inherit (which is why `debug` is restated here at all), so with this line",
+            "# missing the deps under `test` fell back to `[profile.dev] opt-level = 1` — a different fingerprint from",
+            "# the `opt-level = 3` the build profile had already produced, and cargo rebuilt the entire tree. Measured",
+            "# in one worktree before this line existed: duckdb 3 rlibs, arrow 3, serde_json 4; and the first",
+            "# `cargo test -p bsc-graph` after a one-line edit took 425s against 7s warm. Matching the two makes",
+            "# `cargo test` reuse what `cargo build` already compiled."
+          ],
+          "value": "3"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[profile.test.package.\"*\"]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "opt-level",
+          "lead": [],
+          "value": "0"
+        }
+      ],
+      "lead": [
+        "",
+        "# …EXCEPT libduckdb-sys, whose cost is C++, not Rust. `OPT_LEVEL` is handed to every build script, and",
+        "# `cc` maps 3 to `-O2` — so the two overrides above silently put DuckDB's 280-unit amalgamation on the",
+        "# optimizing path. #3622 chose `opt-level = 3` for dependencies to make the RUST backend fast in dev; it",
+        "# never intended to buy `-O2` C++, and nothing in the dev loop debugs or profiles inside DuckDB.",
+        "#",
+        "# This is the only lever left on that build: sccache cannot reach it (see `.cargo/config.toml` for the two",
+        "# closed routes), and it is per-worktree because target dirs are.",
+        "#",
+        "# MEASURED — one fresh libduckdb-sys build, isolated (delete its build+fingerprint dirs, everything else",
+        "# warm), quiet machine, `cargo check -p bsc-data`:",
+        "#",
+        "#     opt-level 3  ->  -O2   2m01s    libduckdb.a 614 MB",
+        "#     opt-level 1  ->  -O1   1m43s    libduckdb.a 493 MB",
+        "#     opt-level 0  ->  -Od   1m01s    libduckdb.a 675 MB",
+        "#",
+        "# So `-O1` buys almost nothing and 0 halves it. THE TRADE IS DEV-ONLY DuckDB QUERY SPEED: `[profile.release]`",
+        "# has no override, so the shipped binary is byte-for-byte what it always was. If a `bsc data` scan ever feels",
+        "# slow while developing, raise these two lines — that is the whole knob.",
+        "#",
+        "# BOTH tables need the line, for the same non-inheritance reason as above — mismatch them and libduckdb-sys",
+        "# compiles twice per worktree, which is the whole problem again."
+      ],
+      "name": "[profile.dev.package.libduckdb-sys]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "opt-level",
+          "lead": [],
+          "value": "0"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[profile.test.package.libduckdb-sys]"
+    }
+  ],
+  "src": "Cargo.toml",
+  "tail": []
+}

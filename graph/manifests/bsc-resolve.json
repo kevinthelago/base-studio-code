@@ -1,0 +1,133 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-resolve\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "skilldb",
+          "lead": [
+            "# The skills library itself. The resolution reads the store directly rather than taking a library on",
+            "# the wire — see the `skill` module header."
+          ],
+          "value": "{ path = \"../skilldb\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-config",
+          "lead": [
+            "# The packaged/overlay `mcp/builtin-servers.json`, so the built-ins come from the SAME file the app",
+            "# and the frontend see rather than a second hardcoded copy free to drift."
+          ],
+          "value": "{ path = \"../bsc-config\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "log",
+          "lead": [],
+          "value": "\"0.4\""
+        }
+      ],
+      "lead": [
+        "",
+        "# `bsc-resolve` — what a session RECEIVES: its skills and its MCP servers.",
+        "#",
+        "# Lean by construction. `skilldb` is SQLite (via bsc-sqlite-util) and `bsc-config` is a file overlay,",
+        "# so nothing here reaches DuckDB and a scoped `cargo check -p bsc-resolve` stays seconds rather than",
+        "# minutes. It depends on NO Tauri and on no app crate — that independence is the whole point of the",
+        "# move, not a side effect of it."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    }
+  ],
+  "src": "crates/bsc-resolve/Cargo.toml",
+  "tail": []
+}

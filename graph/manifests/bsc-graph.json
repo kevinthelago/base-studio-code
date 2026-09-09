@@ -1,0 +1,205 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-graph\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-runtime",
+          "lead": [
+            "# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens. For an IMPLEMENTATION the",
+            "# claim is LINKAGE: it runs inside someone else's module, so \"linked into a closure that served\" is",
+            "# what the runtime can honestly say. Execution counts are deliberately not asserted."
+          ],
+          "value": "{ path = \"../bsc-runtime\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-record",
+          "lead": [],
+          "value": "{ path = \"../bsc-record\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-data",
+          "lead": [
+            "# The DATA GRAPH (the-data-graph-a-global-third-pillar) — `doctor` holds a node to the entities it",
+            "# declares, so it must be able to READ the entity store. One-way: bsc-data knows nothing of the",
+            "# algorithms graph.",
+            "#",
+            "# `default-features = false` is LOAD-BEARING, not tidiness. `bsc_data::entity` is the verbatim-JSON",
+            "# store and is NOT behind `duckdb-store`, so the two symbols this crate uses — `entity::open` and",
+            "# `entity::list` — cost nothing. With the default on, `duckdb` + `libduckdb-sys` + 11 arrow crates",
+            "# came with them, and through THIS crate they reached bsc-ui, bsc-files and bsc-component too — so",
+            "# `cargo check -p bsc-ui` compiled the bundled DuckDB C++ amalgamation (280 objects, a ~614 MB",
+            "# libduckdb.a) in a crate that has nothing to do with the data platform. Measured on a cold",
+            "# worktree, `cargo check -p bsc-ui`: 2m28s with the default, 20.8s without. plandb already did",
+            "# this; this crate was the leak."
+          ],
+          "value": "{ path = \"../data\", default-features = false }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "",
+            "# The shared FS-confinement gate (#3475) — `require_within_repo_root`, the CLI twin of the",
+            "# `bsc-confine` hook, so a harvest cannot read outside a confined session's root."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# `preserve_order` — LOAD-BEARING for `impl sync-seed`. The packaged seed",
+            "# (src-tauri/data/knowledge/algorithms.json) is one 6.6MB file holding every record, and its field",
+            "# order is INSERTION order, not alphabetical (verified: `JSON.stringify(JSON.parse(seed), null, 2)`",
+            "# round-trips byte-identical). Without this feature `serde_json::Value` objects are BTreeMaps, so",
+            "# parsing the whole seed and writing it back would silently re-sort every record's keys alphabetically",
+            "# — a multi-thousand-line diff for a one-field sync. With it, `Map::insert` on an EXISTING key updates",
+            "# the value in place and keeps its position, matching how `sync-impl-seed.mjs` (the script this verb",
+            "# replaces) already merged fields onto a seed record without reordering it."
+          ],
+          "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        },
+        {
+          "cont": [],
+          "key": "tree-sitter",
+          "lead": [],
+          "value": "\"0.26\""
+        },
+        {
+          "cont": [],
+          "key": "tree-sitter-typescript",
+          "lead": [],
+          "value": "\"0.23\""
+        },
+        {
+          "cont": [],
+          "key": "tree-sitter-rust",
+          "lead": [],
+          "value": "\"0.24\""
+        },
+        {
+          "cont": [],
+          "key": "graph-materialize",
+          "lead": [
+            "# The MATERIALIZER, promoted from a dev-dependency to a real one because `repo_store` now READS the",
+            "# committed store through it (`graph_materialize::load_merged_value`). The store is being taken apart",
+            "# into `graph/records/<id>.json` (`epic-retire-json-ledgers-for-db-and-git-drivers`), and \"which",
+            "# records exist\" must have exactly ONE definition: the build's. A second merge implemented here could",
+            "# disagree with the compiler about what the store holds, which is the silent-divergence failure the",
+            "# split exists to remove. It stays LEAN — `serde_json` and nothing else — so this edge costs nothing.",
+            "#",
+            "# IT WAS A DEV-DEPENDENCY FIRST, for a separate reason that still holds",
+            "# (`graph-materialize-becomes-a-real-build-dependency`): `migrate-crate` names what it writes with",
+            "# `extract::module_id` and the build SELECTS on `plan::expected_id`, the two must agree exactly, and",
+            "# `materialize_plan_tests` proves that over every real path in the tree. Depending on the crate means",
+            "# those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be invisible",
+            "# precisely where it matters."
+          ],
+          "value": "{ path = \"../graph-materialize\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-graph-store",
+          "lead": [
+            "# THE DATABASE the records are moving into (`epic-retire-json-ledgers-for-db-and-git-drivers`).",
+            "# `bsc graph store import|db` reaches it from here; the JSON ledgers stay readable until every reader",
+            "# has moved, because an import that cannot be checked against its source is not one anyone will trust."
+          ],
+          "value": "{ path = \"../bsc-graph-store\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    }
+  ],
+  "src": "crates/bsc-graph/Cargo.toml",
+  "tail": []
+}

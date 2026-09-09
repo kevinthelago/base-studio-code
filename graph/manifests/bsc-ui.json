@@ -1,0 +1,198 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-ui\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"The `bsc ui` CLI — the ONE UI-design-surface command (#2469): the spec-first SDK's KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) + structural validator + theme registry (#1852), with the component-library store verbs (list/get/set/remove · kit · eslint-preset · usage, #2281) mounted from bsc-component.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Tauri-free, SQLite-free: a tiny CLI over an embedded JSON contract. The hyphenated package name maps",
+        "# to the `bsc_ui` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_ui\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-emit",
+          "lead": [
+            "# `bsc ui emit records` is the agent-facing door onto the record emitter; the lean `bsc-emit`",
+            "# binary is the build tree's. Same library, so the two cannot describe the same run differently."
+          ],
+          "value": "{ path = \"../bsc-emit\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): CmdDoc help catalog + help dispatch."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Base-dir resolution for the default released-kit store root (~/.base-studio-code/kits, #2465)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-component",
+          "lead": [
+            "# The component-library store CLI (#2281), mounted under `bsc ui` (#2469): list/get/set/remove +",
+            "# kit/eslint-preset/usage delegate to bsc_component::cli; its CmdDocs compose into the merged help."
+          ],
+          "value": "{ path = \"../bsc-component\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-json-store",
+          "lead": [
+            "# The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):",
+            "# `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-record",
+          "lead": [
+            "# Named directly (not just via bsc-component) because `record_source` is re-exported from here."
+          ],
+          "value": "{ path = \"../bsc-record\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# preserve_order: the packaged algorithms.json is REWRITTEN by `refresh-seed`, and a BTreeMap would",
+            "# re-sort every key in a 6.6 MB file — a one-record change arriving as a 22,500-line diff."
+          ],
+          "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        },
+        {
+          "cont": [],
+          "key": "tree-sitter",
+          "lead": [
+            "# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.",
+            "# Same pinned versions bsc-graph already locks, so this adds no new workspace dependency."
+          ],
+          "value": "\"0.26\""
+        },
+        {
+          "cont": [],
+          "key": "tree-sitter-typescript",
+          "lead": [],
+          "value": "\"0.23\""
+        },
+        {
+          "cont": [],
+          "key": "sha2",
+          "lead": [
+            "# Content hashing for the kit store's id@version integrity (#2465). Same version the app crate",
+            "# already locks, so this adds no new dependency to the workspace graph."
+          ],
+          "value": "\"0.11\""
+        },
+        {
+          "cont": [],
+          "key": "regex",
+          "lead": [
+            "# The import-rewrite cluster ported from `scripts/lib/recordSource.mjs` — three multiline patterns",
+            "# whose JS semantics are a translation rather than a re-derivation. Already in the workspace lock via",
+            "# `bsc-agent` and `llm`, so it costs no new compile."
+          ],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "bsc-graph",
+          "lead": [
+            "# `bsc ui census` reads BOTH record stores — the components here and the algorithm impls there —",
+            "# because a record can claim a module from either. bsc-graph takes bsc-data with default-features off,",
+            "# so this does NOT drag the DuckDB amalgamation back into `cargo check -p bsc-ui` (2m28s vs 20.8s,",
+            "# measured — see bsc-graph's own Cargo.toml for why that dependency is pinned off)."
+          ],
+          "value": "{ path = \"../bsc-graph\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-ui/Cargo.toml",
+  "tail": []
+}

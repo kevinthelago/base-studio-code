@@ -1,0 +1,179 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-lan-sense\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc lan` sensor-side observation: what the emit-only monitor Pi can see about itself. Its /proc parsing is pure text-to-verdict, so the security posture of a box nobody can log into is testable from fixtures.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_lan_sense\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-lan-stream",
+          "lead": [],
+          "value": "{ path = \"../bsc-lan-stream\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Reused for civil-date arithmetic; the EVE-specific normalisation is ours."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-rf",
+          "lead": [
+            "# Tier 2 RF findings become wire events here; bsc-rf itself stays wire-free."
+          ],
+          "value": "{ path = \"../bsc-rf\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "thiserror",
+          "lead": [],
+          "value": "\"2\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "ed25519-dalek",
+          "lead": [
+            "# Test-only: building a Sensor needs a signing key."
+          ],
+          "value": "{ version = \"2\", default-features = false, features = [\"std\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "unsafe_code",
+          "lead": [
+            "# NO UNSAFE, and it is FORBID rather than deny: this crate parses hostile-shaped text off the",
+            "# network into a verdict, so nothing in it has any business reaching for a raw pointer, and",
+            "# `forbid` cannot be lifted by an `#[allow]` further in. It lived as `#![forbid(unsafe_code)]` in",
+            "# `src/lib.rs` until that file stopped existing (`a-crate-root-is-shared-so-a-crate-is-one-file`):",
+            "# the crate root is SHARED by every adopter now, so a per-crate inner attribute has nowhere to sit",
+            "# and the manifest — a file that stays regardless — is where cargo has read this since 1.74."
+          ],
+          "value": "\"forbid\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.rust]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "wildcard_enum_match_arm",
+          "lead": [],
+          "value": "\"deny\""
+        },
+        {
+          "cont": [],
+          "key": "match_wildcard_for_single_variants",
+          "lead": [],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.clippy]"
+    }
+  ],
+  "src": "crates/bsc-lan-sense/Cargo.toml",
+  "tail": []
+}

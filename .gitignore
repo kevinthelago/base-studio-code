@@ -81,3 +81,11 @@ wt-*/
 # shape rather than the one path it happened to take.
 shots/
 /flat.png
+
+# Crate manifests are GENERATED from `graph/manifests/` — the records are the source of truth
+# (`a-crate-builds-and-tests-from-the-database`). Regenerate with `npm run emit:manifests`; the gate
+# does it automatically, since a fresh `git worktree add` checks out only TRACKED files and would
+# otherwise have no manifests at all.
+/Cargo.toml
+/src-tauri/Cargo.toml
+/crates/*/Cargo.toml

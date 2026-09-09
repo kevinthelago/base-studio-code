@@ -1,0 +1,211 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-lan-stream\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc lan` one-way multicast wire contract: the datagram every emit-only sensor sends and every subscriber verifies. Pure codec — no sockets, no filesystem, no async runtime.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_lan_stream\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "thiserror",
+          "lead": [],
+          "value": "\"2\""
+        },
+        {
+          "cont": [],
+          "key": "chacha20poly1305",
+          "lead": [
+            "# Confidentiality: a GROUP key, so one emission serves N subscribers."
+          ],
+          "value": "\"0.10\""
+        },
+        {
+          "cont": [],
+          "key": "ed25519-dalek",
+          "lead": [
+            "# Authenticity: the sensor signs. A subscriber holding the group key can READ",
+            "# the stream but must never be able to FORGE into it -- with a shared key",
+            "# alone, every subscriber could fabricate alerts, and that gets worse with",
+            "# every device added. Reuses curve25519-dalek, which snow already pulls in."
+          ],
+          "value": "{ version = \"2\", default-features = false, features = [\"std\"] }"
+        }
+      ],
+      "lead": [
+        "",
+        "# NO I/O. This crate is the contract, not the transport (the same split",
+        "# crates/bsc-tunnel draws between its protocol and its channel), which is what",
+        "# lets every property below be tested on a laptop with no sensor hardware.",
+        "# tests/no_io.rs pins it against this crate's own resolved dependency closure."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"wire_contract\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [],
+          "value": "\"../graph-materialize/test_root.rs\""
+        }
+      ],
+      "lead": [
+        "",
+        "# THE TEST SOURCE IS IN THE GRAPH, not in this directory",
+        "# (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). `tests/wire_contract.rs` does not exist:",
+        "# the whole file is the `bsc-lan-stream--wire-contract` EDGE in graph/algorithms.json, which also",
+        "# records the four member records it spans. The shared build script materializes it into",
+        "# `$OUT_DIR/tests/wire_contract.rs` and the shared root below `include!`s it, so `cargo nextest`",
+        "# compiles and runs it as an ordinary integration test — from OUTSIDE the crate, against the public",
+        "# API, which is exactly what a `tests/` target is for and what re-homing it as a `#[cfg(test)] mod`",
+        "# would have silently given up.",
+        "#",
+        "# To change it, edit the EDGE and promote it — editing a file here would be editing nothing:",
+        "#     bsc graph edge get bsc-lan-stream--wire-contract",
+        "#     bsc graph edge set --id bsc-lan-stream--wire-contract --members <...> --src <file>",
+        "#     bsc graph promote --id bsc-lan-stream--wire-contract --root \"$PWD\""
+      ],
+      "name": "[[test]]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "ed25519-dalek",
+          "lead": [
+            "# Test-only: constructing a Sensor needs a signing key."
+          ],
+          "value": "{ version = \"2\", default-features = false, features = [\"std\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "unsafe_code",
+          "lead": [
+            "# NO UNSAFE, FORBID rather than deny — see bsc-lan-sense. Moved here from `#![forbid(unsafe_code)]`",
+            "# in `src/lib.rs` when the crate root became the SHARED one",
+            "# (`a-crate-root-is-shared-so-a-crate-is-one-file`); cargo has read lints from the manifest",
+            "# since 1.74 and this file stays whatever happens to `src/`."
+          ],
+          "value": "\"forbid\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.rust]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "wildcard_enum_match_arm",
+          "lead": [],
+          "value": "\"deny\""
+        },
+        {
+          "cont": [],
+          "key": "match_wildcard_for_single_variants",
+          "lead": [],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.clippy]"
+    }
+  ],
+  "src": "crates/bsc-lan-stream/Cargo.toml",
+  "tail": []
+}

@@ -1,0 +1,143 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-mem\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"The MEMORY surface (`bsc mem`) — app heap and build cost, the counterpart to `bsc perf`.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_mem\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# The shared CLI scaffold: CmdDoc help, emit(), resolve_store_path."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "errordb",
+          "lead": [
+            "# The `runs` rows this surface READS. `bsc errors run` is the only writer — see that crate's `run`",
+            "# module for why cost is recorded there rather than in a store of this crate's own."
+          ],
+          "value": "{ path = \"../errordb\" }"
+        },
+        {
+          "cont": [],
+          "key": "logs",
+          "lead": [
+            "# `growth` DELEGATES to the perf.db RSS reader rather than restating it: two implementations of one",
+            "# slope is exactly the duplication `the-preview-resolver-is-written-twice` is an open item about."
+          ],
+          "value": "{ path = \"../logs\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# The ONE home-dir resolver (#1646) — a hub path derived the same way every other store derives it."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-mem/Cargo.toml",
+  "tail": []
+}

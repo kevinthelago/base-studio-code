@@ -1,0 +1,124 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-config\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc config` (#168, request from the config-seed mirror #4251): read/adopt verbs for the desktop app's runtime config-seed mirror (~/.base-studio-code/config/). Before this, a file the app reported as DIVERGED from the packaged seed could be seen in the boot log but not acted on — the only remedy was deleting it by hand. Embeds its own copy of the CONFIG-ONLY subset of `src-tauri/data/` (same exclude list as the app's own embed) so this Tauri-free CLI can classify and diff against the packaged bytes without depending on the app crate.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "graph-materialize",
+          "lead": [
+            "# GRAPH MATERIALIZATION, as a real build-dependency. A package gets exactly ONE build",
+            "# script and this crate already has its own, so the `build = \"../graph-materialize/",
+            "# build.rs\"` line the other adopters use is not available here — the shared file has to",
+            "# be CALLED instead. build.rs runs it as one more job."
+          ],
+          "value": "{ path = \"../graph-materialize\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_config\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "include_dir",
+          "lead": [],
+          "value": "\"0.7\""
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "sha2",
+          "lead": [],
+          "value": "\"0.11\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-config/Cargo.toml",
+  "tail": []
+}

@@ -93,6 +93,13 @@
 include!("../plan.rs");
 include!("../emit.rs");
 
+// The manifest as a RECORD, and the driver that builds and tests a crate from records with cargo out
+// of the loop (`a-crate-builds-and-tests-from-the-database`). They live under `src/` rather than beside
+// `plan.rs`/`emit.rs` deliberately: `build.rs` `include!`s those two, and a build script must not grow
+// a dependency on the driver it has no use for.
+pub mod drive;
+pub mod manifest;
+
 #[cfg(test)]
 mod tests;
 

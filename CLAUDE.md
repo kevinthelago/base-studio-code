@@ -512,6 +512,53 @@ same pair to write `.bsc-records/`. So **step 3 is what makes your edit compile*
 JSON line, so any edit shows as `1 +/- 1`. Diff the PARSED store instead —
 `git show HEAD:graph/algorithms.json` against the working copy, keyed by record id.
 
+### The crate manifests are records too — `Cargo.toml` is GENERATED
+
+**Every `Cargo.toml` is a build product.** The source is `graph/manifests/` (82 records: 80 crates,
+the workspace root, and `src-tauri`), and the files are git-ignored. Nothing tracks them.
+
+```bash
+npm run emit:manifests     # regenerate every manifest from its record
+```
+
+**A fresh clone or a NEW WORKTREE has no manifests at all**, because `git worktree add` checks out only
+TRACKED files — so a bare `cargo check` there fails naming a missing *file* rather than a missing build
+step. `npm run gate` runs the emit first (beside the disk sweep, for the same reason: it is the one
+command every worktree agent runs), and so do the npm build paths. Run it by hand only if you reach for
+cargo directly in a tree that has never been gated.
+
+**To ADD a crate, create a RECORD** — never a file. It registers `crates/<name>` in the workspace in
+the same step, because a record with no `members` entry is invisible to cargo and a `members` entry
+with no record makes every cargo command fail on a manifest no emit will ever produce.
+
+```bash
+cargo run -p graph-materialize --bin sync-manifests -- new <crate>   # record + registration
+npm run emit:manifests                                               # its Cargo.toml appears
+```
+
+`import` is the opposite direction and is a MIGRATION, not a workflow — it reads files that already
+exist. **It refuses to prune by default, and that refusal is load-bearing:** a file-derived import
+cannot tell a DELETED crate from an UN-EMITTED one, because since the flip both are a missing file.
+MEASURED on a fresh-clone-shaped tree, an earlier version reported **78 removals of 82 records** —
+and the records are now the only copy. 56 of 80 crate directories hold nothing but their untracked
+manifest, so those directories do not exist at all in a fresh checkout.
+
+**Edit the RECORD, never the file** — an edit to `Cargo.toml` is erased by the next emit, silently.
+`every_stored_record_regenerates_its_manifest_byte_for_byte` fails if the two ever disagree, so a hand
+edit is caught rather than shipped.
+
+**The emitter is pure Node and that is a bootstrap requirement, not a preference.** `emit-records.mjs`
+beside it is a thin adapter to a Rust binary; this one cannot be, because building any Rust binary needs
+cargo, cargo needs `Cargo.toml`, and these files ARE the `Cargo.toml`s. It is therefore a SECOND
+implementation of `Manifest::render` — the shape this repo warns about — and the mitigation is the one
+`emit-records` used for its own port: parity is PROVED by rendering all 82 and diffing byte-for-byte
+(`scripts/emit-manifests.test.ts`), never asserted.
+
+**The prose survives as data.** 36% of manifest lines are comments and they are load-bearing —
+`bsc-sqlite-util`'s `features = ["conn"]` records that backups use `VACUUM INTO` and silently corrupt
+without it. Each comment run is stored on the dependency it explains, so a rationale is queryable rather
+than only readable.
+
 **A red `graph-promote-check` is usually not yours.** The runtime store is shared, so the leg reports
 drift from whatever anyone on the box is authoring. It prints each drifted node's author and age;
 if the edit is minutes old, that is live authoring and you should leave it alone rather than promote it.
