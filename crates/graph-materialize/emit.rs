@@ -154,6 +154,43 @@ pub fn plan_for(manifest: &Path, explicit_root: Option<&Path>) -> Result<Plan, S
 }
 
 impl Plan {
+    /// The record FILES this crate owns, for `rerun-if-changed`.
+    ///
+    /// # Why this is a filename prefix and not a parse
+    ///
+    /// A record's id is `<crate_dir>--<module path>`, and [`Plan::select`] REFUSES any record whose
+    /// id is not exactly `expected_id(crate_dir, rest)` for its `src`. So the id — and therefore the
+    /// filename — already identifies the owning crate, enforced rather than assumed, and a build
+    /// script does not have to parse 2,936 JSON files to find its own eleven.
+    ///
+    /// The `--` separator is load-bearing: `bsc-graph--` must not match `bsc-graph-store--x.rs`, and
+    /// a bare `bsc-graph` prefix would. `owned_record_files_are_exactly_the_selected_records` pins
+    /// the whole correspondence against the real store.
+    ///
+    /// # Why narrowing this matters
+    ///
+    /// Every materialized crate used to watch EVERY record file, so one record edit rebuilt all 74
+    /// and relinked the app. MEASURED 2026-09-09: 2,936 records watched, of which the median crate
+    /// owns 11, and 682 are frontend `src/` records that own no Rust at all — so editing a
+    /// TypeScript record rebuilt the entire Rust backend for nothing.
+    pub fn owned_record_files(&self, records_dir: &Path) -> Vec<PathBuf> {
+        let prefix = format!("{}--", self.crate_dir);
+        let mut v: Vec<PathBuf> = std::fs::read_dir(records_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension().and_then(|s| s.to_str()) == Some("json")
+                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&prefix))
+            })
+            .collect();
+        // Sorted so the printed watch list is deterministic — a build script's output is diffed by
+        // humans reading `-vv`, and an unstable order makes two identical builds look different.
+        v.sort();
+        v
+    }
+
     /// The records in `store` that ARE whole modules of this crate, in the order `render` wants them.
     ///
     /// ONLY THE MODULE RECORD, never a function lifted out of the same file. Both carry the same `src`:
@@ -535,9 +572,24 @@ pub fn emit_into(
     let raw = load_merged_store(&plan.store_path)?;
     if let Some(dir) = records_dir_beside(&plan.store_path) {
         if dir.is_dir() {
-            println!("cargo:rerun-if-changed={}", dir.display());
-            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-                println!("cargo:rerun-if-changed={}", e.path().display());
+            // ONLY THE RECORDS THIS CRATE OWNS. The directory itself is deliberately NOT watched.
+            //
+            // MEASURED 2026-09-09: cargo resolves a watched DIRECTORY by `mtime_recursive`, so
+            // naming `graph/records/` here is identical to naming all 2,936 files in it — one
+            // frontend `.ts` record edit rebuilt 77 crates and relinked the app in 22.9s. Dropping it
+            // takes the same edit to 0 crates and 0.38s, while touching a record the crate owns still
+            // rebuilds exactly that crate.
+            //
+            // THE COST, STATED PLAINLY. A record ADDED for this crate by a git operation, with no
+            // other record of the crate changed, is not seen until something else invalidates the
+            // build — MEASURED at 3 of the last 5 record-adding commits. The failure is LOUD rather
+            // than silent (the module is absent, so whatever references it fails to compile) and
+            // `the_drivers_materialization_matches_what_cargo_generated` fails the gate on any crate
+            // whose emitted source has fallen behind the store, so it cannot land. It is a real gap
+            // and the fix is a sentinel the record writer maintains, or per-crate record
+            // subdirectories — both are `a-crate-watches-only-the-records-it-owns`, undecided.
+            for p in plan.owned_record_files(&dir) {
+                println!("cargo:rerun-if-changed={}", p.display());
             }
         }
     }

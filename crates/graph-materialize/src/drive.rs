@@ -879,6 +879,12 @@ mod materialize_tests {
         let mut compared = 0usize;
         let mut checked = 0usize;
 
+        // A SMALL, FIXED SET — and the reason is a limitation of the guard itself, worth stating so
+        // nobody widens it again. This compares against cargo's CACHED `$OUT_DIR/crate.rs`, which is
+        // legitimately stale until cargo rebuilds that crate. Widened to all 74 it fails on any
+        // partially-warm tree (measured: `bsc` reported drift purely because it had not been rebuilt
+        // since develop moved), which is a flaky guard rather than a stricter one. These four are
+        // enough to catch a rendering or resolution difference, which is what it is for.
         for dir in ["bsc-hook", "bsc-disk", "bsc-publish", "plandb"] {
             let src = std::fs::read_to_string(repo().join("crates").join(dir).join("Cargo.toml")).unwrap();
             let rec = CrateRecord::extract(&Manifest::parse(&src).unwrap(), dir);
