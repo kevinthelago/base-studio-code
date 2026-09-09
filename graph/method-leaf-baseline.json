@@ -8,7 +8,7 @@
   "bsc-publish--lib.rs": 3,
   "bsc-runtime--lib.rs": 2,
   "bsc-secret--lib.rs": 2,
-  "bsc-session--lib.rs": 10,
+  "bsc-session--lib.rs": 19,
   "bsc-sqlite-util--lib.rs": 5,
   "bsc-studio--lib.rs": 14,
   "bsc-ui--lib.rs": 20,
