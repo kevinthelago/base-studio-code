@@ -7,5 +7,8 @@
   "folder": "crates/bsc-record/src/record_source",
   "moduleVis": "private",
   "composes": [],
-  "code": "pub(crate) fn bare_spec() -> &'static regex::Regex {\n    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    RE.get_or_init(|| {\n        regex::Regex::new(r#\"(?m)^[ \\t]*import\\s*[\"']([^\"']+)[\"']\"#).expect(\"bare pattern\")\n    })\n}\n"
+  "code": "pub(crate) fn bare_spec() -> &'static regex::Regex {\n    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    RE.get_or_init(|| {\n        regex::Regex::new(r#\"(?m)^[ \\t]*import\\s*[\"']([^\"']+)[\"']\"#).expect(\"bare pattern\")\n    })\n}\n",
+  "crateDeps": [
+    "regex"
+  ]
 }

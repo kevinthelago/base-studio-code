@@ -8,6 +8,8 @@
   "src": "crates/plandb/src/cli/render/render_fields_tsv.rs",
   "moduleVis": "private",
   "composes": [
-    "plandb--issues--mod.rs"
+    "plandb--issues--mod.rs",
+    "plandb--cli--render--issue-field.rs",
+    "plandb--cli--render--tsv.rs"
   ]
 }

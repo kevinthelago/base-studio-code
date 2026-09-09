@@ -25,7 +25,6 @@
   "crateDeps": [
     "bsc_cli_util",
     "bsc_util",
-    "plandb",
     "serde"
   ],
   "moduleAttrs": [

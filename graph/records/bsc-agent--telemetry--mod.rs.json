@@ -15,7 +15,6 @@
   "src": "crates/bsc-agent/src/telemetry/mod.rs",
   "moduleVis": "private",
   "crateDeps": [
-    "bsc_util",
     "serde_json"
   ],
   "moduleAttrs": [

@@ -11,5 +11,8 @@
   "moduleAttrs": [
     "#[allow(unused_imports)]"
   ],
-  "feature": "finance"
+  "feature": "finance",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

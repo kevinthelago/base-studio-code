@@ -32,7 +32,6 @@
   "crateDeps": [
     "bsc_fleet",
     "log",
-    "serde_json",
     "tauri"
   ],
   "moduleAttrs": [

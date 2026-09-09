@@ -10,5 +10,8 @@
   "code": "use super::*;\n\n/// Cap every managed text TSV stream (the shared `bsc_util::LOG_STREAMS` registry) under `base_dir`\n/// per `cfg`. The rotating application log lives in Tauri's `app_log_dir` and is capped separately\n/// via [`cap_log`] on [`app_log_file`] (the boot cap + \"Enforce now\" do so now that the custom\n/// `GraphLogger` (#1389) owns it — no plugin rotates it); `perf.db` is binary state pruned by the\n/// perf sampler, not here.\npub fn cap_logs(base_dir: &Path, cfg: &LogConfig) {\n    for s in bsc_util::LOG_STREAMS {\n        let p = base_dir.join(s.filename);\n        if p.exists() {\n            cap_log(&p, cfg);\n        }\n    }\n}\n",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util"
   ]
 }

@@ -7,5 +7,8 @@
   "folder": "crates/plandb/src/cli/render",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Render a phase JSON value (a 1-based number, or a name string) to a bare cell.\npub(crate) fn phase_str(p: &Option<serde_json::Value>) -> String {\n    match p {\n        Some(serde_json::Value::String(s)) => s.clone(),\n        Some(v) => v.to_string().trim_matches('\"').to_string(),\n        None => String::new(),\n    }\n}\n"
+  "code": "/// Render a phase JSON value (a 1-based number, or a name string) to a bare cell.\npub(crate) fn phase_str(p: &Option<serde_json::Value>) -> String {\n    match p {\n        Some(serde_json::Value::String(s)) => s.clone(),\n        Some(v) => v.to_string().trim_matches('\"').to_string(),\n        None => String::new(),\n    }\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

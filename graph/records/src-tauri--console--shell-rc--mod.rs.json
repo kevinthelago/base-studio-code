@@ -18,9 +18,7 @@
   "folder": "src-tauri/src/console/shell_rc",
   "moduleVis": "pub",
   "crateDeps": [
-    "bsc_sandbox",
-    "serde",
-    "serde_json"
+    "bsc_sandbox"
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"

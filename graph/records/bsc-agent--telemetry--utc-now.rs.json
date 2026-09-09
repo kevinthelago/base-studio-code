@@ -8,5 +8,8 @@
   "moduleVis": "private",
   "composes": [],
   "code": "pub(crate) fn utc_now() -> String {\n    // Shared civil-date formatter (#1646), so audit/cost timestamps match the `bsc-*` helpers'\n    // `date -u +%Y-%m-%dT%H:%M:%SZ` output.\n    bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms())\n}\n",
-  "feature": "console"
+  "feature": "console",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

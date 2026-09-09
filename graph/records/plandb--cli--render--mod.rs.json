@@ -20,9 +20,6 @@
   "folder": "crates/plandb/src/cli/render",
   "src": "crates/plandb/src/cli/render/mod.rs",
   "moduleVis": "private",
-  "crateDeps": [
-    "serde_json"
-  ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"
   ]

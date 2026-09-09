@@ -20,16 +20,8 @@
   "moduleVis": "private",
   "crateDeps": [
     "bsc_appchan",
-    "bsc_debug",
-    "bsc_fleet",
-    "bsc_navigate",
-    "bsc_persona",
-    "bsc_session",
-    "bsc_shot",
     "bsc_util",
-    "bsc_widget",
     "log",
-    "serde_json",
     "tauri"
   ],
   "moduleAttrs": [

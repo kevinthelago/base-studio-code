@@ -10,5 +10,8 @@
   "code": "use super::*;\n\n/// Where the roster lives. Under the app's base dir, beside every other store.\npub fn roster_path() -> Option<PathBuf> {\n    bsc_util::bsc_base_dir().map(|d| d.join(\"deploy\").join(\"devices.json\"))\n}\n",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util"
   ]
 }

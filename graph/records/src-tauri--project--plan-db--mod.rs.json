@@ -27,8 +27,8 @@
   ],
   "crateDeps": [
     "log",
-    "plandb",
-    "serde_json"
+    "open",
+    "plandb"
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"

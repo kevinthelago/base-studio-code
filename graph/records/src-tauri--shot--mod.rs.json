@@ -27,7 +27,6 @@
     }
   ],
   "crateDeps": [
-    "bsc_debug",
     "bsc_shot",
     "log",
     "tauri",

@@ -13,7 +13,6 @@
   "src": "crates/bsc-deploy/src/roster/mod.rs",
   "moduleVis": "pub",
   "crateDeps": [
-    "bsc_util",
     "serde"
   ],
   "moduleAttrs": [

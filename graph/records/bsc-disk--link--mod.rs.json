@@ -15,7 +15,6 @@
   "moduleVis": "pub",
   "crateDeps": [
     "bsc_util",
-    "filetime",
     "serde_json",
     "sha2"
   ],

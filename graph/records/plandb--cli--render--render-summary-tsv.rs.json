@@ -8,6 +8,8 @@
   "src": "crates/plandb/src/cli/render/render_summary_tsv.rs",
   "moduleVis": "private",
   "composes": [
-    "plandb--issues--mod.rs"
+    "plandb--issues--mod.rs",
+    "plandb--cli--render--phase-str.rs",
+    "plandb--cli--render--tsv.rs"
   ]
 }

@@ -10,5 +10,10 @@
   "code": "use super::*;\n\n/// Who to hard-pause from one report — DISPATCHED to the sidecar, not decided here.\n///\n/// Builds an argv, spawns `bsc`, and checks the reply. It applies no rule, reads no glob and derives\n/// no verdict; `bsc_fleet::warden::decide` owns all of it, so there is ONE implementation and tuning a\n/// warden rule no longer needs a new app binary.\n///\n/// EVERY FAILURE DEGRADES TO \"QUARANTINE NOBODY\". That is the same direction the stale-report rule\n/// takes, and it is the safe one for this verb: a false positive hard-pauses a working agent, while a\n/// false negative loses one sweep of a loop that runs every few seconds.\npub(crate) fn decide(report: &FleetReport, already: &HashSet<String>) -> Vec<WardenTrip> {\n    if report.panes.is_empty() {\n        return Vec::new();\n    }\n    let payload = match serde_json::to_string(report) {\n        Ok(p) => p,\n        Err(e) => {\n            log::warn!(\"[warden] could not serialize the report, quarantining nobody: {e}\");\n            return Vec::new();\n        }\n    };\n    let mut args = vec![\"fleet\".to_string(), \"warden-decide\".to_string(), \"--json\".to_string()];\n    if !already.is_empty() {\n        // Sorted so the argv is stable across sweeps — an unstable one makes the child's own logs\n        // impossible to diff when a decision changes.\n        let mut ids: Vec<&str> = already.iter().map(String::as_str).collect();\n        ids.sort_unstable();\n        args.push(\"--quarantined\".to_string());\n        args.push(ids.join(\",\"));\n    }\n    let out = match crate::console::bsc::bsc_blocking(None, args, Some(payload)) {\n        Ok(o) => o,\n        Err(e) => {\n            log::warn!(\"[warden] sidecar call failed, quarantining nobody: {e}\");\n            return Vec::new();\n        }\n    };\n    parse_trips(&out, report)\n}\n",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "log",
+    "serde_json"
   ]
 }

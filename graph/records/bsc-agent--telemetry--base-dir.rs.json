@@ -11,5 +11,8 @@
   "moduleAttrs": [
     "#[allow(unused_imports)]"
   ],
-  "feature": "console"
+  "feature": "console",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }
