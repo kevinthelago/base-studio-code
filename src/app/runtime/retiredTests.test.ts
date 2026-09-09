@@ -214,6 +214,49 @@ describe("an edge test is executed, not merely stored", () => {
     expect(withTests, "packaged edges carrying tests").toBeGreaterThanOrEqual(50);
   });
 
+  // ── AN EDGE'S `src` IS REPO-RELATIVE, OR NOTHING RUNS IT (`an-orphaned-test-moves-onto-its-record`) ──
+  //
+  // `bsc graph edge set --src` stores the path EXACTLY as it was typed, and an agent working in a
+  // worktree naturally types the absolute one its shell just printed. `bsc-emit` then has nowhere to
+  // put the test — `.bsc-records/` mirrors `src/`, so a path that is not under `src/` has no image in
+  // it — and the edge lands in `edgeUnresolvable`: stored, named, explained, and never executed.
+  //
+  // NOT HYPOTHETICAL, and the gate above is why it survived. FOUR packaged edges reached `develop`
+  // carrying `/home/…/.claude/worktrees/agent-a0f25e2f417089e8a/src/shared/lib/session/…` —
+  // roleGate, writeScopeEnv, globSemantics and bscAgentPerms — and every gate stayed green, because
+  // the only thing asserted about `edgeUnresolvable` was that each entry NAMES ITSELF and SAYS WHY.
+  // A well-explained decline reads as a handled case; four tests' worth of assertions were simply
+  // absent from the suite, on a machine that no longer exists.
+  //
+  // `edgeUnresolvable` must NOT be asserted empty — a `crates/<c>/tests/<n>.rs` edge is legitimately
+  // declined here and run by cargo instead (`declined_reason` says exactly that). What is never
+  // legitimate is a path that is ABSOLUTE, escapes the checkout, or names a tree this repo does not
+  // have. So the rule is about the stored `src`, checked against the SEED directly — one assertion
+  // that cannot be satisfied by a nicer error message.
+  it("every packaged edge stores a `src` bsc-emit or cargo can place — an absolute one runs nowhere", () => {
+    const seedEdges: { id?: string; src?: string; tests?: unknown[] }[] =
+      (JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"))
+        .edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
+    const carrying = seedEdges.filter((e) => (e.tests ?? []).length > 0);
+    const bad = carrying
+      // NOT `existsSync` — the file is DELETED by the migration, which is the point of the tier. What
+      // is checkable is the SHAPE: `crates/graph-materialize` can place a `crates/…` test and
+      // `bsc-emit` can place a `src/…` one, and those two are the whole of `declined_reason`'s
+      // legitimate vocabulary. Anything else — an absolute path, a climb out of the checkout, a bare
+      // filename — names a tree nothing here can write into.
+      .filter((e) => !/^(src|crates)\//.test(e.src ?? ""))
+      .map((e) => `${e.id} — ${e.src || "(no src)"}`);
+    expect(
+      bad,
+      "an edge's `src` is where bsc-emit puts the test back; an absolute or missing one means the " +
+        "edge's assertions run NOWHERE. Re-run `bsc graph edge set --id <id> --members … --src " +
+        "src/<repo-relative path>` from the checkout, then promote it to the seed.",
+    ).toEqual([]);
+    // Non-vacuity, floored per the same reasoning as the sibling above: a filter that stopped matching
+    // and a seed with no edges are indistinguishable from an empty result.
+    expect(carrying.length, "packaged edges carrying tests").toBeGreaterThanOrEqual(50);
+  });
+
   // The node half of the same reappearance. `plan_records` shadows a record's WHOLE `tests` manifest
   // on one colocated file — `test_file_exists(repo, spec)` is a single check, not a per-entry one — so
   // re-adding `src/<spec>.test.ts` beside a record carrying five tests stops FOUR of them running while
