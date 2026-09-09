@@ -6,6 +6,14 @@ records under `src-tauri/data/components/app/**` and 658 implementations carryin
 answering a specifier an importer writes. **57 non-test modules remain under `src/`**, down from 388. This
 is epic #3604, "the graph IS the app".
 
+> **THE COMMITTED STORE IS BEING RETIRED — and it is still what the build compiles.** Both halves
+> (`graph/algorithms.json` + `graph/records/*.json`, 2,944 records / 41 MB as of 2026-09-09) go away
+> under `retire-the-committed-json-record-store`, replaced by the ledger `graph.db`. Nothing in the
+> build path can read a `.db` yet, so keep writing the JSON. And do not treat the ledger as a drop-in:
+> MEASURED 2026-09-09 it is missing **436** records the committed store has — 229 of them decomposition
+> children — while holding **304** the committed store does not, mostly the flat predecessors those
+> children replaced. Reconciling the two id sets is phase 0.
+
 > **The algorithm half moved out of the packaged seed** (`retire-the-packaged-seed-directories`). It used
 > to live in `src-tauri/data/knowledge/algorithms.json`; `bsc-emit` now materializes it from the committed
 > store instead — the same pair of files `graph-materialize` compiles 25 Rust crates from. So one store
@@ -68,8 +76,8 @@ There are two copies of every record and they are not the same thing.
 | | what it is | where |
 |---|---|---|
 | **seed** (components) | what SHIPS, and for a COMPONENT also the committed home. Checked into git, identical for everyone. | `src-tauri/data/components/app/**` |
-| **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and 25 Rust crates. Checked into git, one file per record. | `graph/algorithms.json` + `graph/records/*.json` |
-| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
+| **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and 25 Rust crates. Checked into git, one file per record. **BEING RETIRED** for the ledger; still authoritative until it is. | `graph/algorithms.json` + `graph/records/*.json` |
+| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc graph`, never off the file. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
 
 The two committed homes are asymmetric and it matters: an ALGORITHM record has a git-tracked home that is
 not the packaged seed, and a COMPONENT record does not — `bsc ui promote` writes a new component record
