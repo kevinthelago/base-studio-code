@@ -13,5 +13,13 @@
     {
       "name": "fleet_start_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "bsc_project",
+    "plandb",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

@@ -15,5 +15,10 @@
   "domain": "bsc-sound",
   "folder": "crates/bsc-sound/src/release",
   "src": "crates/bsc-sound/src/release/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_ui",
+    "bsc_util",
+    "serde_json"
+  ]
 }

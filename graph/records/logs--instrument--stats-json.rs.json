@@ -8,5 +8,8 @@
   "folder": "crates/logs/src/instrument",
   "src": "crates/logs/src/instrument/stats_json.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

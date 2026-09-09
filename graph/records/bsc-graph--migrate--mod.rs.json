@@ -38,5 +38,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/migrate",
   "src": "crates/bsc-graph/src/migrate/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "graph_materialize"
+  ]
 }

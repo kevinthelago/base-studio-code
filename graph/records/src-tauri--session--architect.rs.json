@@ -25,5 +25,8 @@
     {
       "name": "setup_network_steward_workspace"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

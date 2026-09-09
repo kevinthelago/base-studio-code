@@ -15,5 +15,9 @@
   "domain": "compliance",
   "folder": "crates/compliance/src/mcp",
   "src": "crates/compliance/src/mcp/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "mcp_rpc",
+    "serde_json"
+  ]
 }

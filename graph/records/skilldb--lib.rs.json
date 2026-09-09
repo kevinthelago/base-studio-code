@@ -7,5 +7,12 @@
   "folder": "crates/skilldb/src",
   "src": "crates/skilldb/src/lib.rs",
   "composes": [],
-  "feature": "skills"
+  "feature": "skills",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "bsc_util",
+    "rusqlite",
+    "serde",
+    "serde_json"
+  ]
 }

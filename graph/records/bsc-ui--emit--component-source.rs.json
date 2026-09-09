@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/emit",
   "src": "crates/bsc-ui/src/emit/component_source.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

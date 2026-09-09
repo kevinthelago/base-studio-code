@@ -81,5 +81,12 @@
     {
       "name": "tunnel_set_store_state"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "serde",
+    "serde_json",
+    "tauri",
+    "tokio"
   ]
 }

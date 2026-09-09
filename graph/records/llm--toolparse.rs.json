@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/llm/src",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "regex",
+    "serde_json"
+  ]
 }

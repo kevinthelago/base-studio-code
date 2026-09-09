@@ -10,5 +10,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/imports",
   "src": "crates/bsc-graph/src/imports/normalize_code.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

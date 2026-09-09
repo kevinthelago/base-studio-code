@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/seed_patch",
   "src": "crates/bsc-ui/src/seed_patch/verify_patch.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

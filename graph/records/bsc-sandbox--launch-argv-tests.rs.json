@@ -12,5 +12,8 @@
     "#[cfg(test)]"
   ],
   "composes": [],
-  "feature": "security"
+  "feature": "security",
+  "crateDeps": [
+    "tempfile"
+  ]
 }

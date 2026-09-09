@@ -23,5 +23,8 @@
     {
       "name": "ensure_director_protocol"
     }
+  ],
+  "crateDeps": [
+    "bsc_util"
   ]
 }

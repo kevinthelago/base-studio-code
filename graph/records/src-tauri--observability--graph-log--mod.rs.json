@@ -23,5 +23,12 @@
     {
       "name": "frontend_log"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "logs",
+    "serde",
+    "tauri",
+    "time"
   ]
 }

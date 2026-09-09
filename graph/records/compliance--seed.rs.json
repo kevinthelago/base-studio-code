@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/compliance/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "include_dir",
+    "serde_json"
+  ]
 }

@@ -13,5 +13,8 @@
     }
   ],
   "folder": "src-tauri/src/platform",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "tauri"
+  ]
 }

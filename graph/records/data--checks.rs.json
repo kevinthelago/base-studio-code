@@ -10,5 +10,9 @@
   "domain": "data",
   "src": "crates/data/src/checks.rs",
   "folder": "crates/data/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

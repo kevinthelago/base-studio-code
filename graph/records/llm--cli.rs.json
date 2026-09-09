@@ -16,5 +16,11 @@
     }
   ],
   "folder": "crates/llm/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "reqwest",
+    "serde_json"
+  ]
 }

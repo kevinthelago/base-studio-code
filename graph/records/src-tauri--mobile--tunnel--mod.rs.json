@@ -11,5 +11,8 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/mobile/tunnel/mod.rs",
   "folder": "src-tauri/src/mobile/tunnel",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_tunnel"
+  ]
 }

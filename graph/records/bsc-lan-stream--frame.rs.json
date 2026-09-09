@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/bsc-lan-stream/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

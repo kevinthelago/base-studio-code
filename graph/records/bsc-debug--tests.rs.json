@@ -12,5 +12,10 @@
     "#[cfg(test)]"
   ],
   "moduleVis": "private",
-  "feature": "maintenance-bots"
+  "feature": "maintenance-bots",
+  "crateDeps": [
+    "bsc_appchan",
+    "serde_json",
+    "tempfile"
+  ]
 }

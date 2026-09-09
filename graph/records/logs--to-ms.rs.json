@@ -8,5 +8,8 @@
   "moduleVis": "pub",
   "domain": "logs",
   "composes": [],
-  "code": "/// Normalize a timestamp to epoch-ms. All-digits ⇒ already epoch-ms (activity/done/hooks/mcp);\n/// otherwise parse `YYYY-MM-DDTHH:MM:SSZ` (audit/skills/coord) via the shared civil-date helper\n/// (#1646). `None` on a malformed value.\npub fn to_ms(ts: &str) -> Option<i64> {\n    let ts = ts.trim();\n    if ts.is_empty() {\n        return None;\n    }\n    if ts.bytes().all(|b| b.is_ascii_digit()) {\n        return ts.parse::<i64>().ok();\n    }\n    bsc_util::iso8601_to_epoch_ms(ts)\n}"
+  "code": "/// Normalize a timestamp to epoch-ms. All-digits ⇒ already epoch-ms (activity/done/hooks/mcp);\n/// otherwise parse `YYYY-MM-DDTHH:MM:SSZ` (audit/skills/coord) via the shared civil-date helper\n/// (#1646). `None` on a malformed value.\npub fn to_ms(ts: &str) -> Option<i64> {\n    let ts = ts.trim();\n    if ts.is_empty() {\n        return None;\n    }\n    if ts.bytes().all(|b| b.is_ascii_digit()) {\n        return ts.parse::<i64>().ok();\n    }\n    bsc_util::iso8601_to_epoch_ms(ts)\n}",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

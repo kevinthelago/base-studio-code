@@ -12,5 +12,8 @@
     "#[cfg(test)]"
   ],
   "composes": [],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

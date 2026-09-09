@@ -7,5 +7,8 @@
   "folder": "src-tauri/src/session/launch_cmd",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Name a JSON value's shape for an error message — a reader chasing a bad reply wants to know it got\n/// an array, not merely that something failed.\npub(crate) fn kind_of(v: &serde_json::Value) -> &'static str {\n    match v {\n        serde_json::Value::Null => \"null\",\n        serde_json::Value::Bool(_) => \"a boolean\",\n        serde_json::Value::Number(_) => \"a number\",\n        serde_json::Value::String(_) => \"a string\",\n        serde_json::Value::Array(_) => \"an array\",\n        serde_json::Value::Object(_) => \"an object\",\n    }\n}\n"
+  "code": "/// Name a JSON value's shape for an error message — a reader chasing a bad reply wants to know it got\n/// an array, not merely that something failed.\npub(crate) fn kind_of(v: &serde_json::Value) -> &'static str {\n    match v {\n        serde_json::Value::Null => \"null\",\n        serde_json::Value::Bool(_) => \"a boolean\",\n        serde_json::Value::Number(_) => \"a number\",\n        serde_json::Value::String(_) => \"a string\",\n        serde_json::Value::Array(_) => \"an array\",\n        serde_json::Value::Object(_) => \"an object\",\n    }\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

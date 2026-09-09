@@ -17,5 +17,11 @@
   "domain": "logs",
   "folder": "crates/logs/src/metrics",
   "src": "crates/logs/src/metrics/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "plandb",
+    "serde"
+  ]
 }

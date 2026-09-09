@@ -15,5 +15,8 @@
   "tech": "rust",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "snow"
   ]
 }

@@ -8,5 +8,10 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/console/shell_rc/mod.rs",
   "folder": "src-tauri/src/console/shell_rc",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_sandbox",
+    "serde",
+    "serde_json"
+  ]
 }

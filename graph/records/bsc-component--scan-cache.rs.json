@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/bsc-component/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
 }

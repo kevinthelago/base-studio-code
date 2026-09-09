@@ -22,5 +22,12 @@
     }
   ],
   "folder": "crates/bsc/src/hook",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_sandbox",
+    "bsc_security",
+    "bsc_util",
+    "errordb",
+    "serde_json"
+  ]
 }

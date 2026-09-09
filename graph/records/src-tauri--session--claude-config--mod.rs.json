@@ -30,5 +30,10 @@
     {
       "name": "write_claude_config"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "serde",
+    "serde_json"
   ]
 }

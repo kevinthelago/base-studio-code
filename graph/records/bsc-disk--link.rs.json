@@ -10,5 +10,11 @@
   "domain": "bsc-disk",
   "src": "crates/bsc-disk/src/link.rs",
   "folder": "crates/bsc-disk/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "filetime",
+    "serde_json",
+    "sha2"
+  ]
 }

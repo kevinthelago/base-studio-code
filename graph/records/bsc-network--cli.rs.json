@@ -8,5 +8,12 @@
   "folder": "crates/bsc-network/src",
   "src": "crates/bsc-network/src/cli.rs",
   "composes": [],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_json_store",
+    "bsc_session",
+    "bsc_util",
+    "serde_json"
+  ]
 }

@@ -13,5 +13,9 @@
     }
   ],
   "folder": "src-tauri/src/console/pty",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

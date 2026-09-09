@@ -17,5 +17,12 @@
     }
   ],
   "folder": "crates/compliance/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "bsc_util",
+    "rusqlite",
+    "serde",
+    "serde_json"
+  ]
 }

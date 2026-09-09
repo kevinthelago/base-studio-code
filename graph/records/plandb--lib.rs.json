@@ -9,5 +9,10 @@
   "composes": [
     "plandb--phase-to-db.rs",
     "plandb--phase-from-db.rs"
+  ],
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde_json"
   ]
 }

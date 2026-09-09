@@ -11,5 +11,9 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "reqwest",
+    "serde_json"
   ]
 }

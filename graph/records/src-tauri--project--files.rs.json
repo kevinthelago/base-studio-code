@@ -28,5 +28,9 @@
     {
       "name": "read_project_files"
     }
+  ],
+  "crateDeps": [
+    "base64",
+    "log"
   ]
 }

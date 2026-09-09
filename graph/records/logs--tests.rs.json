@@ -11,5 +11,8 @@
   "moduleAttrs": [
     "#[cfg(test)]"
   ],
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -24,5 +24,8 @@
     {
       "name": "path_expose_configure"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

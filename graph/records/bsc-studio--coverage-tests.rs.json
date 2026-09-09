@@ -14,5 +14,8 @@
   "composes": [
     "bsc-studio--lib.rs"
   ],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

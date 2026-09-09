@@ -7,5 +7,8 @@
   "folder": "crates/bsc-security/src/osv",
   "src": "crates/bsc-security/src/osv/parse_batch_ids.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

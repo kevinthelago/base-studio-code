@@ -8,5 +8,8 @@
   "domain": "bsc-record",
   "moduleVis": "private",
   "composes": [],
-  "code": "use serde_json::Value;\n\n/// Did this history entry's write MOVE the source? True when `srcText` is named in either `changed` or\n/// `dropped` — a deletion moves it as surely as an edit does.\npub(crate) fn entry_moved_src_of(entry: &Value, content: &str) -> bool {\n    [\"changed\", \"dropped\"].iter().any(|k| {\n        entry\n            .get(*k)\n            .and_then(Value::as_array)\n            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(content)))\n    })\n}\n"
+  "code": "use serde_json::Value;\n\n/// Did this history entry's write MOVE the source? True when `srcText` is named in either `changed` or\n/// `dropped` — a deletion moves it as surely as an edit does.\npub(crate) fn entry_moved_src_of(entry: &Value, content: &str) -> bool {\n    [\"changed\", \"dropped\"].iter().any(|k| {\n        entry\n            .get(*k)\n            .and_then(Value::as_array)\n            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(content)))\n    })\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

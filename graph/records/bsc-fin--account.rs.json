@@ -17,5 +17,8 @@
     "gaps",
     "visibility"
   ],
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

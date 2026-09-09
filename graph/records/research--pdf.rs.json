@@ -16,5 +16,8 @@
     }
   ],
   "folder": "crates/research/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "pdf_extract"
+  ]
 }

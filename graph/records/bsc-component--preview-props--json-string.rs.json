@@ -7,5 +7,8 @@
   "folder": "crates/bsc-component/src/preview_props",
   "src": "crates/bsc-component/src/preview_props/json_string.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

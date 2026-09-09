@@ -7,5 +7,8 @@
   "folder": "crates/bsc-tunnel/src/noise",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// Build the responder handshake (desktop side) from its static private key. It\n/// does NOT pre-know the initiator's static key — IK reveals it during the handshake.\npub fn responder(static_priv: &[u8]) -> Result<HandshakeState, snow::Error> {\n    Builder::new(PARAMS.parse().expect(\"valid noise params\"))\n        .local_private_key(static_priv)?\n        .build_responder()\n}\n"
+  "code": "use super::*;\n\n/// Build the responder handshake (desktop side) from its static private key. It\n/// does NOT pre-know the initiator's static key — IK reveals it during the handshake.\npub fn responder(static_priv: &[u8]) -> Result<HandshakeState, snow::Error> {\n    Builder::new(PARAMS.parse().expect(\"valid noise params\"))\n        .local_private_key(static_priv)?\n        .build_responder()\n}\n",
+  "crateDeps": [
+    "snow"
+  ]
 }

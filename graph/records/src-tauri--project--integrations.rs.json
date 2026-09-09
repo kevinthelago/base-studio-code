@@ -18,5 +18,10 @@
     {
       "name": "glance_integration_band"
     }
+  ],
+  "crateDeps": [
+    "bsc_data",
+    "plandb",
+    "serde"
   ]
 }

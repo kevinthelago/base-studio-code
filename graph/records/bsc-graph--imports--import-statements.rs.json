@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/imports",
   "src": "crates/bsc-graph/src/imports/import_statements.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "tree_sitter_typescript"
+  ]
 }

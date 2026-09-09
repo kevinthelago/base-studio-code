@@ -11,5 +11,9 @@
   "domain": "logs",
   "folder": "crates/logs/src/cost",
   "src": "crates/logs/src/cost/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

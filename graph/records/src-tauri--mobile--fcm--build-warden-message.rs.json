@@ -10,5 +10,8 @@
     "src-tauri--mobile--fcm--notification-body.rs",
     "src-tauri--mobile--fcm--build-push.rs"
   ],
-  "code": "use super::*;\n\n/// Build an FCM push for a worker the warden quarantined (#1102) — a possible prompt\n/// injection / session hijack. High-signal: the user wants this on their phone immediately,\n/// since a hijacked session can't be trusted to report itself. `detail` is the deterministic\n/// trip summary (out-of-lane file / denied command), never untrusted prose.\npub fn build_warden_message(\n    device_token: &str,\n    session: &str,\n    detail: &str,\n) -> serde_json::Value {\n    let body = if detail.trim().is_empty() {\n        \"A worker was paused — it drifted off its assigned plan.\".to_string()\n    } else {\n        notification_body(detail)\n    };\n    build_push(\n        device_token,\n        \"Studio Code — worker quarantined\",\n        &body,\n        serde_json::json!({ \"type\": \"warden_quarantine\", \"session\": session, \"detail\": detail }),\n    )\n}\n"
+  "code": "use super::*;\n\n/// Build an FCM push for a worker the warden quarantined (#1102) — a possible prompt\n/// injection / session hijack. High-signal: the user wants this on their phone immediately,\n/// since a hijacked session can't be trusted to report itself. `detail` is the deterministic\n/// trip summary (out-of-lane file / denied command), never untrusted prose.\npub fn build_warden_message(\n    device_token: &str,\n    session: &str,\n    detail: &str,\n) -> serde_json::Value {\n    let body = if detail.trim().is_empty() {\n        \"A worker was paused — it drifted off its assigned plan.\".to_string()\n    } else {\n        notification_body(detail)\n    };\n    build_push(\n        device_token,\n        \"Studio Code — worker quarantined\",\n        &body,\n        serde_json::json!({ \"type\": \"warden_quarantine\", \"session\": session, \"detail\": detail }),\n    )\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

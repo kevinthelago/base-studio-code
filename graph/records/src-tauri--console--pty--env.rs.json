@@ -19,5 +19,12 @@
     }
   ],
   "folder": "src-tauri/src/console/pty",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_sandbox",
+    "bsc_util",
+    "log",
+    "logs",
+    "portable_pty"
+  ]
 }

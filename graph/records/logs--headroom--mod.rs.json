@@ -11,5 +11,8 @@
   "domain": "logs",
   "folder": "crates/logs/src/headroom",
   "src": "crates/logs/src/headroom/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

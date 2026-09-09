@@ -19,5 +19,8 @@
     {
       "name": "read_git_hooks"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

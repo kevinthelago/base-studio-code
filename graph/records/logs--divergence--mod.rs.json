@@ -10,5 +10,9 @@
   "domain": "logs",
   "folder": "crates/logs/src/divergence",
   "src": "crates/logs/src/divergence/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde"
+  ]
 }

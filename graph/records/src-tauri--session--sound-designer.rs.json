@@ -21,5 +21,8 @@
     {
       "name": "setup_sound_designer_workspace"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

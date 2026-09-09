@@ -18,5 +18,8 @@
     }
   ],
   "folder": "crates/bsc-lan-sense/src/emitloop",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_lan_stream"
+  ]
 }

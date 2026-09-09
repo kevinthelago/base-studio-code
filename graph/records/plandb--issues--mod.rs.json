@@ -27,5 +27,11 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde",
+    "serde_json"
   ]
 }

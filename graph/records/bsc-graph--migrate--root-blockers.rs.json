@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/migrate",
   "src": "crates/bsc-graph/src/migrate/root_blockers.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

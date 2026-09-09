@@ -18,5 +18,11 @@
     {
       "name": "record_attestations"
     }
+  ],
+  "crateDeps": [
+    "bsc_runtime",
+    "bsc_util",
+    "log",
+    "serde"
   ]
 }

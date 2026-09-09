@@ -18,5 +18,8 @@
     }
   ],
   "folder": "crates/bsc-lan-core/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

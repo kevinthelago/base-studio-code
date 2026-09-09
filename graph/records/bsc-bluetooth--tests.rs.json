@@ -10,5 +10,8 @@
   "domain": "bsc-bluetooth",
   "src": "crates/bsc-bluetooth/src/tests.rs",
   "folder": "crates/bsc-bluetooth/src",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

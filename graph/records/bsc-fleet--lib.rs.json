@@ -9,5 +9,8 @@
   "composes": [
     "bsc-fleet--director-pane-id.rs",
     "bsc-fleet--discovery-kickoff.rs"
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

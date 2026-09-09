@@ -24,5 +24,10 @@
     {
       "name": "verify_build"
     }
+  ],
+  "crateDeps": [
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

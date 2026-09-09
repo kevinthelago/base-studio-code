@@ -18,5 +18,9 @@
     }
   ],
   "folder": "crates/bsc-ui/src/lift",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_graph",
+    "serde_json"
+  ]
 }

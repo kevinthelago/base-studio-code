@@ -8,5 +8,9 @@
   "src": "crates/bsc-blueprint/src/cli.rs",
   "summary": "The bsc blueprint CLI surface — a CliSpec over the shared bsc-json-store runner.",
   "tech": "rust",
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_json_store"
+  ]
 }

@@ -13,5 +13,9 @@
     }
   ],
   "folder": "src-tauri/src/shot",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_shot",
+    "png"
+  ]
 }

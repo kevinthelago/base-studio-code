@@ -7,5 +7,8 @@
   "folder": "crates/bsc/src/hook",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// The blocking reason for `cmd`, if any. **Delegates to [`bsc_util::bash_gate::deny_reason`]**\n/// — the decision moved to `bsc-util` when the standalone `bsc-hook` binary became a second\n/// caller, so a sandboxed session and this umbrella cannot enforce different floors. See that\n/// module for why a second copy was not acceptable.\npub(crate) fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {\n    bsc_util::bash_gate::deny_reason(cmd, env_denies)\n}\n"
+  "code": "/// The blocking reason for `cmd`, if any. **Delegates to [`bsc_util::bash_gate::deny_reason`]**\n/// — the decision moved to `bsc-util` when the standalone `bsc-hook` binary became a second\n/// caller, so a sandboxed session and this umbrella cannot enforce different floors. See that\n/// module for why a second copy was not acceptable.\npub(crate) fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {\n    bsc_util::bash_gate::deny_reason(cmd, env_denies)\n}\n",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

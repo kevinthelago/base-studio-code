@@ -11,5 +11,8 @@
   "folder": "crates/bsc-imagine/src",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

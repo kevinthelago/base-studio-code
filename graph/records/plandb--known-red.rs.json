@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/plandb/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "rusqlite",
+    "serde_json"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "crates/bsc-persona/src/baseline",
   "src": "crates/bsc-persona/src/baseline/is_empty_list.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

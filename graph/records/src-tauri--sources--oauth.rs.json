@@ -21,5 +21,14 @@
     {
       "name": "source_oauth_begin"
     }
+  ],
+  "crateDeps": [
+    "base64",
+    "bsc_data",
+    "rand",
+    "serde",
+    "serde_json",
+    "sha2",
+    "tauri"
   ]
 }

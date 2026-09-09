@@ -7,5 +7,9 @@
   "folder": "crates/llm/src",
   "src": "crates/llm/src/format_api_error.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "reqwest",
+    "serde_json"
+  ]
 }

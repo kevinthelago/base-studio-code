@@ -23,5 +23,11 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[cfg(feature = \"duckdb-store\")]"
+  ],
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_sqlite_util",
+    "bsc_util",
+    "serde_json"
   ]
 }

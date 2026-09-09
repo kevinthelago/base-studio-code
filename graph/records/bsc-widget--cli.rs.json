@@ -16,5 +16,10 @@
     }
   ],
   "folder": "crates/bsc-widget/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_appchan",
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

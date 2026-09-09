@@ -17,5 +17,9 @@
     }
   ],
   "folder": "crates/bsc-ui/src/retirable",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "regex",
+    "serde_json"
+  ]
 }

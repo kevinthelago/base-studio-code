@@ -15,5 +15,8 @@
   ],
   "folder": "crates/bsc-rf/src",
   "moduleVis": "pub",
-  "feature": "rf"
+  "feature": "rf",
+  "crateDeps": [
+    "serde"
+  ]
 }

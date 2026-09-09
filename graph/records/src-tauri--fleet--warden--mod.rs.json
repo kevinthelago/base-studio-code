@@ -24,5 +24,11 @@
     {
       "name": "warden_quarantined_panes"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "log",
+    "serde_json",
+    "tauri"
   ]
 }

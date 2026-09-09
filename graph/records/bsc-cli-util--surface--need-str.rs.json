@@ -7,5 +7,8 @@
   "folder": "crates/bsc-cli-util/src/surface",
   "src": "crates/bsc-cli-util/src/surface/need_str.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

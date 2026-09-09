@@ -16,5 +16,11 @@
     }
   ],
   "folder": "crates/bsc-resolve/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_config",
+    "log",
+    "serde",
+    "serde_json"
+  ]
 }

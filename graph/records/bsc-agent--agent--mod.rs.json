@@ -18,5 +18,12 @@
     "bsc-agent--permissions--mod.rs",
     "bsc-agent--telemetry--mod.rs",
     "bsc-agent--tools.rs"
+  ],
+  "crateDeps": [
+    "bsc_util",
+    "plandb",
+    "reqwest",
+    "serde_json",
+    "tokio"
   ]
 }

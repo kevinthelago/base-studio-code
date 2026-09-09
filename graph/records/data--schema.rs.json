@@ -16,5 +16,8 @@
     }
   ],
   "folder": "crates/data/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

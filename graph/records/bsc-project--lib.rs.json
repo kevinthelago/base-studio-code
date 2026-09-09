@@ -12,5 +12,9 @@
     "bsc-project--sanitize-project-key.rs",
     "bsc-project--link-id.rs"
   ],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
 }

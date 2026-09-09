@@ -17,5 +17,9 @@
     }
   ],
   "folder": "crates/bsc-mem/src/app",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

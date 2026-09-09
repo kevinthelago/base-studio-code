@@ -16,5 +16,8 @@
   "moduleVis": "pub",
   "composes": [
     "src-tauri--app--single-instance--multiple-instances-allowed.rs"
+  ],
+  "crateDeps": [
+    "tauri"
   ]
 }

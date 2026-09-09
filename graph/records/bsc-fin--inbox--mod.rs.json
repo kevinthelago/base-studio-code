@@ -13,5 +13,8 @@
     "bsc-fin--inbox--institution-from-name.rs",
     "bsc-fin--inbox--is-statement.rs",
     "bsc-fin--inbox--render.rs"
+  ],
+  "crateDeps": [
+    "bsc_util"
   ]
 }

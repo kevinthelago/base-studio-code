@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/backing_reconcile",
   "src": "crates/bsc-ui/src/backing_reconcile/defines.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "regex"
+  ]
 }

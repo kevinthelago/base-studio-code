@@ -14,5 +14,9 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
   ]
 }

@@ -8,5 +8,8 @@
   "folder": "crates/bsc-sound/src/release",
   "src": "crates/bsc-sound/src/release/assemble_artifact.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

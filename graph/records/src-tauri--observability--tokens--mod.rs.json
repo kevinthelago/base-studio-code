@@ -11,5 +11,8 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/observability/tokens/mod.rs",
   "folder": "src-tauri/src/observability/tokens",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "tauri"
+  ]
 }

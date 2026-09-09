@@ -29,5 +29,9 @@
     {
       "name": "read_plan_stages"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "plandb"
   ]
 }

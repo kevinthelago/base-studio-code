@@ -11,5 +11,8 @@
   "domain": "bsc-ui",
   "folder": "crates/bsc-ui/src/refresh_seed",
   "src": "crates/bsc-ui/src/refresh_seed/decide.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

@@ -7,5 +7,13 @@
   "folder": "crates/bsc-graph-store/src/lib",
   "src": "crates/bsc-graph-store/src/lib.rs",
   "composes": [],
-  "feature": "graph-store"
+  "feature": "graph-store",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_graph",
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde",
+    "serde_json"
+  ]
 }

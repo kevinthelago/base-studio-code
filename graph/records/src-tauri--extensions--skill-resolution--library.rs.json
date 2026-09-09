@@ -7,5 +7,8 @@
   "folder": "src-tauri/src/extensions/skill_resolution",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// The library, read from the store Rust already owns.\n///\n/// The crate takes the path; this is the one place that knows which path the APP means. A missing or\n/// unreadable store yields an EMPTY library — safe only because the caller UNIONS with the list the\n/// renderer sent (see [`reconcile_session_skills`]), so the floor is what the frontend resolved and\n/// never \"no skills\". A caller that replaces instead of unioning must not use this.\npub fn library() -> Vec<SkillDef> {\n    bsc_resolve::skill::library(&crate::skills_db())\n}\n"
+  "code": "use super::*;\n\n/// The library, read from the store Rust already owns.\n///\n/// The crate takes the path; this is the one place that knows which path the APP means. A missing or\n/// unreadable store yields an EMPTY library — safe only because the caller UNIONS with the list the\n/// renderer sent (see [`reconcile_session_skills`]), so the floor is what the frontend resolved and\n/// never \"no skills\". A caller that replaces instead of unioning must not use this.\npub fn library() -> Vec<SkillDef> {\n    bsc_resolve::skill::library(&crate::skills_db())\n}\n",
+  "crateDeps": [
+    "bsc_resolve"
+  ]
 }

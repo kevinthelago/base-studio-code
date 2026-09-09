@@ -19,5 +19,12 @@
     {
       "name": "navigate_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_navigate",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

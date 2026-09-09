@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/build_facet",
   "src": "crates/bsc-graph/src/build_facet/facet.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

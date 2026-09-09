@@ -17,5 +17,8 @@
     }
   ],
   "folder": "crates/bsc-graph/src/impl_refresh",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

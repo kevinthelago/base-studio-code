@@ -7,5 +7,8 @@
   "folder": "crates/logs/src/scope",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// The default scope-config path: `$BSC_LOG_SCOPES`, else `<base>/log-scopes.json`.\npub fn scopes_path() -> std::path::PathBuf {\n    resolve_store_path(&None, SCOPES_ENV, || {\n        Ok(bsc_util::bsc_base_dir()\n            .unwrap_or_else(|| std::path::PathBuf::from(\".base-studio-code\"))\n            .join(\"log-scopes.json\"))\n    })\n    .unwrap_or_else(|_| std::path::PathBuf::from(\"log-scopes.json\"))\n}\n"
+  "code": "use super::*;\n\n/// The default scope-config path: `$BSC_LOG_SCOPES`, else `<base>/log-scopes.json`.\npub fn scopes_path() -> std::path::PathBuf {\n    resolve_store_path(&None, SCOPES_ENV, || {\n        Ok(bsc_util::bsc_base_dir()\n            .unwrap_or_else(|| std::path::PathBuf::from(\".base-studio-code\"))\n            .join(\"log-scopes.json\"))\n    })\n    .unwrap_or_else(|_| std::path::PathBuf::from(\"log-scopes.json\"))\n}\n",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

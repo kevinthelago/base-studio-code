@@ -8,5 +8,10 @@
   "src": "crates/bsc-ui/src/lib.rs",
   "composes": [
     "bsc-ui--sanitize-variant-name.rs"
+  ],
+  "crateDeps": [
+    "bsc_record",
+    "bsc_util",
+    "serde_json"
   ]
 }

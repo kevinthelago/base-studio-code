@@ -8,5 +8,8 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/extensions/cfg.rs",
   "folder": "src-tauri/src/extensions",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_resolve"
+  ]
 }

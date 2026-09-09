@@ -18,5 +18,8 @@
     {
       "name": "setup_integrator_workspace"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

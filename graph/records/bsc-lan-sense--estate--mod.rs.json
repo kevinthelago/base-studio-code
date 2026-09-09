@@ -22,5 +22,8 @@
     }
   ],
   "folder": "crates/bsc-lan-sense/src/estate",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

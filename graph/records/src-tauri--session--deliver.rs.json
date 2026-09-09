@@ -8,5 +8,10 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/session/deliver.rs",
   "folder": "src-tauri/src/session",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_session",
+    "log",
+    "tauri"
+  ]
 }

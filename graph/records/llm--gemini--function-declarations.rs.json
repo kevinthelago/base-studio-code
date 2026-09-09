@@ -7,5 +7,8 @@
   "folder": "crates/llm/src/gemini",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// Map `tools` onto Gemini's `[{ functionDeclarations: [...] }]` shape (its one wrapper). Shared by the\n/// tool-using `turn` path and the one-shot `complete` path so both attach tools identically.\npub(crate) fn function_declarations(tools: &[crate::ToolDef]) -> serde_json::Value {\n    let decls: Vec<serde_json::Value> = tools.iter().map(tool_decl_inner).collect();\n    serde_json::json!([ { \"functionDeclarations\": decls } ])\n}\n"
+  "code": "use super::*;\n\n/// Map `tools` onto Gemini's `[{ functionDeclarations: [...] }]` shape (its one wrapper). Shared by the\n/// tool-using `turn` path and the one-shot `complete` path so both attach tools identically.\npub(crate) fn function_declarations(tools: &[crate::ToolDef]) -> serde_json::Value {\n    let decls: Vec<serde_json::Value> = tools.iter().map(tool_decl_inner).collect();\n    serde_json::json!([ { \"functionDeclarations\": decls } ])\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "src-tauri/src/observability/tokens/messages",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Parse an RFC3339 transcript `timestamp` to epoch ms; 0 when absent/unparseable.\npub(crate) fn parse_iso_ms(s: &str) -> u64 {\n    use time::format_description::well_known::Rfc3339;\n    time::OffsetDateTime::parse(s, &Rfc3339)\n        .map(|t| (t.unix_timestamp_nanos() / 1_000_000).max(0) as u64)\n        .unwrap_or(0)\n}\n"
+  "code": "/// Parse an RFC3339 transcript `timestamp` to epoch ms; 0 when absent/unparseable.\npub(crate) fn parse_iso_ms(s: &str) -> u64 {\n    use time::format_description::well_known::Rfc3339;\n    time::OffsetDateTime::parse(s, &Rfc3339)\n        .map(|t| (t.unix_timestamp_nanos() / 1_000_000).max(0) as u64)\n        .unwrap_or(0)\n}\n",
+  "crateDeps": [
+    "time"
+  ]
 }

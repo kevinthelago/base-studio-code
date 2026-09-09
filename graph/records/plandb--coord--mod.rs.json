@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/plandb/src/coord",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde"
+  ]
 }

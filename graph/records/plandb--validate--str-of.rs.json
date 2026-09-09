@@ -8,5 +8,8 @@
   "folder": "crates/plandb/src/validate",
   "src": "crates/plandb/src/validate/str_of.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

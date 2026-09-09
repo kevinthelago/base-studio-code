@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/emit",
   "src": "crates/bsc-graph/src/emit/classify_file.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_cli_util"
+  ]
 }

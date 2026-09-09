@@ -13,5 +13,10 @@
   ],
   "composes": [
     "src-tauri--mobile--tunnel--commands.rs"
+  ],
+  "crateDeps": [
+    "base64",
+    "serde_json",
+    "snow"
   ]
 }

@@ -21,5 +21,9 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[cfg(feature = \"duckdb-store\")]"
+  ],
+  "crateDeps": [
+    "duckdb",
+    "serde_json"
   ]
 }

@@ -11,5 +11,11 @@
   "feature": "console",
   "folder": "crates/bsc-agent/src/permissions",
   "src": "crates/bsc-agent/src/permissions/mod.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_util",
+    "glob",
+    "serde",
+    "serde_json"
+  ]
 }

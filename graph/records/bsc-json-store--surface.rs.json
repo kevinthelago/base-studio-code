@@ -10,5 +10,9 @@
   "domain": "bsc-json-store",
   "src": "crates/bsc-json-store/src/surface.rs",
   "folder": "crates/bsc-json-store/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

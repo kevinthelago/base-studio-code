@@ -9,5 +9,8 @@
   "composes": [
     "bsc-security--types--cvss-base-score.rs"
   ],
-  "code": "use super::*;\n\n/// Pull the highest CVSS score out of an OSV `severity` array and band it; fall back to the\n/// `database_specific.severity` label; else `Unknown`. Kept free-standing so it's directly fixture-tested.\npub fn severity_of(v: &serde_json::Value) -> Severity {\n    let cvss = v\n        .get(\"severity\")\n        .and_then(|s| s.as_array())\n        .map(|arr| {\n            arr.iter()\n                .filter_map(|e| e.get(\"score\").and_then(|x| x.as_str()))\n                .filter_map(cvss_base_score)\n                .fold(0.0_f64, f64::max)\n        })\n        .unwrap_or(0.0);\n    if cvss > 0.0 {\n        return Severity::from_cvss_score(cvss);\n    }\n    v.get(\"database_specific\")\n        .and_then(|d| d.get(\"severity\"))\n        .and_then(|x| x.as_str())\n        .map(Severity::from_label)\n        .unwrap_or(Severity::Unknown)\n}\n"
+  "code": "use super::*;\n\n/// Pull the highest CVSS score out of an OSV `severity` array and band it; fall back to the\n/// `database_specific.severity` label; else `Unknown`. Kept free-standing so it's directly fixture-tested.\npub fn severity_of(v: &serde_json::Value) -> Severity {\n    let cvss = v\n        .get(\"severity\")\n        .and_then(|s| s.as_array())\n        .map(|arr| {\n            arr.iter()\n                .filter_map(|e| e.get(\"score\").and_then(|x| x.as_str()))\n                .filter_map(cvss_base_score)\n                .fold(0.0_f64, f64::max)\n        })\n        .unwrap_or(0.0);\n    if cvss > 0.0 {\n        return Severity::from_cvss_score(cvss);\n    }\n    v.get(\"database_specific\")\n        .and_then(|d| d.get(\"severity\"))\n        .and_then(|x| x.as_str())\n        .map(Severity::from_label)\n        .unwrap_or(Severity::Unknown)\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -20,5 +20,8 @@
     }
   ],
   "folder": "crates/llm/src/local",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

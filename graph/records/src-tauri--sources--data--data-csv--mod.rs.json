@@ -47,5 +47,12 @@
     {
       "name": "data_load_reconciled"
     }
+  ],
+  "crateDeps": [
+    "bsc_data",
+    "rfd",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

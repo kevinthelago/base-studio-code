@@ -21,5 +21,8 @@
     "bsc-record--lost-tests.rs",
     "bsc-record--guard-no-test-loss.rs",
     "bsc-record--entry-moved-src-of.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

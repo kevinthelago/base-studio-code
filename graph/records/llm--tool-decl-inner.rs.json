@@ -9,5 +9,8 @@
   "moduleVis": "private",
   "composes": [
     "llm--turn.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

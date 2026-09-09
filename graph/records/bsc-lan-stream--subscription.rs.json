@@ -21,5 +21,8 @@
     }
   ],
   "folder": "crates/bsc-lan-stream/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "ed25519_dalek"
+  ]
 }

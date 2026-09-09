@@ -19,5 +19,8 @@
   ],
   "folder": "crates/bsc-survival/src",
   "moduleVis": "pub",
-  "feature": "survival"
+  "feature": "survival",
+  "crateDeps": [
+    "serde"
+  ]
 }

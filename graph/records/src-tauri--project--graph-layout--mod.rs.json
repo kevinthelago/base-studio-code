@@ -22,5 +22,10 @@
     {
       "name": "graph_layout"
     }
+  ],
+  "crateDeps": [
+    "bsc_graph_layout",
+    "log",
+    "tauri"
   ]
 }

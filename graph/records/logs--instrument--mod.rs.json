@@ -19,5 +19,9 @@
   "domain": "logs",
   "folder": "crates/logs/src/instrument",
   "src": "crates/logs/src/instrument/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

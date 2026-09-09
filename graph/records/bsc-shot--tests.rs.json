@@ -12,5 +12,11 @@
     "#[cfg(test)]"
   ],
   "composes": [],
-  "feature": "maintenance-bots"
+  "feature": "maintenance-bots",
+  "crateDeps": [
+    "bsc_appchan",
+    "filetime",
+    "serde_json",
+    "tempfile"
+  ]
 }

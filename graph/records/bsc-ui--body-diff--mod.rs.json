@@ -17,5 +17,8 @@
     }
   ],
   "folder": "crates/bsc-ui/src/body_diff",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "crates/bsc-storefs/src/ui",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\npub fn from_json(s: &str) -> Result<Vec<Component>, serde_json::Error> {\n    serde_json::from_str(s)\n}\n"
+  "code": "use super::*;\n\npub fn from_json(s: &str) -> Result<Vec<Component>, serde_json::Error> {\n    serde_json::from_str(s)\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

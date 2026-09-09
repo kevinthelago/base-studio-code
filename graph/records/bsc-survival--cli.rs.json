@@ -19,5 +19,10 @@
   ],
   "folder": "crates/bsc-survival/src",
   "moduleVis": "pub",
-  "feature": "survival"
+  "feature": "survival",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_sqlite_util",
+    "serde_json"
+  ]
 }

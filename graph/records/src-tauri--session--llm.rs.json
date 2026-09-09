@@ -16,5 +16,8 @@
     {
       "name": "ollama_models"
     }
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

@@ -39,5 +39,11 @@
     }
   ],
   "folder": "crates/bsc-component/src/graph_health",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_graph",
+    "bsc_ui",
+    "bsc_util",
+    "serde_json"
+  ]
 }

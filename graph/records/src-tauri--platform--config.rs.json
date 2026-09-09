@@ -27,5 +27,13 @@
     {
       "name": "get_config_files"
     }
+  ],
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_ui",
+    "include_dir",
+    "serde",
+    "serde_json",
+    "sha2"
   ]
 }

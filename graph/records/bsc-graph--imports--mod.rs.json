@@ -22,5 +22,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/imports",
   "src": "crates/bsc-graph/src/imports/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "tree_sitter"
+  ]
 }

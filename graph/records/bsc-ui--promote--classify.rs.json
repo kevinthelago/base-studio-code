@@ -10,5 +10,8 @@
   "domain": "bsc-ui",
   "folder": "crates/bsc-ui/src/promote",
   "src": "crates/bsc-ui/src/promote/classify.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

@@ -7,5 +7,9 @@
   "folder": "crates/bsc-files/src",
   "src": "crates/bsc-files/src/lib.rs",
   "composes": [],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "ignore",
+    "serde"
+  ]
 }

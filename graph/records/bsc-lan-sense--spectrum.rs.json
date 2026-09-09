@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/bsc-lan-sense/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_rf",
+    "thiserror"
+  ]
 }

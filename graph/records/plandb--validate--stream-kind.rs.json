@@ -10,5 +10,8 @@
   "domain": "plandb",
   "folder": "crates/plandb/src/validate",
   "src": "crates/plandb/src/validate/stream_kind.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

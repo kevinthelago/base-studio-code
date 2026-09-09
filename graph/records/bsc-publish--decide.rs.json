@@ -10,5 +10,8 @@
   "moduleVis": "private",
   "composes": [
     "bsc-publish--lib.rs"
+  ],
+  "crateDeps": [
+    "plandb"
   ]
 }

@@ -12,5 +12,8 @@
     "#[cfg(test)]"
   ],
   "composes": [],
-  "feature": "skills"
+  "feature": "skills",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

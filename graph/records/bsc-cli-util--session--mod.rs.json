@@ -18,5 +18,10 @@
     }
   ],
   "folder": "crates/bsc-cli-util/src/session",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde",
+    "serde_json"
+  ]
 }

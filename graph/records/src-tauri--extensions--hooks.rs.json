@@ -10,5 +10,8 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/extensions/hooks.rs",
   "folder": "src-tauri/src/extensions",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/promote",
   "src": "crates/bsc-ui/src/promote/project.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

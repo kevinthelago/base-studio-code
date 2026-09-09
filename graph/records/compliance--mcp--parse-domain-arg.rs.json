@@ -10,5 +10,8 @@
   "moduleVis": "private",
   "composes": [
     "compliance--types.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

@@ -9,5 +9,8 @@
   "moduleVis": "private",
   "composes": [
     "bsc-cli-util--lib.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

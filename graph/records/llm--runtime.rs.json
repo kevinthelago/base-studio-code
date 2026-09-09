@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/llm/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

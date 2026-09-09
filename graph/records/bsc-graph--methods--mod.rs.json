@@ -23,5 +23,13 @@
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "graph_materialize",
+    "regex",
+    "serde_json",
+    "tauri",
+    "tokio",
+    "tree_sitter"
   ]
 }

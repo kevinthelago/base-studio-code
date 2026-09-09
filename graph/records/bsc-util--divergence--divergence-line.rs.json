@@ -10,5 +10,8 @@
   "domain": "bsc-util",
   "folder": "crates/bsc-util/src/divergence",
   "src": "crates/bsc-util/src/divergence/divergence_line.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "logs"
+  ]
 }

@@ -18,5 +18,9 @@
     }
   ],
   "folder": "crates/research/src/sources",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "roxmltree",
+    "serde_json"
+  ]
 }

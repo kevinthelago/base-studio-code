@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/seed_patch",
   "src": "crates/bsc-ui/src/seed_patch/rebase_indent.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -20,5 +20,8 @@
     "bsc-fin--money.rs",
     "bsc-fin--txn.rs"
   ],
-  "feature": "finance"
+  "feature": "finance",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -27,5 +27,9 @@
     {
       "name": "recover_sessions"
     }
+  ],
+  "crateDeps": [
+    "serde",
+    "serde_json"
   ]
 }

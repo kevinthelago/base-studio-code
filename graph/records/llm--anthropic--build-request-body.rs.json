@@ -9,5 +9,8 @@
   "composes": [
     "llm--anthropic--cached-system.rs"
   ],
-  "code": "use super::*;\n\n/// Build the Anthropic `/v1/messages` request body (top-level `system`, native\n/// `messages` + `tools`). Pure — extracted so it can be unit-tested without I/O.\npub(crate) fn build_request_body(req: &LlmRequest) -> serde_json::Value {\n    serde_json::json!({\n        \"model\": req.model,\n        \"max_tokens\": req.max_tokens,\n        \"system\": cached_system(&req.system),\n        \"messages\": req.messages,\n        \"tools\": req.tools,\n    })\n}\n"
+  "code": "use super::*;\n\n/// Build the Anthropic `/v1/messages` request body (top-level `system`, native\n/// `messages` + `tools`). Pure — extracted so it can be unit-tested without I/O.\npub(crate) fn build_request_body(req: &LlmRequest) -> serde_json::Value {\n    serde_json::json!({\n        \"model\": req.model,\n        \"max_tokens\": req.max_tokens,\n        \"system\": cached_system(&req.system),\n        \"messages\": req.messages,\n        \"tools\": req.tools,\n    })\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

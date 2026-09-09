@@ -8,5 +8,8 @@
   "name": "protocol",
   "role": "algorithm",
   "src": "crates/bsc-tunnel/src/protocol.rs",
-  "tech": "rust"
+  "tech": "rust",
+  "crateDeps": [
+    "serde"
+  ]
 }

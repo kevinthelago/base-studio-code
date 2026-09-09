@@ -27,5 +27,9 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/repo_store",
   "src": "crates/bsc-graph/src/repo_store/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "graph_materialize",
+    "serde_json"
+  ]
 }

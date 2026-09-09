@@ -13,5 +13,10 @@
   "domain": "bsc-self",
   "src": "crates/bsc-self/src/cli.rs",
   "folder": "crates/bsc-self/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "serde_json"
+  ]
 }

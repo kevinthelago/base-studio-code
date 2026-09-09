@@ -19,5 +19,9 @@
   "domain": "plandb",
   "src": "crates/plandb/src/cli/issues/mod.rs",
   "folder": "crates/plandb/src/cli/issues",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "serde_json"
+  ]
 }

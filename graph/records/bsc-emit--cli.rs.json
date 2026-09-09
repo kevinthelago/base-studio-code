@@ -11,5 +11,8 @@
   "domain": "bsc-emit",
   "src": "crates/bsc-emit/src/cli.rs",
   "folder": "crates/bsc-emit/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

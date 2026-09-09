@@ -7,5 +7,8 @@
   "folder": "crates/bsc-component/src/closure",
   "src": "crates/bsc-component/src/closure/id_of.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }
