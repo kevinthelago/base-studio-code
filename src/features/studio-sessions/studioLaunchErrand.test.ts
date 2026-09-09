@@ -27,10 +27,10 @@
 // launch path, that path needs its own seam test rather than this one.
 import { describe, it, expect, beforeEach } from "vitest";
 import { studioContext, seedStudioLaunchState } from "@/features/studio-sessions/StudioSessionMount";
-import { STUDIO_SESSIONS } from "@/features/studio-sessions/lib/studioSessions";
+import { studioSessionDef } from "@/features/studio-sessions/lib/studioSessions";
 import { useAppStore } from "@/store";
 
-const DEF = STUDIO_SESSIONS.designerReact;
+const DEF = studioSessionDef("designerReact")!;
 const ERRAND =
   "You were started to serve a request on loop 42.\nRun `bsc loop watch 42 --as designerReact` to read it.";
 

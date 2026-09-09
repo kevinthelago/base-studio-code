@@ -23,11 +23,11 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { StudioSessionMount } from "@/features/studio-sessions/StudioSessionMount";
-import { STUDIO_SESSIONS } from "@/features/studio-sessions/lib/studioSessions";
+import { studioSessionDef } from "@/features/studio-sessions/lib/studioSessions";
 import { useAppStore } from "@/store";
 import { invoke } from "@tauri-apps/api/core";
 
-const DEF = STUDIO_SESSIONS.designerReact;
+const DEF = studioSessionDef("designerReact")!;
 const ERRAND =
   "You were started to serve a request on loop 42.\nRun `bsc loop watch 42 --as designerReact` to read it.";
 
