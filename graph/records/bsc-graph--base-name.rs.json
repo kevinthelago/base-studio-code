@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--base-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "base_name",
+  "src": "crates/bsc-graph/src/base_name.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Normalize an impl id to its base-algorithm key — MUST mirror the frontend `programKey`: strip the\n/// extension, lowercase, unify separators (`merge-sort.rs` / `merge_sort` → `merge-sort`).\npub fn base_name(id: &str) -> String {\n    let stem = id.rsplit_once('.').map_or(id, |(s, _)| s);\n    stem.to_lowercase().replace([' ', '_'], \"-\")\n}\n"
+}

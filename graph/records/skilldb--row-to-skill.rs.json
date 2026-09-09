@@ -1,0 +1,18 @@
+{
+  "id": "skilldb--row-to-skill.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "row_to_skill",
+  "src": "crates/skilldb/src/row_to_skill.rs",
+  "folder": "crates/skilldb/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn row_to_skill(r: &rusqlite::Row) -> rusqlite::Result<Skill> {\n    Ok(Skill {\n        id: r.get(0)?,\n        name: r.get(1)?,\n        kind: r.get(2)?,\n        source: r.get(3)?,\n        desc: r.get(4)?,\n        prompt: r.get(5)?,\n        tools: json_to_arr(&r.get::<_, String>(6)?),\n        profiles: json_to_arr(&r.get::<_, String>(7)?),\n        projects: json_to_arr(&r.get::<_, String>(8)?),\n        enabled: r.get::<_, i64>(9)? != 0,\n        pinned: r.get::<_, i64>(10)? != 0,\n        packaged: r.get::<_, i64>(11)? != 0,\n        uses: r.get(12)?,\n        last_used_at: r.get(13)?,\n        updated_at: r.get(14)?,\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "skills",
+  "crateDeps": [
+    "rusqlite"
+  ]
+}

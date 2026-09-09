@@ -1,0 +1,14 @@
+{
+  "id": "bsc-widget--decide.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "decide",
+  "src": "crates/bsc-widget/src/decide.rs",
+  "folder": "crates/bsc-widget/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Resolve an action against whether the window is open. Pure, and the whole\n/// decision the verb makes.\npub fn decide(action: Action, is_open: bool) -> Outcome {\n    match (action, is_open) {\n        (Action::Open, true) => Outcome::AlreadyOpen,\n        (Action::Open, false) => Outcome::Opened,\n        (Action::Close, true) => Outcome::Closed,\n        (Action::Close, false) => Outcome::AlreadyClosed,\n        (Action::Toggle, true) => Outcome::Closed,\n        (Action::Toggle, false) => Outcome::Opened,\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

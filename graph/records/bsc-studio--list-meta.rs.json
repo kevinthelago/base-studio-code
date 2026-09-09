@@ -1,0 +1,24 @@
+{
+  "id": "bsc-studio--list-meta.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "list_meta",
+  "src": "crates/bsc-studio/src/list_meta.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-studio--studios-store.rs",
+    "bsc-studio--builtin-studios.rs",
+    "bsc-studio--studio-id.rs",
+    "bsc-studio--get.rs"
+  ],
+  "code": "use super::*;\n\n/// Every Studio's lean `{id, name}` projection — the USER-saved ones plus every packaged built-in a user\n/// studio doesn't override (#2894), with `builtin: true` on the built-in entries. Built-ins come first\n/// (they're the shipped presets). Robust to odd-shaped files (an unparseable blob yields empty strings,\n/// never a panic).\npub fn list_meta(base: &Path) -> Vec<Value> {\n    let user: Vec<Value> = studios_store(base)\n        .list()\n        .iter()\n        .map(|j| bsc_json_store::cli::lean_meta(j, &[\"id\", \"name\"]))\n        .collect();\n    let user_ids: std::collections::BTreeSet<String> =\n        user.iter().filter_map(|m| m.get(\"id\").and_then(Value::as_str)).map(str::to_string).collect();\n    // Built-ins a user studio doesn't shadow by id, tagged so the library shows + protects them.\n    let mut out: Vec<Value> = builtin_studios()\n        .iter()\n        .filter_map(|v| {\n            let id = studio_id(v)?;\n            if user_ids.contains(id) {\n                return None;\n            }\n            let name = v.get(\"name\").and_then(Value::as_str).unwrap_or(id);\n            Some(serde_json::json!({ \"id\": id, \"name\": name, \"builtin\": true }))\n        })\n        .collect();\n    out.extend(user);\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_json_store",
+    "serde_json"
+  ]
+}

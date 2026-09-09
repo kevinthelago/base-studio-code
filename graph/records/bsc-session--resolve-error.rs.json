@@ -1,0 +1,17 @@
+{
+  "id": "bsc-session--resolve-error.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolve_error",
+  "src": "crates/bsc-session/src/resolve_error.rs",
+  "folder": "crates/bsc-session/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-session--valid-ids.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn resolve_error(id: &str) -> String {\n    format!(\n        \"'{id}' is not a system session. Valid ids: {}, a network's architect \\\n         (`network-<slug>:architect`), or a surface session \\\n         (`surface-studio:noun-<noun>` / `surface-studio:verb-<noun>-<verb>`).\\n\\\n         This verb reaches the app-owned system sessions and the per-network architects — not fleet \\\n         workers, and not a project's director (a director owns a running fleet, so ending one is the \\\n         user's act, not the architect's).\",\n        valid_ids().join(\" · \")\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "fleet"
+}

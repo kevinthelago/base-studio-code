@@ -1,0 +1,14 @@
+{
+  "id": "bsc-sqlite-util--json-to-arr.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "json_to_arr",
+  "src": "crates/bsc-sqlite-util/src/json_to_arr.rs",
+  "folder": "crates/bsc-sqlite-util/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Parse a JSON array TEXT column back into a string list. A malformed/empty value yields `[]`.\npub fn json_to_arr(s: &str) -> Vec<String> {\n    serde_json::from_str(s).unwrap_or_default()\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

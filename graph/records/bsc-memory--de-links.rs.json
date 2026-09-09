@@ -1,0 +1,14 @@
+{
+  "id": "bsc-memory--de-links.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "de_links",
+  "src": "crates/bsc-memory/src/de_links.rs",
+  "folder": "crates/bsc-memory/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Accept BOTH the typed object form `{\"ref\": \"...\", \"rel\": \"...\"}` and the legacy bare string `\"...\"`\n/// (which becomes a `related` link), so a store written before typed edges still reads.\npub(crate) fn de_links<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Link>, D::Error> {\n    #[derive(Deserialize)]\n    #[serde(untagged)]\n    enum Wire {\n        Bare(String),\n        Full(Link),\n    }\n    Ok(Vec::<Wire>::deserialize(d)?\n        .into_iter()\n        .map(|w| match w {\n            Wire::Bare(s) => Link::new(s, DEFAULT_REL),\n            Wire::Full(l) => l,\n        })\n        .collect())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

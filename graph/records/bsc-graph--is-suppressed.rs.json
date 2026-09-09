@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--is-suppressed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_suppressed",
+  "src": "crates/bsc-graph/src/is_suppressed.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--suppressions-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Is `id` retired?\npub fn is_suppressed(g: &Value, id: &str) -> bool {\n    suppressions_of(g).iter().any(|t| t.get(\"id\").and_then(Value::as_str) == Some(id))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

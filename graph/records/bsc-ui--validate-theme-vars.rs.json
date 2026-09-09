@@ -1,0 +1,19 @@
+{
+  "id": "bsc-ui--validate-theme-vars.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_theme_vars",
+  "src": "crates/bsc-ui/src/validate_theme_vars.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--token-names.rs"
+  ],
+  "code": "use super::*;\n\n/// Validate a theme's `vars` map against the token contract + the value grammar (#2568): every key must\n/// be a token the contract defines and every value must pass [`validate_value`]. Flat error list (empty\n/// = valid) — the shape `bsc ui theme validate` prints.\npub fn validate_theme_vars(vars: &serde_json::Map<String, Value>) -> Vec<String> {\n    let names = token_names();\n    let mut errs = Vec::new();\n    for (name, value) in vars {\n        if !names.contains(name) {\n            errs.push(format!(\"overrides '{name}', which the token contract does not define\"));\n        }\n        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);\n        if let Err(e) = validate_value(&s, &names) {\n            errs.push(e);\n        }\n    }\n    errs\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

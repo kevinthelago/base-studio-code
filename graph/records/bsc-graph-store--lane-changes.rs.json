@@ -1,0 +1,19 @@
+{
+  "id": "bsc-graph-store--lane-changes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lane_changes",
+  "src": "crates/bsc-graph-store/src/lane_changes.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--head-rev.rs",
+    "bsc-graph-store--get-in.rs",
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// Every record `lane` has touched, with the state that decides whether it can land.\npub fn lane_changes(conn: &Connection, lane: &str) -> Result<Vec<LaneChange>, String> {\n    if lane == MAIN {\n        return Err(\"`main` is the landed graph, not a lane — nothing to compare it against\".into());\n    }\n    let mut st = conn\n        .prepare(\n            \"SELECT r.id, r.rev, COALESCE(r.base_rev, 0)\n               FROM record_revs r\n              WHERE r.lane = ?1\n                AND r.rev = (SELECT MAX(rev) FROM record_revs WHERE id = r.id AND lane = ?1)\n              ORDER BY r.id\",\n        )\n        .map_err(|e| e.to_string())?;\n    let rows: Vec<(String, i64, i64)> = st\n        .query_map([lane], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))\n        .map_err(|e| e.to_string())?\n        .collect::<Result<_, _>>()\n        .map_err(|e| e.to_string())?;\n    let mut out = Vec::new();\n    for (id, lane_rev, base_rev) in rows {\n        let main_rev = head_rev(conn, &id)?;\n        out.push(LaneChange {\n            removed: get_in(conn, lane, &id)?.is_none(),\n            conflicted: main_rev != base_rev,\n            id,\n            base_rev,\n            main_rev,\n            lane_rev,\n        });\n    }\n    Ok(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

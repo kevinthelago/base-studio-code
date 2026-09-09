@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--land.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "land",
+  "src": "crates/bsc-graph-store/src/land.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get-in.rs",
+    "bsc-graph-store--put.rs",
+    "bsc-graph-store--remove.rs",
+    "bsc-graph-store--lane-changes.rs"
+  ],
+  "code": "use super::*;\n\n/// Apply every record in `lane` to `main`, in ONE transaction.\n///\n/// All or nothing, deliberately: a slice is a unit, and half a slice on main is a state nobody asked\n/// for and nobody is watching. If any record conflicts, nothing is applied and the conflicts are\n/// named — resolve them in the lane (its base is refreshed by re-reading main), then land again.\n///\n/// Landing does not delete the lane. Its rows stay in the ledger, so what was landed and from where is\n/// still answerable afterwards — the same reason `revert` appends rather than rewinds.\npub fn land(conn: &Connection, lane: &str, by: &str) -> Result<Landed, String> {\n    let changes = lane_changes(conn, lane)?;\n    let conflicts: Vec<String> = changes.iter().filter(|c| c.conflicted).map(|c| c.id.clone()).collect();\n    if !conflicts.is_empty() {\n        return Ok(Landed { applied: 0, removed: 0, conflicts });\n    }\n    let tx = conn.unchecked_transaction().map_err(|e| format!(\"cannot open a transaction: {e}\"))?;\n    let mut out = Landed::default();\n    for ch in &changes {\n        let note = format!(\"landed from lane '{lane}'\");\n        match get_in(conn, lane, &ch.id)? {\n            Some(body) => {\n                put(conn, &ch.id, &body, by, Some(&note), None)?;\n                out.applied += 1;\n            }\n            None => {\n                remove(conn, &ch.id, by, Some(&note))?;\n                out.removed += 1;\n            }\n        }\n    }\n    tx.commit().map_err(|e| format!(\"cannot commit the landing: {e}\"))?;\n    Ok(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

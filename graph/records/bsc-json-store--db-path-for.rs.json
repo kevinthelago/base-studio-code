@@ -1,0 +1,14 @@
+{
+  "id": "bsc-json-store--db-path-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "db_path_for",
+  "src": "crates/bsc-json-store/src/db_path_for.rs",
+  "folder": "crates/bsc-json-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The sibling `.db` path for a store directory: `<base>/<segment>` → `<base>/<segment>.db`. Appends\n/// the extension (rather than `with_extension`) so a segment carrying a dot keeps its whole name\n/// (`x.store` → `x.store.db`, never `x.db`).\npub(crate) fn db_path_for(dir: &Path) -> PathBuf {\n    let mut s = dir.as_os_str().to_os_string();\n    s.push(\".db\");\n    PathBuf::from(s)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

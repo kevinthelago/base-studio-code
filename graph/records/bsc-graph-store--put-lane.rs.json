@@ -1,0 +1,15 @@
+{
+  "id": "bsc-graph-store--put-lane.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "put_lane",
+  "src": "crates/bsc-graph-store/src/put_lane.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// [`put`] into a named lane, as an implementation.\npub fn put_lane(\n    conn: &Connection,\n    lane: &str,\n    id: &str,\n    body: &Value,\n    by: &str,\n    note: Option<&str>,\n) -> Result<i64, String> {\n    put_in(conn, lane, id, body, Write::by(by).note(note))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

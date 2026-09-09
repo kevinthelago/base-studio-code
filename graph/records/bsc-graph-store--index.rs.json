@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--index.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "index",
+  "src": "crates/bsc-graph-store/src/index.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// The page's INDEX — every current record, page fields only, no bodies.\n///\n/// Straight off the STORED generated columns, so no body is parsed for a record the page is only going\n/// to list. MEASURED over 2,529 records: 8.9 ms against 26.6 ms parsing bodies.\npub fn index(conn: &Connection) -> Result<Vec<Value>, String> {\n    let mut st = conn\n        .prepare(\n            \"SELECT id, name, role, tech, folder, src, provides, rev,\n                    json_extract(json, '$.summary'), json_extract(json, '$.composes'),\n                    json_extract(json, '$.kind'), json_extract(json, '$.tags'),\n                    json_extract(json, '$.ref'), json_extract(json, '$.domain'),\n                    json_extract(json, '$.feature')\n               FROM records WHERE tier = 'impl' ORDER BY id\",\n        )\n        .map_err(|e| e.to_string())?;\n    let rows = st\n        .query_map([], |r| {\n            let arr = |s: Option<String>| -> Value {\n                s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Array(vec![]))\n            };\n            Ok(serde_json::json!({\n                \"id\": r.get::<_, String>(0)?,\n                \"name\": r.get::<_, Option<String>>(1)?,\n                \"role\": r.get::<_, Option<String>>(2)?,\n                \"tech\": r.get::<_, Option<String>>(3)?,\n                \"folder\": r.get::<_, Option<String>>(4)?,\n                \"src\": r.get::<_, Option<String>>(5)?,\n                \"provides\": r.get::<_, Option<String>>(6)?,\n                \"rev\": r.get::<_, i64>(7)?,\n                \"summary\": r.get::<_, Option<String>>(8)?,\n                \"composes\": arr(r.get::<_, Option<String>>(9)?),\n                \"kind\": r.get::<_, Option<String>>(10)?,\n                \"tags\": arr(r.get::<_, Option<String>>(11)?),\n                \"ref\": r.get::<_, Option<String>>(12)?,\n                \"domain\": r.get::<_, Option<String>>(13)?,\n                \"feature\": r.get::<_, Option<String>>(14)?,\n            }))\n        })\n        .map_err(|e| e.to_string())?;\n    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

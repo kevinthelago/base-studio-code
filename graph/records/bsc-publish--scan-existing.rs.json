@@ -1,0 +1,15 @@
+{
+  "id": "bsc-publish--scan-existing.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "scan_existing",
+  "src": "crates/bsc-publish/src/scan_existing.rs",
+  "folder": "crates/bsc-publish/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Scan a repo's existing issues. `Err` means the scan FAILED and the caller must skip the repo —\n/// distinct from a successful scan that found nothing.\npub fn scan_existing(api: &dyn GhApi, full_name: &str) -> Result<ExistingIssues, String> {\n    let rows = api.rest(&format!(\"repos/{full_name}/issues?state=all&per_page=100\"))?;\n    let arr = rows.as_array().cloned().unwrap_or_default();\n    let mut numbers = std::collections::HashSet::new();\n    let mut by_title: std::collections::HashMap<String, (i64, Option<String>)> = std::collections::HashMap::new();\n    for r in arr {\n        if let Some(n) = r.get(\"number\").and_then(|v| v.as_i64()) {\n            numbers.insert(n);\n            if let Some(t) = r.get(\"title\").and_then(|v| v.as_str()) {\n                let node = r.get(\"node_id\").and_then(|v| v.as_str()).map(str::to_string);\n                by_title.entry(t.to_string()).or_insert((n, node));\n            }\n        }\n    }\n    Ok(ExistingIssues { numbers, by_title })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "github"
+}

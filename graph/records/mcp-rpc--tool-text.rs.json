@@ -1,0 +1,17 @@
+{
+  "id": "mcp-rpc--tool-text.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tool_text",
+  "src": "crates/mcp-rpc/src/tool_text.rs",
+  "folder": "crates/mcp-rpc/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A `tools/call` success payload (text content). Large/structured results are JSON-stringified.\npub fn tool_text(value: &Value) -> Value {\n    let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());\n    json!({ \"content\": [{ \"type\": \"text\", \"text\": text }] })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

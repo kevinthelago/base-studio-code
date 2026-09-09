@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--categorical-color.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "categorical_color",
+  "src": "crates/bsc-ui/src/categorical_color.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Format one categorical colour at the fixed scale L/C and the given hue.\npub fn categorical_color(hue: f64) -> String {\n    format!(\"oklch({GEN_LIGHTNESS:.2} {GEN_CHROMA:.2} {:.1})\", hue.rem_euclid(360.0))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

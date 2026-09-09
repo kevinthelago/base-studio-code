@@ -1,0 +1,19 @@
+{
+  "id": "bsc-graph--is-registered-platform-module.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_registered_platform_module",
+  "src": "crates/bsc-graph/src/is_registered_platform_module.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--platform-modules-json.rs"
+  ],
+  "code": "use super::*;\n\n/// Is `spec` bound to a LIVE platform module at runtime (`registerAppModule`)?\n///\n/// Public so the COMPONENT store can apply the same refusal — it holds records that `provides` the\n/// very same specifiers, and duplicating the manifest lookup there would let the two drift.\npub fn is_registered_platform_module(spec: &str) -> bool {\n    static M: std::sync::OnceLock<std::collections::BTreeSet<String>> = std::sync::OnceLock::new();\n    M.get_or_init(|| {\n        serde_json::from_str::<Vec<String>>(platform_modules_json()).unwrap_or_default().into_iter().collect()\n    })\n    .contains(spec)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

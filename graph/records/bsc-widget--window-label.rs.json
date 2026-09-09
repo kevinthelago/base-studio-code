@@ -1,0 +1,11 @@
+{
+  "id": "bsc-widget--window-label.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "window_label",
+  "src": "crates/bsc-widget/src/window_label.rs",
+  "folder": "crates/bsc-widget/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The window label for a node. Stable, so \"is it already open?\" is answered by\n/// asking the window set rather than by remembering.\npub fn window_label(id: &str) -> String {\n    format!(\"bsc-widget-{id}\")\n}\n"
+}

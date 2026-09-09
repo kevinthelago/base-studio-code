@@ -1,0 +1,20 @@
+{
+  "id": "bsc-ui--validate-variant-tokens.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_variant_tokens",
+  "src": "crates/bsc-ui/src/validate_variant_tokens.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--token-names.rs",
+    "bsc-ui--component-token-keys.rs"
+  ],
+  "code": "use super::*;\n\n/// Validate a NEW variant's token bundle (#2569): at least one token, every key a base token key of the\n/// component, and every value passing the closed grammar. Flat error list (empty = valid).\npub fn validate_variant_tokens(component: &str, tokens: &serde_json::Map<String, Value>) -> Vec<String> {\n    let keys: std::collections::HashSet<String> = component_token_keys(component).into_iter().collect();\n    let names = token_names();\n    let mut errs = Vec::new();\n    if tokens.is_empty() {\n        errs.push(\"a variant must set at least one token (--set <key>=<value>)\".to_string());\n    }\n    for (key, value) in tokens {\n        if !keys.contains(key) {\n            errs.push(format!(\"'{key}' is not a token of component '{component}' — see `bsc ui component {component} list-tokens`\"));\n        }\n        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);\n        if let Err(e) = validate_value(&s, &names) {\n            errs.push(e);\n        }\n    }\n    errs\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "bsc-studio--remove.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "remove",
+  "src": "crates/bsc-studio/src/remove.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-studio--studios-store.rs"
+  ],
+  "code": "use super::*;\n\n/// Remove a Studio by `id` (a no-op, not an error, when absent).\npub fn remove(base: &Path, id: &str) -> Result<(), String> {\n    studios_store(base).remove(id)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform"
+}

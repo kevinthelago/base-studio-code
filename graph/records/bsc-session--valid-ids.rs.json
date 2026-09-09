@@ -1,0 +1,15 @@
+{
+  "id": "bsc-session--valid-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "valid_ids",
+  "src": "crates/bsc-session/src/valid_ids.rs",
+  "folder": "crates/bsc-session/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every valid id, for a refusal message.\npub fn valid_ids() -> Vec<&'static str> {\n    SYSTEM_SESSIONS.iter().map(|s| s.id).collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "fleet"
+}

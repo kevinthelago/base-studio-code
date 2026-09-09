@@ -1,0 +1,17 @@
+{
+  "id": "bsc-ui--comp-token-row.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "comp_token_row",
+  "src": "crates/bsc-ui/src/comp_token_row.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn comp_token_row(t: &Value, component: &str, variant: Option<&str>) -> Value {\n    let mut o = serde_json::json!({\n        \"name\": t.get(\"name\"), \"type\": t.get(\"type\"), \"default\": t.get(\"default\"),\n        \"governs\": t.get(\"governs\"), \"family\": component, \"component\": component, \"key\": t.get(\"key\"),\n    });\n    if let (Some(obj), Some(v)) = (o.as_object_mut(), variant) {\n        obj.insert(\"variant\".into(), Value::String(v.to_string()));\n    }\n    o\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

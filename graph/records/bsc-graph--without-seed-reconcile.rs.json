@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph--without-seed-reconcile.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "without_seed_reconcile",
+  "src": "crates/bsc-graph/src/without_seed_reconcile.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--seed.rs",
+    "bsc-graph--implementations-of.rs"
+  ],
+  "code": "use super::*;\n\n/// `g` without the records [`reconcile_seed`] appended to it — the ones `main` must not adopt.\n///\n/// [`load`] returns the ledger's `main` OVERLAID with the packaged seed, because the app needs both:\n/// the crate modules live in the ledger and the frontend population ships in the seed. `save` then\n/// hands that combined document to `sync_document`, which makes `main` EQUAL to it — so a single\n/// `impl set` quietly promoted the whole seed onto `main`.\n///\n/// MEASURED on this machine: `main`'s `.ts` population went from 79 to 698 in one burst of 742\n/// note-less revisions. `main` is what the export writes into `graph/records/`, so the next export\n/// would have added ~619 frontend records to the committed store — the same union the import was\n/// rewritten to stop making, arriving through the other door.\n///\n/// A record is a reconcile artifact when `main` does not have it AND it is byte-identical to the\n/// seed's copy. Anything a librarian actually edited differs from the seed by construction, so it is\n/// kept and lands on `main` as it should.\npub(crate) fn without_seed_reconcile(db: &bsc_graph_store::Connection, g: &Value) -> Result<Value, String> {\n    let seeded: std::collections::BTreeMap<String, Value> = implementations_of(&seed())\n        .into_iter()\n        .filter_map(|im| im.get(\"id\").and_then(Value::as_str).map(|id| (id.to_string(), im.clone())))\n        .collect();\n    let mut out = g.clone();\n    if let Some(arr) = out.get_mut(\"implementations\").and_then(Value::as_array_mut) {\n        let mut kept: Vec<Value> = Vec::with_capacity(arr.len());\n        for im in arr.drain(..) {\n            let id = im.get(\"id\").and_then(Value::as_str).unwrap_or_default().to_string();\n            let is_artifact = !id.is_empty()\n                && bsc_graph_store::get_in(db, &bound_lane(), &id)?.is_none()\n                && bsc_graph_store::get(db, &id)?.is_none()\n                && seeded.get(&id).is_some_and(|s| {\n                    bsc_graph_store::import::body_of(s) == bsc_graph_store::import::body_of(&im)\n                });\n            if !is_artifact {\n                kept.push(im);\n            }\n        }\n        *arr = kept;\n    }\n    Ok(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_graph_store"
+  ]
+}
