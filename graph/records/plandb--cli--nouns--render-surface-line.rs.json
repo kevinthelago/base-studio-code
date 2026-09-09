@@ -1,0 +1,12 @@
+{
+  "id": "plandb--cli--nouns--render-surface-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_surface_line",
+  "src": "crates/plandb/src/cli/nouns/render_surface_line.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "crateDeps": [],
+  "code": "use super::*;\n\n/// One row as a listing line. The DECISION leads, because that is the column a reader is scanning\n/// for — `bsc surface` already answers what a crate is, and this section exists to say what should\n/// change about it.\npub(crate) fn render_surface_line(r: &crate::PlanSurface) -> String {\n    let decision = if r.decision.is_empty() { \"—\" } else { &r.decision };\n    let target = match (&r.into, r.subjects.is_empty()) {\n        (Some(into), _) => format!(\" → {into}\"),\n        (None, false) => format!(\" ({})\", r.subjects.join(\", \")),\n        _ => String::new(),\n    };\n    let owner = r.owner.as_deref().map(|o| format!(\"  [{o}]\")).unwrap_or_default();\n    // The dependency COUNT on the line, because it is what a reader scans a roster for: the crate\n    // worth looking at first is usually the one the most things reach through.\n    let deps = if r.depends_on.is_empty() { String::new() } else { format!(\"  ({} deps)\", r.depends_on.len()) };\n    format!(\"{:<12} {:<9} {}{}{}{}\", r.status, decision, r.krate, target, deps, owner)\n}\n"
+}
