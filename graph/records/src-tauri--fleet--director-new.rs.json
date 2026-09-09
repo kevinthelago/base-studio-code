@@ -18,5 +18,13 @@
     {
       "name": "fleet_director_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "bsc_project",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

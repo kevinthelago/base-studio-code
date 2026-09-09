@@ -14,5 +14,8 @@
     }
   ],
   "folder": "crates/bsc-fleet/src",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

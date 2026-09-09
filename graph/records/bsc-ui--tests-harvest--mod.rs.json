@@ -17,5 +17,12 @@
     }
   ],
   "folder": "crates/bsc-ui/src/tests_harvest",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_component",
+    "bsc_json_store",
+    "bsc_record",
+    "serde_json"
+  ]
 }

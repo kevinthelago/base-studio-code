@@ -16,5 +16,10 @@
   "feature": "console",
   "folder": "crates/bsc-agent/src/mcp",
   "src": "crates/bsc-agent/src/mcp/mod.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde",
+    "serde_json",
+    "tokio"
+  ]
 }

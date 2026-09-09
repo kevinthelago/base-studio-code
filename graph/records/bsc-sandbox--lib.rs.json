@@ -7,5 +7,8 @@
   "folder": "crates/bsc-sandbox/src",
   "src": "crates/bsc-sandbox/src/lib.rs",
   "composes": [],
-  "feature": "security"
+  "feature": "security",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

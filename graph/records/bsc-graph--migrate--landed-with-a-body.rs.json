@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/migrate",
   "src": "crates/bsc-graph/src/migrate/landed_with_a_body.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "src-tauri/src/session/claude_config",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Returns valid, pretty-printed JSON for `content`: the content re-serialized if\n/// it already parses; otherwise the leading JSON value with any trailing junk\n/// dropped (the common `<valid JSON><junk>` corruption); otherwise `None`.\npub(crate) fn repair_claude_json(content: &str) -> Option<String> {\n    if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {\n        return serde_json::to_string_pretty(&v).ok();\n    }\n    serde_json::Deserializer::from_str(content)\n        .into_iter::<serde_json::Value>()\n        .next()\n        .and_then(|r| r.ok())\n        .and_then(|v| serde_json::to_string_pretty(&v).ok())\n}\n"
+  "code": "/// Returns valid, pretty-printed JSON for `content`: the content re-serialized if\n/// it already parses; otherwise the leading JSON value with any trailing junk\n/// dropped (the common `<valid JSON><junk>` corruption); otherwise `None`.\npub(crate) fn repair_claude_json(content: &str) -> Option<String> {\n    if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {\n        return serde_json::to_string_pretty(&v).ok();\n    }\n    serde_json::Deserializer::from_str(content)\n        .into_iter::<serde_json::Value>()\n        .next()\n        .and_then(|r| r.ok())\n        .and_then(|v| serde_json::to_string_pretty(&v).ok())\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

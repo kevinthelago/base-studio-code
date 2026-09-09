@@ -18,5 +18,8 @@
     }
   ],
   "folder": "crates/research/src/sources",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

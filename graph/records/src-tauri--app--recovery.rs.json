@@ -22,5 +22,8 @@
     {
       "name": "was_unclean_shutdown"
     }
+  ],
+  "crateDeps": [
+    "tauri"
   ]
 }

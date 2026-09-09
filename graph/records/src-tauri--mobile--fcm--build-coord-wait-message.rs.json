@@ -10,5 +10,8 @@
     "src-tauri--mobile--fcm--notification-body.rs",
     "src-tauri--mobile--fcm--build-push.rs"
   ],
-  "code": "use super::*;\n\n/// Build an FCM push for an agent that entered a manual-wait or asking state (F4).\n/// Lets the user know an agent is paused and what it's waiting for, so they can\n/// respond from the mobile app even when the relay session is backgrounded.\npub fn build_coord_wait_message(\n    device_token: &str,\n    session: &str,\n    reason: &str,\n) -> serde_json::Value {\n    let body = if reason.trim().is_empty() {\n        \"An agent paused and is waiting for you.\".to_string()\n    } else {\n        notification_body(reason)\n    };\n    build_push(\n        device_token,\n        \"Studio Code — agent waiting\",\n        &body,\n        serde_json::json!({ \"type\": \"coord_wait\", \"session\": session, \"reason\": reason }),\n    )\n}\n"
+  "code": "use super::*;\n\n/// Build an FCM push for an agent that entered a manual-wait or asking state (F4).\n/// Lets the user know an agent is paused and what it's waiting for, so they can\n/// respond from the mobile app even when the relay session is backgrounded.\npub fn build_coord_wait_message(\n    device_token: &str,\n    session: &str,\n    reason: &str,\n) -> serde_json::Value {\n    let body = if reason.trim().is_empty() {\n        \"An agent paused and is waiting for you.\".to_string()\n    } else {\n        notification_body(reason)\n    };\n    build_push(\n        device_token,\n        \"Studio Code — agent waiting\",\n        &body,\n        serde_json::json!({ \"type\": \"coord_wait\", \"session\": session, \"reason\": reason }),\n    )\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

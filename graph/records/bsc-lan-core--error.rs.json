@@ -8,5 +8,8 @@
   "domain": "bsc-lan-core",
   "src": "crates/bsc-lan-core/src/error.rs",
   "folder": "crates/bsc-lan-core/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "thiserror"
+  ]
 }

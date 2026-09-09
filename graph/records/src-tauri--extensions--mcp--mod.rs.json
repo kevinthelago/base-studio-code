@@ -35,5 +35,12 @@
     {
       "name": "mcp_check_update"
     }
+  ],
+  "crateDeps": [
+    "bsc_resolve",
+    "bsc_util",
+    "log",
+    "serde",
+    "serde_json"
   ]
 }

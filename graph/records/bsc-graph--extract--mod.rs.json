@@ -29,5 +29,14 @@
     }
   ],
   "folder": "crates/bsc-graph/src/extract",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_ui",
+    "bsc_util",
+    "serde_json",
+    "tree_sitter",
+    "tree_sitter_rust",
+    "tree_sitter_typescript"
+  ]
 }

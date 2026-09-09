@@ -7,5 +7,8 @@
   "folder": "crates/bsc-tunnel/src/noise",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// Generate a fresh static keypair (the desktop's long-lived identity).\npub fn generate_keypair() -> Result<Keypair, snow::Error> {\n    Builder::new(PARAMS.parse().expect(\"valid noise params\")).generate_keypair()\n}\n"
+  "code": "use super::*;\n\n/// Generate a fresh static keypair (the desktop's long-lived identity).\npub fn generate_keypair() -> Result<Keypair, snow::Error> {\n    Builder::new(PARAMS.parse().expect(\"valid noise params\")).generate_keypair()\n}\n",
+  "crateDeps": [
+    "snow"
+  ]
 }

@@ -10,5 +10,8 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/github/mod.rs",
   "folder": "src-tauri/src/github",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_github"
+  ]
 }

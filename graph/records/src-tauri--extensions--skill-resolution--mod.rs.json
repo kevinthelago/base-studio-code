@@ -14,5 +14,8 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_resolve"
   ]
 }

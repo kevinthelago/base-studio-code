@@ -16,5 +16,9 @@
     }
   ],
   "folder": "crates/bsc-ui/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "tree_sitter",
+    "tree_sitter_typescript"
+  ]
 }

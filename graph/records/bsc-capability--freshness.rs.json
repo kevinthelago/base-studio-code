@@ -14,5 +14,8 @@
     }
   ],
   "folder": "crates/bsc-capability/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

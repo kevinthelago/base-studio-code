@@ -15,5 +15,8 @@
     {
       "name": "clone_repo"
     }
+  ],
+  "crateDeps": [
+    "bsc_project"
   ]
 }

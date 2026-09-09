@@ -7,5 +7,8 @@
   "folder": "crates/bsc-deploy/src/roster",
   "src": "crates/bsc-deploy/src/roster/parse.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

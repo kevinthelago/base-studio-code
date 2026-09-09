@@ -44,5 +44,13 @@
     {
       "name": "repo_dir_path"
     }
+  ],
+  "crateDeps": [
+    "bsc_project",
+    "bsc_util",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

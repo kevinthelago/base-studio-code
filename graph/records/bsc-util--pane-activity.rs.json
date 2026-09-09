@@ -14,5 +14,8 @@
     }
   ],
   "folder": "crates/bsc-util/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "logs"
+  ]
 }

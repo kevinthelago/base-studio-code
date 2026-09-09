@@ -18,5 +18,8 @@
     {
       "name": "setup_designer_workspace"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

@@ -22,5 +22,15 @@
     {
       "name": "ensure_worktree"
     }
+  ],
+  "crateDeps": [
+    "bsc_component",
+    "bsc_graph",
+    "bsc_json_store",
+    "bsc_memory",
+    "bsc_util",
+    "log",
+    "plandb",
+    "serde_json"
   ]
 }

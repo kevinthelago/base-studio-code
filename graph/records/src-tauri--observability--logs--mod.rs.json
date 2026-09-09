@@ -74,5 +74,17 @@
     {
       "name": "enforce_log_caps"
     }
+  ],
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_graph",
+    "bsc_graph_store",
+    "bsc_util",
+    "log",
+    "logs",
+    "serde",
+    "serde_json",
+    "tauri",
+    "time"
   ]
 }

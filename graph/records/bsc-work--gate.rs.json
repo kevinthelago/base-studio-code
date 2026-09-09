@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/bsc-work/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "plandb",
+    "serde"
+  ]
 }

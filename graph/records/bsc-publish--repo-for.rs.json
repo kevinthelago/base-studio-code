@@ -8,5 +8,8 @@
   "folder": "crates/bsc-publish/src",
   "src": "crates/bsc-publish/src/repo_for.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "plandb"
+  ]
 }

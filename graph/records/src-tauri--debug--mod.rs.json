@@ -19,5 +19,12 @@
     {
       "name": "debug_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_debug",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/bsc/src",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_util",
+    "plandb"
+  ]
 }

@@ -24,5 +24,9 @@
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "rusqlite",
+    "sysinfo"
   ]
 }

@@ -14,5 +14,8 @@
   "composes": [
     "bsc-project--testhome.rs"
   ],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

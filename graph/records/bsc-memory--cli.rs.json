@@ -10,5 +10,11 @@
   "domain": "bsc-memory",
   "src": "crates/bsc-memory/src/cli.rs",
   "folder": "crates/bsc-memory/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_json_store",
+    "bsc_util",
+    "serde_json"
+  ]
 }

@@ -16,5 +16,8 @@
   "moduleVis": "pub(crate)",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "graph_materialize"
   ]
 }

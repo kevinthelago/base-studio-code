@@ -21,5 +21,9 @@
     {
       "name": "worktrees_disk_usage"
     }
+  ],
+  "crateDeps": [
+    "serde",
+    "tauri"
   ]
 }

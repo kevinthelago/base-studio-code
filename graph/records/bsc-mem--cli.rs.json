@@ -10,5 +10,12 @@
   "domain": "bsc-mem",
   "src": "crates/bsc-mem/src/cli.rs",
   "folder": "crates/bsc-mem/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "errordb",
+    "logs",
+    "serde_json"
+  ]
 }

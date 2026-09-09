@@ -21,5 +21,9 @@
     {
       "name": "reconcile_worktrees"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "bsc_util"
   ]
 }

@@ -11,5 +11,11 @@
   "src": "crates/bsc-graph-store/src/import.rs",
   "folder": "crates/bsc-graph-store/src",
   "moduleVis": "pub",
-  "feature": "graph-store"
+  "feature": "graph-store",
+  "crateDeps": [
+    "bsc_record",
+    "rusqlite",
+    "serde",
+    "serde_json"
+  ]
 }

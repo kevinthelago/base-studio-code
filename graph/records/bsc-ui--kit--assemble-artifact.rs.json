@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/kit",
   "src": "crates/bsc-ui/src/kit/assemble_artifact.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

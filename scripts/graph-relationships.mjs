@@ -5,11 +5,13 @@
 // one record — by TS `provides` specifier, or Rust module-path built from the record id (incl. relative
 // self/super, brace groups, and crate-root re-exported symbols). A bare `super::*`/`super::item` that
 // resolves to an ANCESTOR is skipped (that is child→parent, a trivial inverse of the parent's own edge).
-// External-crate/std refs resolve to nothing. Validated: 21/21 observability parent→child, 93/94 hand-set.
+// Record→record refs resolve by the rules above. External-CRATE refs are the OTHER half, and they
+// resolve into `crateDeps` rather than `composes` — see `crateDepsOf`.
 import fs from 'node:fs';
 import { loadStore, writeStore } from './lib/recordStore.mjs';
 const STORE = process.env.GRAPH_STORE || 'graph/algorithms.json';
 const BASELINE = 'scripts/graph-relationships.baseline.json';
+import path from 'node:path';
 const store = loadStore(STORE); // merges graph/records/*.json (retire-json migration)
 const recs = store.implementations;
 const by = new Map(recs.map(r => [r.id, r]));
@@ -114,15 +116,87 @@ export function derive(r) {
   return t;
 }
 
+/// EVERY CRATE NAME THIS WORKSPACE COULD REFER TO — its own members plus everything in the lock.
+///
+/// Resolving against a real universe rather than a regex is what keeps a local module named `agent`
+/// from being recorded as a dependency on the `agent` crate. Underscored, because that is how a crate
+/// is spelled in a path (`bsc-util` the package is `bsc_util` in `use`).
+function crateUniverse() {
+  const out = new Set();
+  const add = (t) => { const m = /^name\s*=\s*"([^"]+)"/m.exec(t); if (m) out.add(m[1].replaceAll('-', '_')); };
+  for (const d of fs.existsSync('crates') ? fs.readdirSync('crates') : []) {
+    const f = path.join('crates', d, 'Cargo.toml');
+    if (fs.existsSync(f)) add(fs.readFileSync(f, 'utf8'));
+  }
+  if (fs.existsSync('src-tauri/Cargo.toml')) add(fs.readFileSync('src-tauri/Cargo.toml', 'utf8'));
+  if (fs.existsSync('Cargo.lock'))
+    for (const m of fs.readFileSync('Cargo.lock', 'utf8').matchAll(/^name = "([^"]+)"/gm))
+      out.add(m[1].replaceAll('-', '_'));
+  return out;
+}
+const CRATES = crateUniverse();
+const NOT_A_CRATE = new Set(['std', 'core', 'alloc', 'crate', 'self', 'super']);
+
+/// The EXTERNAL CRATES one record's code reaches for — the edge `composes` structurally cannot hold.
+///
+/// `composes` is record→record and, measured 2026-09-08, 2,476 of its 2,477 edges stay inside one
+/// crate. But 752 records reach ANOTHER crate, and nothing recorded it — so a closure computed from
+/// `composes` alone is complete for the layer it describes and silent about the layer above it. That
+/// gap is why a record's closure could not be compiled standalone: it was missing `bsc_util`,
+/// `bsc_record`, `serde_json` — every one of them present in the code and absent from the graph.
+///
+/// Tests are excluded deliberately: a dev-dependency is not part of what the record NEEDS to run, and
+/// including it would make every closure drag a test harness behind it.
+export function crateDepsOf(r) {
+  if (!r.id?.endsWith('.rs')) return [];
+  const body = (r.code || '').replace(/#\[cfg\(test\)\]\s*mod tests \{[\s\S]*$/, '');
+  // A record's OWN crate is not a dependency of it. `bsc_graph::x` inside a bsc-graph record is an
+  // absolute self-path, which reads as an external reference and is not one — 18 records did this.
+  const own = r.id.split('--')[0].replaceAll('-', '_');
+  const out = new Set();
+  for (const m of body.matchAll(/(?:^\s*use\s+|(?<![\w:.]))([a-z][a-z0-9_]*)\s*::/gm)) {
+    const c = m[1];
+    if (!NOT_A_CRATE.has(c) && c !== own && CRATES.has(c)) out.add(c);
+  }
+  return [...out].sort();
+}
+
+/// Records whose stored `crateDeps` disagree with what their code says.
+export function crateGaps() {
+  const g = {};
+  for (const r of recs) {
+    if (!r.id?.endsWith('.rs')) continue;
+    const der = crateDepsOf(r), have = r.crateDeps || [];
+    if (der.join(',') !== have.join(',')) g[r.id] = der;
+  }
+  return g;
+}
+
 export function gaps() { const g = {}; for (const r of recs) { const der = derive(r); const have = new Set(r.composes || []); const missing = [...der].filter(x => !have.has(x)); if (missing.length) g[r.id] = missing.sort(); } return g; }
 
 const mode = process.argv[2] || '--report';
-if (mode === '--report') { const g = gaps(); const prod = recs.filter(r => r.role === 'algorithm'); console.log(`missing-relationship records: ${Object.keys(g).length} / ${prod.length} algorithm records`); }
+if (mode === '--report') {
+  const g = gaps(); const prod = recs.filter(r => r.role === 'algorithm');
+  console.log(`missing-relationship records: ${Object.keys(g).length} / ${prod.length} algorithm records`);
+  const cg = crateGaps();
+  const withDeps = recs.filter(r => (r.crateDeps || []).length).length;
+  console.log(`crateDeps: ${withDeps} record(s) carry them · ${Object.keys(cg).length} disagree with their code`);
+}
 else if (mode === '--check') {
   const g = gaps(); const base = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : {};
   const nu = []; for (const [id, miss] of Object.entries(g)) { const b = new Set(base[id] || []); for (const m of miss) if (!b.has(m)) nu.push(`${id} -> ${m}`); }
   if (nu.length) { console.error(`RELATIONSHIP GATE: ${nu.length} NEW missing composes edge(s) not in baseline:`); nu.slice(0, 20).forEach(x => console.error('  ' + x)); process.exit(1); }
-  console.log('relationship gate: no new missing edges');
+  // THE CRATE-DEP HALF IS EXACT, not baselined. `composes` needs a baseline because resolution is
+  // conservative and a genuine gap can pre-exist; a crate dep is read straight off the code, so a
+  // disagreement is always drift and always actionable.
+  const cg = crateGaps();
+  if (Object.keys(cg).length) {
+    console.error(`RELATIONSHIP GATE: ${Object.keys(cg).length} record(s) have stale crateDeps:`);
+    Object.entries(cg).slice(0, 20).forEach(([id, d]) => console.error(`  ${id} -> [${d.join(', ')}]`));
+    console.error('  run `node scripts/graph-relationships.mjs --apply` to refresh them');
+    process.exit(1);
+  }
+  console.log('relationship gate: no new missing edges, crateDeps current');
 }
 else if (mode === '--baseline') { fs.writeFileSync(BASELINE, JSON.stringify(gaps(), null, 2) + '\n'); console.log('baseline written'); }
 else if (mode === '--apply') {
@@ -130,6 +204,17 @@ else if (mode === '--apply') {
   for (const r of recs) { const der = derive(r); if (!der.size) continue; const existing = r.composes || []; const have = new Set(existing); const add = [...der].filter(x => !have.has(x)).sort(); if (add.length) { r.composes = [...existing, ...add]; added += add.length; changed++; } }
   // Through `writeStore`, not `writeFileSync`: the store is SPLIT, and writing the merged
   // document straight back would put all 1,885 records into the monolith beside their own files.
+  // crateDeps are REPLACED, not unioned: they are derived from the code, so a stale entry is wrong
+  // rather than merely extra — a record that stopped using `rusqlite` must stop declaring it.
+  let cd = 0, cdRecs = 0;
+  for (const r of recs) {
+    if (!r.id?.endsWith('.rs')) continue;
+    const der = crateDepsOf(r);
+    if (der.join(',') === (r.crateDeps || []).join(',')) continue;
+    if (der.length) r.crateDeps = der; else delete r.crateDeps;
+    cd += der.length; cdRecs++;
+  }
   writeStore(store, STORE);
-  console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving, composes-only)`);
+  console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving)`);
+  console.log(`crateDeps: ${cd} dependency edge(s) across ${cdRecs} record(s) (replaced, derived from code)`);
 }

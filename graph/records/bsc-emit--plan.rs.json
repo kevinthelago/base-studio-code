@@ -14,5 +14,9 @@
     }
   ],
   "folder": "crates/bsc-emit/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_record",
+    "serde_json"
+  ]
 }

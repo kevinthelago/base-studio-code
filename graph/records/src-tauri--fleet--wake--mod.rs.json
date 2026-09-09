@@ -24,5 +24,15 @@
     {
       "name": "fleet_wake_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "bsc_project",
+    "log",
+    "logs",
+    "plandb",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

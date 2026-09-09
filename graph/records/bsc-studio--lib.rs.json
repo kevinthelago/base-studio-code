@@ -9,5 +9,12 @@
   "composes": [
     "bsc-studio--slug.rs"
   ],
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_json_store",
+    "bsc_sqlite_util",
+    "bsc_util",
+    "serde",
+    "serde_json"
+  ]
 }

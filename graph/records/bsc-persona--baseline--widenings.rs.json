@@ -9,5 +9,8 @@
   "code": "use serde_json::Value;\nuse std::collections::BTreeMap;\nuse super::AXES;\nuse super::tier_rank::tier_rank;\n\n/// Every `(role, axis)` where `table` grants MORE than `baseline`.\n///\n/// Stated separately from whole-row equality so a FAILURE READS CORRECTLY. Equality tells you\n/// something moved; this tells you it moved in the direction that grants more, which is the half that\n/// matters when triaging a red gate under time pressure.\npub fn widenings(table: &BTreeMap<String, Value>, baseline: &BTreeMap<String, Value>) -> Vec<String> {\n    let mut out = Vec::new();\n    for (role, row) in table {\n        let Some(base) = baseline.get(role) else { continue };\n        for axis in AXES {\n            let now = tier_rank(row.get(axis).unwrap_or(&Value::Null));\n            let was = tier_rank(base.get(axis).unwrap_or(&Value::Null));\n            if now > was {\n                out.push(format!(\n                    \"{role}.{axis}: {} → {}\",\n                    base.get(axis).and_then(Value::as_str).unwrap_or(\"none\"),\n                    row.get(axis).and_then(Value::as_str).unwrap_or(\"none\")\n                ));\n            }\n        }\n    }\n    out\n}\n",
   "folder": "crates/bsc-persona/src/baseline",
   "src": "crates/bsc-persona/src/baseline/widenings.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

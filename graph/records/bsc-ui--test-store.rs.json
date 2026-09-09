@@ -17,5 +17,10 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "bsc_component",
+    "bsc_util",
+    "serde_json"
   ]
 }

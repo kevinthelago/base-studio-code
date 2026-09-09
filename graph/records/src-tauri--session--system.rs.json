@@ -18,5 +18,12 @@
     {
       "name": "system_session_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_session",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

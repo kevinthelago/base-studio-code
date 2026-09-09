@@ -17,5 +17,8 @@
   "composes": [
     "src-tauri--session--launch-cmd--parse-launch-config.rs",
     "src-tauri--session--launch-cmd--kind-of.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

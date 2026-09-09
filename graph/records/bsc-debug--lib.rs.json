@@ -7,5 +7,8 @@
   "folder": "crates/bsc-debug/src",
   "src": "crates/bsc-debug/src/lib.rs",
   "composes": [],
-  "feature": "maintenance-bots"
+  "feature": "maintenance-bots",
+  "crateDeps": [
+    "serde"
+  ]
 }

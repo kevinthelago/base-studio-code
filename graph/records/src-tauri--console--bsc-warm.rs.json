@@ -13,5 +13,9 @@
     }
   ],
   "folder": "src-tauri/src/console",
-  "moduleVis": "pub(crate)"
+  "moduleVis": "pub(crate)",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
 }

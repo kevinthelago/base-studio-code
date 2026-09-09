@@ -21,5 +21,12 @@
     {
       "name": "ensure_session_settings"
     }
+  ],
+  "crateDeps": [
+    "bsc_sandbox",
+    "bsc_util",
+    "log",
+    "serde",
+    "serde_json"
   ]
 }

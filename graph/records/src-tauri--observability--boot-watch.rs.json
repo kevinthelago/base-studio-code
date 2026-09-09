@@ -21,5 +21,12 @@
     {
       "name": "boot_failed"
     }
+  ],
+  "crateDeps": [
+    "bsc_util",
+    "errordb",
+    "log",
+    "tauri",
+    "tokio"
   ]
 }

@@ -14,5 +14,10 @@
     }
   ],
   "folder": "crates/bsc-fleet/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "logs",
+    "plandb",
+    "serde"
+  ]
 }

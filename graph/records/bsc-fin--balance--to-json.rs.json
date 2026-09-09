@@ -11,5 +11,8 @@
   "feature": "finance",
   "folder": "crates/bsc-fin/src/balance",
   "src": "crates/bsc-fin/src/balance/to_json.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

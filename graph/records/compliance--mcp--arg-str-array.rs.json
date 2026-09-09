@@ -8,5 +8,8 @@
   "folder": "crates/compliance/src/mcp",
   "src": "crates/compliance/src/mcp/arg_str_array.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

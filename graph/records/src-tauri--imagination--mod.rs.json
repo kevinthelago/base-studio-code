@@ -16,5 +16,10 @@
     {
       "name": "imagination_image"
     }
+  ],
+  "crateDeps": [
+    "base64",
+    "bsc_imagine",
+    "bsc_util"
   ]
 }

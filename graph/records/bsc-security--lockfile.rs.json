@@ -16,5 +16,8 @@
     }
   ],
   "folder": "crates/bsc-security/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

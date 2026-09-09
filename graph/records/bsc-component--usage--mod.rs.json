@@ -10,5 +10,9 @@
   "domain": "bsc-component",
   "folder": "crates/bsc-component/src/usage",
   "src": "crates/bsc-component/src/usage/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
 }

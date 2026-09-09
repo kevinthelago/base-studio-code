@@ -10,5 +10,9 @@
   "domain": "bsc-bluetooth",
   "src": "crates/bsc-bluetooth/src/cli.rs",
   "folder": "crates/bsc-bluetooth/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

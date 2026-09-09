@@ -8,5 +8,9 @@
   "domain": "src-tauri",
   "src": "src-tauri/src/session/mod.rs",
   "folder": "src-tauri/src/session",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_perms",
+    "bsc_util"
+  ]
 }

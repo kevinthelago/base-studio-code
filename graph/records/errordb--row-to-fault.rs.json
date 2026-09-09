@@ -9,5 +9,8 @@
   "code": "//! `row_to_fault` — pure mapping of a fetched `faults` row into a [`crate::Fault`], the crate-root\n//! sibling of the fingerprint helpers already lifted out of `lib.rs`. No IO: the row is already\n//! materialized, so the store's read paths compose this without a database in the test.\nuse crate::Fault;\n\npub(crate) fn row_to_fault(r: &rusqlite::Row) -> rusqlite::Result<Fault> {\n    Ok(Fault {\n        fingerprint: r.get(0)?,\n        stage: r.get(1)?,\n        level: r.get(2)?,\n        title: r.get(3)?,\n        sample_stack: r.get(4)?,\n        source_hint: r.get(5)?,\n        release: r.get(6)?,\n        count: r.get(7)?,\n        first_seen: r.get(8)?,\n        last_seen: r.get(9)?,\n        resolved_at: r.get(10)?,\n    })\n}\n",
   "folder": "crates/errordb/src",
   "src": "crates/errordb/src/row_to_fault.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "rusqlite"
+  ]
 }

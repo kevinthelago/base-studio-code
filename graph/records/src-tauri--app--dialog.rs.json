@@ -19,5 +19,9 @@
     {
       "name": "pick_open_file"
     }
+  ],
+  "crateDeps": [
+    "rfd",
+    "tauri"
   ]
 }

@@ -10,5 +10,8 @@
   "moduleVis": "private",
   "composes": [
     "bsc-publish--render--with-provenance-label.rs"
+  ],
+  "crateDeps": [
+    "plandb"
   ]
 }

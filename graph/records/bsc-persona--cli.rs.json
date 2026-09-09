@@ -14,5 +14,13 @@
     }
   ],
   "folder": "crates/bsc-persona/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_appchan",
+    "bsc_cli_util",
+    "bsc_json_store",
+    "bsc_sqlite_util",
+    "bsc_util",
+    "serde_json"
+  ]
 }

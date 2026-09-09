@@ -17,5 +17,9 @@
     "bsc-util--test-display-name.rs",
     "bsc-util--test-source-ext.rs",
     "bsc-util--ui-activity-line.rs"
+  ],
+  "crateDeps": [
+    "bsc_ui",
+    "logs"
   ]
 }

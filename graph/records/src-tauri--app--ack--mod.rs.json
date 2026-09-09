@@ -17,5 +17,8 @@
   "composes": [
     "src-tauri--app--ack--register.rs",
     "src-tauri--app--ack--unregister.rs"
+  ],
+  "crateDeps": [
+    "tauri"
   ]
 }

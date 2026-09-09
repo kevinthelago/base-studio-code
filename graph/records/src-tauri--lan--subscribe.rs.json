@@ -16,5 +16,15 @@
     }
   ],
   "folder": "src-tauri/src/lan",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_incident",
+    "bsc_lan_sense",
+    "bsc_lan_stream",
+    "bsc_notify",
+    "ed25519_dalek",
+    "log",
+    "serde",
+    "tauri"
+  ]
 }

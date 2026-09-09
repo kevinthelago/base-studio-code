@@ -25,5 +25,8 @@
   "domain": "bsc-util",
   "folder": "crates/bsc-util/src/pane_id",
   "src": "crates/bsc-util/src/pane_id/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "logs"
+  ]
 }

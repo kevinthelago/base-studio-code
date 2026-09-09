@@ -7,5 +7,9 @@
   "folder": "src-tauri/src/platform/fsx",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Sanitize a project key into a filesystem-safe slug.\n///\n/// Must stay byte-for-byte identical to the frontend's paneId sanitization in\n/// Planning.tsx (`replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)`) so the PTY id and\n/// the planning directory always correspond. ASCII-only on purpose — Rust's\n/// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.\npub(crate) fn sanitize_project_key(key: &str) -> String {\n    // DELEGATES to the crate, which is where both key derivations now live so that anything needing\n    // BOTH (`bsc_github::board_state`, matching a persisted record against a local hub) is reachable\n    // from a crate rather than pinned into the app. Semantics frozen; this is a re-export, not a\n    // reimplementation, so the two cannot drift.\n    bsc_project::sanitize_project_key(key)\n}\n"
+  "code": "/// Sanitize a project key into a filesystem-safe slug.\n///\n/// Must stay byte-for-byte identical to the frontend's paneId sanitization in\n/// Planning.tsx (`replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)`) so the PTY id and\n/// the planning directory always correspond. ASCII-only on purpose — Rust's\n/// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.\npub(crate) fn sanitize_project_key(key: &str) -> String {\n    // DELEGATES to the crate, which is where both key derivations now live so that anything needing\n    // BOTH (`bsc_github::board_state`, matching a persisted record against a local hub) is reachable\n    // from a crate rather than pinned into the app. Semantics frozen; this is a re-export, not a\n    // reimplementation, so the two cannot drift.\n    bsc_project::sanitize_project_key(key)\n}\n",
+  "crateDeps": [
+    "bsc_github",
+    "bsc_project"
+  ]
 }

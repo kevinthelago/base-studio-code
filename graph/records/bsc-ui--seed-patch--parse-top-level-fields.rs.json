@@ -12,5 +12,8 @@
   "domain": "bsc-ui",
   "folder": "crates/bsc-ui/src/seed_patch",
   "src": "crates/bsc-ui/src/seed_patch/parse_top_level_fields.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

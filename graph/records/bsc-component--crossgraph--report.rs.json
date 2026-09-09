@@ -10,5 +10,8 @@
     "bsc-component--crossgraph--meter.rs",
     "bsc-component--crossgraph--by-direction.rs"
   ],
-  "code": "use super::*;\n\n/// The meter as JSON — what the CLI prints.\npub fn report(components: &[Value], implementations: &[Value]) -> Value {\n    let refs = meter(components, implementations);\n    serde_json::json!({\n        \"count\": refs.len(),\n        \"byDirection\": by_direction(&refs),\n        \"references\": refs.iter().map(|r| serde_json::json!({\n            \"from\": r.from_id, \"fromPillar\": r.from_pillar,\n            \"toPillar\": r.to_pillar, \"to\": r.to_name, \"spec\": r.spec,\n        })).collect::<Vec<_>>(),\n    })\n}\n"
+  "code": "use super::*;\n\n/// The meter as JSON — what the CLI prints.\npub fn report(components: &[Value], implementations: &[Value]) -> Value {\n    let refs = meter(components, implementations);\n    serde_json::json!({\n        \"count\": refs.len(),\n        \"byDirection\": by_direction(&refs),\n        \"references\": refs.iter().map(|r| serde_json::json!({\n            \"from\": r.from_id, \"fromPillar\": r.from_pillar,\n            \"toPillar\": r.to_pillar, \"to\": r.to_name, \"spec\": r.spec,\n        })).collect::<Vec<_>>(),\n    })\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

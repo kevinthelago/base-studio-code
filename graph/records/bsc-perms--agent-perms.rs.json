@@ -16,5 +16,10 @@
     }
   ],
   "folder": "crates/bsc-perms/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde",
+    "serde_json"
+  ]
 }

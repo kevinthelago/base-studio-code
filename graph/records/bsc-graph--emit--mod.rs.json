@@ -18,5 +18,9 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/emit",
   "src": "crates/bsc-graph/src/emit/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "serde_json"
+  ]
 }

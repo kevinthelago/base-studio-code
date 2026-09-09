@@ -7,5 +7,8 @@
   "folder": "crates/llm/src",
   "src": "crates/llm/src/usage_u64.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

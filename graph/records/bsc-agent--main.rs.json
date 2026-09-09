@@ -7,5 +7,12 @@
   "folder": "crates/bsc-agent/src",
   "src": "crates/bsc-agent/src/main.rs",
   "composes": [],
-  "feature": "console"
+  "feature": "console",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "serde",
+    "serde_json",
+    "tokio"
+  ]
 }

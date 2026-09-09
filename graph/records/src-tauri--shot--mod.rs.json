@@ -19,5 +19,14 @@
     {
       "name": "set_shot_target_rect"
     }
+  ],
+  "crateDeps": [
+    "bsc_debug",
+    "bsc_shot",
+    "log",
+    "tauri",
+    "webkit2gtk",
+    "webview2_com",
+    "windows"
   ]
 }

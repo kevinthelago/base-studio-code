@@ -16,5 +16,12 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "base64",
+    "log",
+    "serde_json",
+    "snow",
+    "tokio"
   ]
 }

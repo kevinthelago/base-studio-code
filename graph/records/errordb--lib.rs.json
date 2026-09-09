@@ -15,5 +15,10 @@
     "errordb--fnv1a-hex.rs",
     "errordb--row-to-fault.rs"
   ],
-  "feature": "observability"
+  "feature": "observability",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde"
+  ]
 }

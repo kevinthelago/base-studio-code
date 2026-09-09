@@ -7,5 +7,10 @@
   "folder": "crates/bsc-shot/src",
   "src": "crates/bsc-shot/src/lib.rs",
   "composes": [],
-  "feature": "maintenance-bots"
+  "feature": "maintenance-bots",
+  "crateDeps": [
+    "bsc_appchan",
+    "bsc_util",
+    "serde"
+  ]
 }

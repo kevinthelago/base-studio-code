@@ -11,5 +11,11 @@
     "bsc-publish--labels-for.rs",
     "bsc-publish--repo-for.rs"
   ],
-  "feature": "github"
+  "feature": "github",
+  "crateDeps": [
+    "bsc_github",
+    "plandb",
+    "serde",
+    "serde_json"
+  ]
 }

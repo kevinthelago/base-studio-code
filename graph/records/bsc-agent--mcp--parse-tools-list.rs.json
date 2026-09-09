@@ -8,5 +8,8 @@
   "folder": "crates/bsc-agent/src/mcp",
   "src": "crates/bsc-agent/src/mcp/parse_tools_list.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

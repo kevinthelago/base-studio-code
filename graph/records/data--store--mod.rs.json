@@ -24,5 +24,8 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[cfg(feature = \"duckdb-store\")]"
+  ],
+  "crateDeps": [
+    "duckdb"
   ]
 }

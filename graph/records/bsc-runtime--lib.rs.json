@@ -7,5 +7,10 @@
   "folder": "crates/bsc-runtime/src",
   "src": "crates/bsc-runtime/src/lib.rs",
   "composes": [],
-  "feature": "design-studio"
+  "feature": "design-studio",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde"
+  ]
 }

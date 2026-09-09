@@ -10,5 +10,9 @@
   "feature": "console",
   "folder": "crates/bsc-agent/src/telemetry",
   "src": "crates/bsc-agent/src/telemetry/mod.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
 }

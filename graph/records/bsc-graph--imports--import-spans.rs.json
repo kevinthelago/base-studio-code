@@ -10,5 +10,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/imports",
   "src": "crates/bsc-graph/src/imports/import_spans.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "tree_sitter_typescript"
+  ]
 }

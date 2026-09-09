@@ -11,5 +11,8 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "bsc_sqlite_util"
   ]
 }

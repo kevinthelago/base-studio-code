@@ -7,5 +7,8 @@
   "folder": "src-tauri/src/sources/data/data_scan",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// The frontend FieldType string for a `bsc_data::FieldType`.\n#[cfg(feature = \"source-stage\")]\npub(crate) fn field_type_str(t: FieldType) -> &'static str {\n    match t {\n        FieldType::String => \"string\",\n        FieldType::Number => \"number\",\n        FieldType::Bool => \"bool\",\n        FieldType::Date => \"date\",\n        FieldType::Money => \"money\",\n        FieldType::Enum => \"enum\",\n        FieldType::Ref => \"ref\",\n    }\n}\n"
+  "code": "use super::*;\n\n/// The frontend FieldType string for a `bsc_data::FieldType`.\n#[cfg(feature = \"source-stage\")]\npub(crate) fn field_type_str(t: FieldType) -> &'static str {\n    match t {\n        FieldType::String => \"string\",\n        FieldType::Number => \"number\",\n        FieldType::Bool => \"bool\",\n        FieldType::Date => \"date\",\n        FieldType::Money => \"money\",\n        FieldType::Enum => \"enum\",\n        FieldType::Ref => \"ref\",\n    }\n}\n",
+  "crateDeps": [
+    "bsc_data"
+  ]
 }

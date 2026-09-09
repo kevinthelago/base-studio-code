@@ -19,5 +19,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/build_facet",
   "src": "crates/bsc-graph/src/build_facet/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

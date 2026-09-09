@@ -17,5 +17,10 @@
   "composes": [
     "src-tauri--project--plan-db--with-suffix.rs",
     "src-tauri--platform--errs.rs"
+  ],
+  "crateDeps": [
+    "log",
+    "plandb",
+    "serde_json"
   ]
 }

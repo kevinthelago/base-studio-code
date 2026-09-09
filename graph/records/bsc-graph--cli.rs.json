@@ -16,5 +16,15 @@
     }
   ],
   "folder": "crates/bsc-graph/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_data",
+    "bsc_graph_store",
+    "bsc_record",
+    "bsc_util",
+    "graph_materialize",
+    "serde",
+    "serde_json"
+  ]
 }

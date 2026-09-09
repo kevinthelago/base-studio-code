@@ -18,5 +18,10 @@
     {
       "name": "worker_end_verdicts"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "log",
+    "serde_json"
   ]
 }

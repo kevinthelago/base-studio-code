@@ -17,5 +17,8 @@
     "lockout",
     "unattended"
   ],
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

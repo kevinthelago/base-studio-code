@@ -7,5 +7,8 @@
   "folder": "crates/bsc-ui/src/tests_harvest",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// The colocated test path for a `src/`-relative module path, if one exists under `root`.\n///\n/// Delegates to [`bsc_util::test_path_for`] (#4126). The pairing moved to the shared crate when the\n/// ALGORITHMS library needed the identical derivation — the same reason `folder_from_src` lives there:\n/// two libraries deriving the same thing from the same input must not drift apart.\npub fn test_path_for(root: &Path, src: &str) -> Option<PathBuf> {\n    bsc_util::test_path_for(root, src)\n}\n"
+  "code": "use super::*;\n\n/// The colocated test path for a `src/`-relative module path, if one exists under `root`.\n///\n/// Delegates to [`bsc_util::test_path_for`] (#4126). The pairing moved to the shared crate when the\n/// ALGORITHMS library needed the identical derivation — the same reason `folder_from_src` lives there:\n/// two libraries deriving the same thing from the same input must not drift apart.\npub fn test_path_for(root: &Path, src: &str) -> Option<PathBuf> {\n    bsc_util::test_path_for(root, src)\n}\n",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

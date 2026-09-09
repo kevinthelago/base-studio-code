@@ -17,5 +17,11 @@
     }
   ],
   "folder": "crates/logs/src/scope",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "log",
+    "serde",
+    "serde_json"
+  ]
 }

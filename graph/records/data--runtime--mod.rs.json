@@ -19,5 +19,9 @@
     }
   ],
   "folder": "crates/data/src/runtime",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

@@ -13,5 +13,11 @@
   "domain": "bsc-imprint",
   "folder": "crates/bsc-imprint/src",
   "src": "crates/bsc-imprint/src/cli.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_json_store",
+    "bsc_util",
+    "serde_json"
+  ]
 }

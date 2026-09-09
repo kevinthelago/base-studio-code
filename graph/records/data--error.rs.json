@@ -8,5 +8,10 @@
   "domain": "data",
   "src": "crates/data/src/error.rs",
   "folder": "crates/data/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "csv",
+    "duckdb",
+    "serde_json"
+  ]
 }

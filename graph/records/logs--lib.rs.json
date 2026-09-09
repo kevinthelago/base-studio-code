@@ -12,5 +12,9 @@
     "logs--is-valid-category.rs",
     "logs--role-of.rs",
     "logs--to-ms.rs"
+  ],
+  "crateDeps": [
+    "bsc_util",
+    "serde"
   ]
 }

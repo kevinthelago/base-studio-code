@@ -10,5 +10,8 @@
   "feature": "console",
   "folder": "crates/bsc-agent/src/mcp",
   "src": "crates/bsc-agent/src/mcp/build_initialize.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

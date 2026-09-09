@@ -7,5 +7,8 @@
   "folder": "crates/bsc-perms/src/write_scope",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// How WIDE a `$BSC_SCOPE_GLOBS` value is, as `bsc_util::scope::scope_verdict` actually reads it.\n///\n/// Ranked by permissiveness rather than by name, because the dangerous state is the one with no name:\n/// an ABSENT variable reads as \"no scope configured\" and ALLOWS. So unset is the widest, a glob set\n/// narrows to those paths, and the sentinel narrows to nothing.\n///\n/// These three are not orderable as VALUES — there is no union of the sentinel with a glob list — which\n/// is why the reconciliation below ranks them instead of merging them.\npub(crate) fn scope_breadth(v: Option<&str>) -> u8 {\n    match v {\n        None => 0,                              // unset — allow-all, the widest\n        Some(s) if s == DENY_ALL => 2,          // the sentinel — writes nothing, the narrowest\n        Some(_) => 1,                           // a glob set\n    }\n}\n"
+  "code": "use super::*;\n\n/// How WIDE a `$BSC_SCOPE_GLOBS` value is, as `bsc_util::scope::scope_verdict` actually reads it.\n///\n/// Ranked by permissiveness rather than by name, because the dangerous state is the one with no name:\n/// an ABSENT variable reads as \"no scope configured\" and ALLOWS. So unset is the widest, a glob set\n/// narrows to those paths, and the sentinel narrows to nothing.\n///\n/// These three are not orderable as VALUES — there is no union of the sentinel with a glob list — which\n/// is why the reconciliation below ranks them instead of merging them.\npub(crate) fn scope_breadth(v: Option<&str>) -> u8 {\n    match v {\n        None => 0,                              // unset — allow-all, the widest\n        Some(s) if s == DENY_ALL => 2,          // the sentinel — writes nothing, the narrowest\n        Some(_) => 1,                           // a glob set\n    }\n}\n",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

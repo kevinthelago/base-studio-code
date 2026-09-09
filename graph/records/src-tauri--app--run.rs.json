@@ -28,5 +28,16 @@
     }
   ],
   "folder": "src-tauri/src/app",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_github",
+    "log",
+    "logs",
+    "rustls",
+    "tauri",
+    "tauri_plugin_opener",
+    "tauri_plugin_single_instance",
+    "tauri_plugin_store",
+    "tokio"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "crates/bsc-sound/src",
   "src": "crates/bsc-sound/src/lib.rs",
   "composes": [],
-  "feature": "sounds"
+  "feature": "sounds",
+  "crateDeps": [
+    "bsc_ui"
+  ]
 }

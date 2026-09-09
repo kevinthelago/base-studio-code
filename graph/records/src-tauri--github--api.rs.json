@@ -39,5 +39,10 @@
     {
       "name": "gist_update"
     }
+  ],
+  "crateDeps": [
+    "bsc_github",
+    "serde_json",
+    "tauri"
   ]
 }

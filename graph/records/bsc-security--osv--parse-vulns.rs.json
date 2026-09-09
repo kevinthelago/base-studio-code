@@ -9,5 +9,8 @@
   "moduleVis": "private",
   "composes": [
     "bsc-security--types--mod.rs"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

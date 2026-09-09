@@ -18,5 +18,9 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/rust_test",
   "src": "crates/bsc-graph/src/rust_test/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "cargo_toml",
+    "serde_json"
+  ]
 }

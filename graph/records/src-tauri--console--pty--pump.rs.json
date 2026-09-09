@@ -18,5 +18,13 @@
     }
   ],
   "folder": "src-tauri/src/console/pty",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "libc",
+    "log",
+    "portable_pty",
+    "serde",
+    "serde_json",
+    "tauri"
+  ]
 }

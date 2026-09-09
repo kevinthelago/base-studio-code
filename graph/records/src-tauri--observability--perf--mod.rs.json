@@ -27,5 +27,13 @@
     {
       "name": "perf_get_recent_samples"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "rusqlite",
+    "serde",
+    "sysinfo",
+    "tauri",
+    "tokio"
   ]
 }

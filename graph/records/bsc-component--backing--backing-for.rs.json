@@ -9,5 +9,8 @@
   "code": "use super::*;\nuse serde_json::Value;\n\n/// Every record whose `src` names `path`. Empty ⇒ the file is not record-backed and the gate ignores it.\n///\n/// Returns ALL matches rather than the first: two records claiming one file is a real (and reportable)\n/// state, and silently picking one would hide it.\npub fn backing_for(records: &[Value], path: &str) -> Vec<Backing> {\n    let field = |v: &Value, k: &str| {\n        v.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).unwrap_or(\"\").to_string()\n    };\n    records\n        .iter()\n        .filter(|r| {\n            let src = field(r, \"src\");\n            !src.is_empty() && same_file(path, &src)\n        })\n        .map(|r| Backing { id: field(r, \"id\"), kit_id: field(r, \"kitId\"), src: field(r, \"src\") })\n        .collect()\n}\n",
   "folder": "crates/bsc-component/src/backing",
   "src": "crates/bsc-component/src/backing/backing_for.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

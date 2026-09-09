@@ -7,5 +7,8 @@
   "folder": "crates/bsc-ui/src/tests_harvest",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// The test file's display name: its FIRST top-level `describe(\"…\")` title, else the file's basename.\n/// Delegates to [`bsc_util::test_display_name`] (#4126).\npub fn display_name(path: &Path, contents: &str) -> String {\n    bsc_util::test_display_name(path, contents)\n}\n"
+  "code": "use super::*;\n\n/// The test file's display name: its FIRST top-level `describe(\"…\")` title, else the file's basename.\n/// Delegates to [`bsc_util::test_display_name`] (#4126).\npub fn display_name(path: &Path, contents: &str) -> String {\n    bsc_util::test_display_name(path, contents)\n}\n",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

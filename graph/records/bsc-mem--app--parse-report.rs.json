@@ -7,5 +7,8 @@
   "folder": "crates/bsc-mem/src/app",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\n/// Pull the measurement JSON out of a harness run's output.\n///\n/// Returns the LAST marked line: a spec may sample repeatedly, and the final reading is the one taken\n/// after the app has settled. Absent marker ⇒ `None`, which the caller reports as a failure to measure\n/// rather than as a zero.\npub fn parse_report(output: &str) -> Option<serde_json::Value> {\n    output\n        .lines()\n        .filter_map(|l| l.trim().strip_prefix(MARKER))\n        .filter_map(|j| serde_json::from_str(j).ok())\n        .next_back()\n}\n"
+  "code": "use super::*;\n\n/// Pull the measurement JSON out of a harness run's output.\n///\n/// Returns the LAST marked line: a spec may sample repeatedly, and the final reading is the one taken\n/// after the app has settled. Absent marker ⇒ `None`, which the caller reports as a failure to measure\n/// rather than as a zero.\npub fn parse_report(output: &str) -> Option<serde_json::Value> {\n    output\n        .lines()\n        .filter_map(|l| l.trim().strip_prefix(MARKER))\n        .filter_map(|j| serde_json::from_str(j).ok())\n        .next_back()\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

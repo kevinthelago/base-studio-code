@@ -26,5 +26,12 @@
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "jsonwebtoken",
+    "log",
+    "reqwest",
+    "serde",
+    "serde_json"
   ]
 }

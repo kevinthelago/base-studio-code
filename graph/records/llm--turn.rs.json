@@ -8,5 +8,9 @@
   "domain": "llm",
   "src": "crates/llm/src/turn.rs",
   "folder": "crates/llm/src",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde",
+    "serde_json"
+  ]
 }

@@ -11,5 +11,15 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[cfg(test)]"
+  ],
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_files",
+    "bsc_fleet",
+    "bsc_mem",
+    "bsc_util",
+    "logs",
+    "plandb",
+    "serde_json"
   ]
 }

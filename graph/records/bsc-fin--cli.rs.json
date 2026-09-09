@@ -46,5 +46,10 @@
     "rust"
   ],
   "moduleVis": "pub",
-  "feature": "finance"
+  "feature": "finance",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "serde_json"
+  ]
 }

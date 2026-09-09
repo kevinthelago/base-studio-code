@@ -10,5 +10,8 @@
   "domain": "bsc-lan-sense",
   "src": "crates/bsc-lan-sense/src/procnet.rs",
   "folder": "crates/bsc-lan-sense/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

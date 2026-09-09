@@ -19,5 +19,16 @@
     }
   ],
   "folder": "crates/bsc-fleet/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_appchan",
+    "bsc_cli_util",
+    "bsc_project",
+    "bsc_sandbox",
+    "bsc_util",
+    "logs",
+    "plandb",
+    "serde",
+    "serde_json"
+  ]
 }

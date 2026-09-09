@@ -10,5 +10,8 @@
   "feature": "github",
   "folder": "crates/bsc-publish/src/render",
   "src": "crates/bsc-publish/src/render/render_issue_body.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "plandb"
+  ]
 }

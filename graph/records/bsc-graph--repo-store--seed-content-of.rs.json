@@ -10,5 +10,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/repo_store",
   "src": "crates/bsc-graph/src/repo_store/seed_content_of.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -30,5 +30,11 @@
     {
       "name": "set_preferred_shell"
     }
+  ],
+  "crateDeps": [
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

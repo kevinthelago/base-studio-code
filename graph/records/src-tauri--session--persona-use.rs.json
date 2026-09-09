@@ -21,5 +21,12 @@
     {
       "name": "persona_whatami_ack"
     }
+  ],
+  "crateDeps": [
+    "bsc_persona",
+    "log",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

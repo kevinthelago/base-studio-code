@@ -16,5 +16,17 @@
   "moduleVis": "private",
   "composes": [
     "src-tauri--platform--errs.rs"
+  ],
+  "crateDeps": [
+    "base64",
+    "futures_util",
+    "log",
+    "rand",
+    "serde",
+    "serde_json",
+    "snow",
+    "tauri",
+    "tokio",
+    "tokio_tungstenite"
   ]
 }

@@ -18,5 +18,11 @@
     }
   ],
   "folder": "src-tauri/src/extensions/skills",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_resolve",
+    "log",
+    "serde_json",
+    "skilldb"
+  ]
 }

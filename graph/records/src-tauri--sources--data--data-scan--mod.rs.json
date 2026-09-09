@@ -29,5 +29,11 @@
     {
       "name": "data_platform_scan"
     }
+  ],
+  "crateDeps": [
+    "bsc_data",
+    "log",
+    "serde",
+    "serde_json"
   ]
 }

@@ -12,5 +12,8 @@
   "domain": "bsc-security",
   "folder": "crates/bsc-security/src/finding",
   "src": "crates/bsc-security/src/finding/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

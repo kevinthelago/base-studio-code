@@ -25,5 +25,15 @@
     {
       "name": "fault_rows_batch"
     }
+  ],
+  "crateDeps": [
+    "errordb",
+    "log",
+    "rand",
+    "rusqlite",
+    "serde",
+    "serde_json",
+    "tauri",
+    "tiny_http"
   ]
 }

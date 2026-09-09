@@ -9,5 +9,8 @@
   "composes": [
     "src-tauri--session--launch--claude-project-dir-name.rs"
   ],
-  "code": "use super::*;\n\n/// The HOST directory holding a caged Claude session's transcripts, for a pane whose sandbox stores\n/// live at `stores_root`.\n///\n/// `history_dir_for` binds `<stores_root>/home/projects` over the guest's `.claude/projects`, and the\n/// caged harness keys the subdirectory by the GUEST cwd (always `/repo`) — never by the host cwd, which\n/// is why the host probe could never find it.\npub(crate) fn caged_claude_transcripts_dir(stores_root: &std::path::Path) -> std::path::PathBuf {\n    stores_root\n        .join(\"home\")\n        .join(\"projects\")\n        .join(claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH))\n}\n"
+  "code": "use super::*;\n\n/// The HOST directory holding a caged Claude session's transcripts, for a pane whose sandbox stores\n/// live at `stores_root`.\n///\n/// `history_dir_for` binds `<stores_root>/home/projects` over the guest's `.claude/projects`, and the\n/// caged harness keys the subdirectory by the GUEST cwd (always `/repo`) — never by the host cwd, which\n/// is why the host probe could never find it.\npub(crate) fn caged_claude_transcripts_dir(stores_root: &std::path::Path) -> std::path::PathBuf {\n    stores_root\n        .join(\"home\")\n        .join(\"projects\")\n        .join(claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH))\n}\n",
+  "crateDeps": [
+    "bsc_sandbox"
+  ]
 }

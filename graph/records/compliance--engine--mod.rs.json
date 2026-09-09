@@ -19,5 +19,8 @@
     }
   ],
   "folder": "crates/compliance/src/engine",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

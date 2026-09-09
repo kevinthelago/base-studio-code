@@ -10,5 +10,8 @@
   "domain": "plandb",
   "folder": "crates/plandb/src/validate",
   "src": "crates/plandb/src/validate/market_dimension_scored.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -7,5 +7,8 @@
   "folder": "crates/bsc-fleet/src/doctor",
   "src": "crates/bsc-fleet/src/doctor/id_findings_for.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "plandb"
+  ]
 }

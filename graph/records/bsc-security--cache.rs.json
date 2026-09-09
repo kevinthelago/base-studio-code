@@ -16,5 +16,11 @@
     }
   ],
   "folder": "crates/bsc-security/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "bsc_util",
+    "rusqlite",
+    "serde_json"
+  ]
 }

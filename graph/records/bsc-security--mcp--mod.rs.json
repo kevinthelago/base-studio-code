@@ -21,5 +21,9 @@
     }
   ],
   "folder": "crates/bsc-security/src/mcp",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "mcp_rpc",
+    "serde_json"
+  ]
 }

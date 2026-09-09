@@ -33,5 +33,8 @@
   "moduleVis": "private",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

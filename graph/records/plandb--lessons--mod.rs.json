@@ -19,5 +19,10 @@
     }
   ],
   "folder": "crates/plandb/src/lessons",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde"
+  ]
 }

@@ -8,5 +8,8 @@
   "folder": "crates/bsc-agent/src/telemetry",
   "src": "crates/bsc-agent/src/telemetry/audit_target.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }

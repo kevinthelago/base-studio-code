@@ -15,5 +15,9 @@
     "#[cfg(test)]"
   ],
   "moduleVis": "private",
-  "feature": "graph-store"
+  "feature": "graph-store",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "serde_json"
+  ]
 }

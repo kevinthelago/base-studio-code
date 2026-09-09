@@ -18,5 +18,8 @@
     "#[cfg(test)]"
   ],
   "moduleVis": "private",
-  "feature": "console"
+  "feature": "console",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

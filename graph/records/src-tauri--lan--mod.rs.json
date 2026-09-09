@@ -14,5 +14,9 @@
     }
   ],
   "folder": "src-tauri/src/lan",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_widget",
+    "tauri"
+  ]
 }

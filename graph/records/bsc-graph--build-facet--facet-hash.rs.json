@@ -8,5 +8,8 @@
   "domain": "bsc-graph",
   "folder": "crates/bsc-graph/src/build_facet",
   "src": "crates/bsc-graph/src/build_facet/facet_hash.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "bsc_cli_util"
+  ]
 }

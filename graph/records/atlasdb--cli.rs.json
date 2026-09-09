@@ -10,5 +10,8 @@
   "name": "cli",
   "role": "algorithm",
   "src": "crates/atlasdb/src/cli.rs",
-  "tech": "rust"
+  "tech": "rust",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

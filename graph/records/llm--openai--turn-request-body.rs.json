@@ -10,5 +10,8 @@
     "llm--openai--build-turn-messages.rs",
     "llm--openai--token-param.rs"
   ],
-  "code": "use super::*;\n\n/// Build the OpenAI `/v1/chat/completions` request body for a tool-using turn.\n/// Pure — unit-testable without I/O (reused by the local provider).\npub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {\n    let tools: Vec<serde_json::Value> = t\n        .tools\n        .iter()\n        .map(|d| serde_json::json!({ \"type\": \"function\", \"function\": tool_decl_inner(d) }))\n        .collect();\n    let mut body = serde_json::json!({\n        \"model\": t.model,\n        \"messages\": build_turn_messages(t),\n    });\n    if !tools.is_empty() {\n        body[\"tools\"] = serde_json::Value::Array(tools);\n    }\n    body[token_param(&t.model)] = serde_json::json!(t.max_tokens);\n    body\n}\n"
+  "code": "use super::*;\n\n/// Build the OpenAI `/v1/chat/completions` request body for a tool-using turn.\n/// Pure — unit-testable without I/O (reused by the local provider).\npub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {\n    let tools: Vec<serde_json::Value> = t\n        .tools\n        .iter()\n        .map(|d| serde_json::json!({ \"type\": \"function\", \"function\": tool_decl_inner(d) }))\n        .collect();\n    let mut body = serde_json::json!({\n        \"model\": t.model,\n        \"messages\": build_turn_messages(t),\n    });\n    if !tools.is_empty() {\n        body[\"tools\"] = serde_json::Value::Array(tools);\n    }\n    body[token_param(&t.model)] = serde_json::json!(t.max_tokens);\n    body\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

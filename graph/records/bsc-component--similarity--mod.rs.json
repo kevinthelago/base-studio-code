@@ -20,5 +20,8 @@
   "domain": "bsc-component",
   "folder": "crates/bsc-component/src/similarity",
   "src": "crates/bsc-component/src/similarity/mod.rs",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

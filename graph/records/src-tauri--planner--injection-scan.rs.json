@@ -18,5 +18,9 @@
     {
       "name": "planner_injection_scan"
     }
+  ],
+  "crateDeps": [
+    "regex",
+    "serde"
   ]
 }

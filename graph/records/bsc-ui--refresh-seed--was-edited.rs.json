@@ -8,5 +8,8 @@
   "folder": "crates/bsc-ui/src/refresh_seed",
   "src": "crates/bsc-ui/src/refresh_seed/was_edited.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "bsc_record"
+  ]
 }

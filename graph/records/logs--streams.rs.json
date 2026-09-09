@@ -7,5 +7,8 @@
   "folder": "crates/logs/src",
   "src": "crates/logs/src/streams.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

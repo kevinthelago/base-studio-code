@@ -18,5 +18,8 @@
     {
       "name": "setup_librarian_workspace"
     }
+  ],
+  "crateDeps": [
+    "serde"
   ]
 }

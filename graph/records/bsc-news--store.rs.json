@@ -16,5 +16,10 @@
     }
   ],
   "folder": "crates/bsc-news/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "bsc_util",
+    "rusqlite"
+  ]
 }

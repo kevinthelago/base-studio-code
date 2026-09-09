@@ -73,5 +73,16 @@
     {
       "name": "pty_set_app_runner"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "bsc_sandbox",
+    "bsc_session",
+    "bsc_storefs",
+    "log",
+    "portable_pty",
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

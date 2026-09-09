@@ -9,5 +9,8 @@
   "composes": [
     "bsc-lan-sense--eve--truncate-marked.rs"
   ],
-  "code": "use super::*;\n\npub(crate) fn str_field(v: &serde_json::Value, key: &str, max: usize) -> Option<String> {\n    v.get(key).and_then(|x| x.as_str()).map(|s| truncate_marked(s, max))\n}\n"
+  "code": "use super::*;\n\npub(crate) fn str_field(v: &serde_json::Value, key: &str, max: usize) -> Option<String> {\n    v.get(key).and_then(|x| x.as_str()).map(|s| truncate_marked(s, max))\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
 }

@@ -18,5 +18,8 @@
     }
   ],
   "folder": "crates/llm/src/routing",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "serde"
+  ]
 }

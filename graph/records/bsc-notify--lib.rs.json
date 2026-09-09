@@ -11,5 +11,10 @@
     "bsc-notify--label-for.rs",
     "bsc-notify--tags-for.rs",
     "bsc-notify--ntfy-message.rs"
+  ],
+  "crateDeps": [
+    "bsc_incident",
+    "reqwest",
+    "serde"
   ]
 }

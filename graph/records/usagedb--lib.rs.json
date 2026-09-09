@@ -7,5 +7,10 @@
   "folder": "crates/usagedb/src",
   "src": "crates/usagedb/src/lib.rs",
   "composes": [],
-  "feature": "observability"
+  "feature": "observability",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde"
+  ]
 }

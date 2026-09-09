@@ -11,5 +11,9 @@
     "bsc-session--caged-agent-conversation-dir.rs",
     "bsc-session--surface-session-kind.rs"
   ],
-  "feature": "fleet"
+  "feature": "fleet",
+  "crateDeps": [
+    "bsc_util",
+    "serde"
+  ]
 }

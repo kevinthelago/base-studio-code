@@ -20,5 +20,8 @@
     }
   ],
   "folder": "crates/bsc-perms/src/write_scope",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util"
+  ]
 }

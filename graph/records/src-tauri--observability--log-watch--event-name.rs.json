@@ -6,5 +6,8 @@
   "code": "/// The Tauri event a stream's change is announced on. MUST stay in sync with the frontend\n/// `logEventName` (`src/shared/lib/core/logsBridge.ts`). Keyed by the CANONICAL stream name\n/// (`logs::canonical_stream`) — `coord`/`activity`/`done`/`ui`/`tool`/….\npub fn event_name(stream: &str) -> String {\n    format!(\"logs://{stream}\")\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn event_name_is_the_canonical_logs_scheme() {\n        assert_eq!(event_name(\"coord\"), \"logs://coord\");\n        assert_eq!(event_name(\"activity\"), \"logs://activity\");\n        assert_eq!(event_name(\"tool\"), \"logs://tool\");\n    }\n}\n",
   "folder": "src-tauri/src/observability/log_watch",
   "src": "src-tauri/src/observability/log_watch/event_name.rs",
-  "moduleVis": "private"
+  "moduleVis": "private",
+  "crateDeps": [
+    "logs"
+  ]
 }

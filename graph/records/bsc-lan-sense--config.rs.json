@@ -14,5 +14,10 @@
     }
   ],
   "folder": "crates/bsc-lan-sense/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_util",
+    "serde",
+    "serde_json"
+  ]
 }

@@ -12,5 +12,8 @@
     "#[cfg(test)]"
   ],
   "moduleVis": "private",
-  "feature": "cli-platform"
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_json_store"
+  ]
 }

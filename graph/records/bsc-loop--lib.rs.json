@@ -7,5 +7,10 @@
   "folder": "crates/bsc-loop/src",
   "src": "crates/bsc-loop/src/lib.rs",
   "composes": [],
-  "feature": "maintenance-bots"
+  "feature": "maintenance-bots",
+  "crateDeps": [
+    "bsc_sqlite_util",
+    "rusqlite",
+    "serde"
+  ]
 }

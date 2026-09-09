@@ -30,5 +30,11 @@
     {
       "name": "reclaim_worktrees"
     }
+  ],
+  "crateDeps": [
+    "bsc_fleet",
+    "log",
+    "serde",
+    "serde_json"
   ]
 }

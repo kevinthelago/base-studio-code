@@ -17,5 +17,11 @@
     }
   ],
   "folder": "crates/bsc-request/src",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_sqlite_util",
+    "serde",
+    "serde_json"
+  ]
 }

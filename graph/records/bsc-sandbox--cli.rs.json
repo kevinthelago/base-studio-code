@@ -12,5 +12,10 @@
   "src": "crates/bsc-sandbox/src/cli.rs",
   "summary": "bsc sandbox replay + repair-hooks — a caged pane's recorded launch argv, and repairing a stale sandbox-only hook path (#135/#188)",
   "tech": "rust",
-  "feature": "security"
+  "feature": "security",
+  "crateDeps": [
+    "bsc_cli_util",
+    "bsc_util",
+    "serde_json"
+  ]
 }

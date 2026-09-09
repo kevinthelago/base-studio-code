@@ -7,5 +7,8 @@
   "folder": "crates/bsc/src/hook",
   "moduleVis": "private",
   "composes": [],
-  "code": "/// Pure: parse the min-severity token, defaulting to `high` (empty/unknown → high).\npub(crate) fn supply_min_from(s: &str) -> bsc_security::Severity {\n    bsc_security::Severity::parse(s).unwrap_or(bsc_security::Severity::High)\n}\n"
+  "code": "/// Pure: parse the min-severity token, defaulting to `high` (empty/unknown → high).\npub(crate) fn supply_min_from(s: &str) -> bsc_security::Severity {\n    bsc_security::Severity::parse(s).unwrap_or(bsc_security::Severity::High)\n}\n",
+  "crateDeps": [
+    "bsc_security"
+  ]
 }

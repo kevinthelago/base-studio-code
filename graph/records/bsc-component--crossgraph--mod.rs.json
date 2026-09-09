@@ -24,5 +24,8 @@
   "moduleVis": "pub",
   "moduleAttrs": [
     "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
   ]
 }

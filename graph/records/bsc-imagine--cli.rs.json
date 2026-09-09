@@ -10,5 +10,12 @@
   "composes": [
     "bsc-imagine--lib.rs",
     "bsc-imagine--store--mod.rs"
+  ],
+  "crateDeps": [
+    "base64",
+    "bsc_cli_util",
+    "bsc_util",
+    "reqwest",
+    "serde_json"
   ]
 }

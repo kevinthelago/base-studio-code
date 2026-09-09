@@ -42,5 +42,8 @@
     {
       "name": "ensure_sandbox_worktree"
     }
+  ],
+  "crateDeps": [
+    "base64"
   ]
 }

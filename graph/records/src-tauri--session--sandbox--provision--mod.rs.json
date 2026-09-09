@@ -35,5 +35,10 @@
     {
       "name": "remove_sandbox"
     }
+  ],
+  "crateDeps": [
+    "serde",
+    "serde_json",
+    "tauri"
   ]
 }

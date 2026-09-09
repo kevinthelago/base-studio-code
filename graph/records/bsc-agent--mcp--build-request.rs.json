@@ -8,5 +8,8 @@
   "folder": "crates/bsc-agent/src/mcp",
   "src": "crates/bsc-agent/src/mcp/build_request.rs",
   "moduleVis": "private",
-  "composes": []
+  "composes": [],
+  "crateDeps": [
+    "serde_json"
+  ]
 }
