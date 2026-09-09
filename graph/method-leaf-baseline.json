@@ -1,5 +1,6 @@
 {
   "app--detached-window.ts": 2,
+  "bsc-session--lib.rs": 9,
   "features--credentials--credentials-workspace.ts": 2,
   "features--credentials--lib--credentials.ts": 9,
   "finance-duplicates.ts": 2,
