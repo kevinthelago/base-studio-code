@@ -1,0 +1,13 @@
+{
+  "id": "logs--notify-cues--notify-tick.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "notify_tick",
+  "code": "use super::*;\n\n/// Decide one tick against a caller's baseline.\n///\n/// `seen` is how many lines the caller has already accounted for, or NEGATIVE for \"not yet\n/// baselined\". Both of those cases, and a log that SHRANK (rotated, replaced, or the window slid past\n/// what the caller had seen), voice nothing and just re-baseline — never voice the backlog. That rule\n/// is why the count comes back with the cues: the caller cannot compute it without the lines, and\n/// shipping the lines to the caller is the thing this exists to stop.\npub fn notify_tick(lines: &[String], seen: i64) -> NotifyTick {\n    let total = lines.len();\n    if seen < 0 || seen as usize > total {\n        return NotifyTick { total, cues: Vec::new() };\n    }\n    NotifyTick { total, cues: cues_for_lines(&lines[seen as usize..]) }\n}\n",
+  "src": "crates/logs/src/notify_cues/notify_tick.rs",
+  "folder": "crates/logs/src/notify_cues",
+  "moduleVis": "private",
+  "composes": [
+    "logs--notify-cues--cues-for-lines.rs"
+  ]
+}

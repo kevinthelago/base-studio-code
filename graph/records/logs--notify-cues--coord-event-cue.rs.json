@@ -1,0 +1,11 @@
+{
+  "id": "logs--notify-cues--coord-event-cue.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "coord_event_cue",
+  "code": "use super::*;\n\n/// The cue one coordination event should sound, or `None` when the event is not voiced.\n///\n/// A landing/merge is `success`, a failure is `error`, a worker pausing for the user (`bsc-wait`) is\n/// `notify`. **Everything else is deliberately SILENT** — `closed`, `ask`, `assign`, `fork`, `brief`\n/// and the rest are not user-facing completions or pauses, and a notifier that voiced every line\n/// would be noise the user turns off, which is the same as having none.\npub fn coord_event_cue(ev: &CoordEvent) -> Option<&'static str> {\n    match ev {\n        CoordEvent::Landed { .. } | CoordEvent::Merged { .. } => Some(\"success\"),\n        CoordEvent::Failed { .. } => Some(\"error\"),\n        CoordEvent::Waiting { .. } => Some(\"notify\"),\n        _ => None,\n    }\n}\n",
+  "src": "crates/logs/src/notify_cues/coord_event_cue.rs",
+  "folder": "crates/logs/src/notify_cues",
+  "moduleVis": "private",
+  "composes": []
+}
