@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-sessions.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_sessions",
+  "src": "crates/bsc-fin/src/cli/render_sessions.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether each connection could be fetched unattended right now.\n///\n/// `NeedsPerson` and `Blocked` are rendered DIFFERENTLY on purpose. One is the design working as\n/// intended — you sign in, everything after is unattended — and the other is something to go and look\n/// at. Printing both as \"failed\" would make the normal case alarming and hide the real one.\npub fn render_sessions(states: &[SessionState], connectors: &[&str], as_of: &str) -> String {\n    let mut out = String::new();\n    for id in connectors {\n        let state = session::state_for(states, id);\n        let verdict = session::may_fetch_unattended(&state, as_of, session::DEFAULT_TTL_HOURS);\n        let (tag, reason) = match &verdict {\n            FetchVerdict::Go => (\"ready\", verdict.reason().to_string()),\n            FetchVerdict::NeedsPerson(r) => (\"your turn\", r.clone()),\n            FetchVerdict::Blocked(r) => (\"BLOCKED\", r.clone()),\n        };\n        out.push_str(&format!(\"  {id} · {tag}\\n      {reason}\\n\"));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

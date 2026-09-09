@@ -1,0 +1,15 @@
+{
+  "id": "bsc-session--valid-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "valid_ids",
+  "src": "crates/bsc-session/src/valid_ids.rs",
+  "folder": "crates/bsc-session/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every KIND stem, for a refusal message. It cannot name the technologies — this process holds no\n/// store — so the refusal names the kinds and the shape, and points at `bsc session list`, which is\n/// answered by the app against the real axis.\npub fn valid_ids() -> Vec<&'static str> {\n    STUDIO_KINDS.iter().map(|k| k.kind).collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "fleet"
+}

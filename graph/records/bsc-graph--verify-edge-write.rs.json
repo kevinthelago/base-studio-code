@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--verify-edge-write.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "verify_edge_write",
+  "src": "crates/bsc-graph/src/verify_edge_write.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--edges-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Confirm an edge write actually LANDED — `sent` is the payload `set_edge` was given, `after` is the\n/// store as RE-READ FROM DISK once the write was persisted.\n///\n/// Request #222: `edge set` reported `{\"ok\":true}` for writes that were not in the store immediately\n/// afterwards — 2 of 55 sequential calls, measured. The runtime store is one shared JSON document that\n/// every writer rewrites WHOLE, so a concurrent session's save silently discards everything added\n/// between its own read and its write. `impl set` and `tests set` both carry `--if-version` for exactly\n/// this; an edge has no `rev` to compare against and there is no `edge history` to read one from, so the\n/// guarantee that IS available is to look and to FAIL rather than to report a write that is not there.\n///\n/// Checks PRESENCE and then every key the write supplied. Presence alone is not enough: the losing half\n/// of the race is just as often \"another session's version of this id is what survived\", and an edge\n/// whose members are somebody else's is a coverage claim over the wrong records rather than a missing one.\n///\n/// Pure, so both failure branches are provable without a real race. Extracted here rather than inlined in\n/// the verb for that reason — a check that can only be exercised by losing a race is a check nobody can\n/// show works.\npub fn verify_edge_write(sent: &Value, after: &Value) -> Result<(), String> {\n    let id = sent.get(\"id\").and_then(Value::as_str).unwrap_or_default();\n    let Some(landed) = edges_of(after)\n        .into_iter()\n        .find(|x| x.get(\"id\").and_then(Value::as_str) == Some(id))\n    else {\n        return Err(format!(\n            \"edge '{id}' is NOT in the store after writing it — a concurrent writer overwrote the whole \\\n             document. Nothing here was corrupted; re-run the same `edge set` command.\"\n        ));\n    };\n    // A null in the payload MEANS \"remove this key\", so an absent key on the landed edge is the write\n    // succeeding, not failing.\n    if let Some(obj) = sent.as_object() {\n        for (k, v) in obj {\n            let got = landed.get(k.as_str());\n            let ok = if v.is_null() { got.is_none() } else { got == Some(v) };\n            if !ok {\n                return Err(format!(\n                    \"edge '{id}' landed WITHOUT the '{k}' this write supplied — a concurrent writer \\\n                     overwrote it between the write and the read-back. Re-run the same `edge set` command.\"\n                ));\n            }\n        }\n    }\n    Ok(())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

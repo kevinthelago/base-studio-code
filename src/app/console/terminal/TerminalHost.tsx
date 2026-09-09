@@ -324,7 +324,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         // TerminalView stays mounted whatever the claims do, so a mount unmounting later (a tear-off, the
         // idle reaper) can never tear a live PTY down through this path.
         // `isFullCapabilitySession` rides alongside the fixed-id check because the DEBUG studio's panes
-        // are per-REQUEST (`debug-studio:req-<id>`) and so are not in `STUDIO_SESSION_PANE_IDS`, which is
+        // are per-REQUEST (`debug-studio:req-<id>`) and so are not app-owned studio panes, which is
         // an exact-match list. The comment above names `DebugSessionMount` as one of the mounts that make
         // this safe — that mount is gone, replaced by `RequestSessionsMount`, whose panes the exact-match
         // check silently stopped covering. The guarantee it relies on still holds for them: every

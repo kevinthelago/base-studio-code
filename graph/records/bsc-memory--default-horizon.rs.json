@@ -1,0 +1,14 @@
+{
+  "id": "bsc-memory--default-horizon.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "default_horizon",
+  "src": "crates/bsc-memory/src/default_horizon.rs",
+  "folder": "crates/bsc-memory/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn default_horizon() -> String {\n    HORIZON_NOW.to_string()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

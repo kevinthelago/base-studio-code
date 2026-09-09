@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--cmd-skip.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_skip",
+  "src": "crates/plandb/src/cli/nouns/cmd_skip.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `skip` — the durable skipped-stage set (#2267). `add <stage>...` skips optional stage(s),\n/// `remove <stage>...` unskips them, and `list` prints the set. A skip is a plain decision (no\n/// fingerprint), so this mirrors `discovery` rather than `confirm`.\npub(crate) fn cmd_skip(args: &Args) -> Result<(), String> {\n    let sub = args.positional.get(1).map(String::as_str).unwrap_or(\"\");\n    let s = open_store(&args.db)?;\n    match sub {\n        \"add\" | \"remove\" => {\n            let stages: Vec<&String> = args.positional.iter().skip(2).collect();\n            if stages.is_empty() {\n                return Err(format!(\"usage: bsc plan skip {sub} <stage>...\"));\n            }\n            let skipping = sub == \"add\";\n            for st in &stages {\n                if skipping {\n                    s.skip_stage(st).map_err(|e| e.to_string())?;\n                } else {\n                    s.unskip_stage(st).map_err(|e| e.to_string())?;\n                }\n            }\n            emit_set_result(args.json, &stages, if skipping { \"skipped\" } else { \"unskipped\" });\n            Ok(())\n        }\n        \"list\" => {\n            let skipped = s.skipped_list().map_err(|e| e.to_string())?;\n            emit_json_or_lines(args.json, &skipped, \"(no skipped stages)\", |_, t| t.clone());\n            Ok(())\n        }\n        other => Err(unknown_sub(args, \"skip\", other)),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

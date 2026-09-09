@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--next-distinct-hue.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "next_distinct_hue",
+  "src": "crates/bsc-ui/src/next_distinct_hue.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Fill ONE new categorical slot coherently (#2634) — the literal no-holes primitive: place the new\n/// hue at the midpoint of the LARGEST circular gap among the hues already in use, so it is as distinct\n/// as possible from every existing colour. Deterministic; returns [`GEN_SEED_HUE`] when none exist.\npub fn next_distinct_hue(existing: &[f64]) -> f64 {\n    let mut hs: Vec<f64> = existing.iter().map(|h| h.rem_euclid(360.0)).collect();\n    if hs.is_empty() {\n        return GEN_SEED_HUE;\n    }\n    hs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));\n    let (mut best_mid, mut best_gap) = (hs[0], -1.0_f64);\n    for i in 0..hs.len() {\n        let a = hs[i];\n        // The wrap segment closes the circle: last hue → first hue + 360°.\n        let b = if i + 1 < hs.len() { hs[i + 1] } else { hs[0] + 360.0 };\n        let gap = b - a;\n        if gap > best_gap {\n            best_gap = gap;\n            best_mid = ((a + b) / 2.0).rem_euclid(360.0);\n        }\n    }\n    best_mid\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

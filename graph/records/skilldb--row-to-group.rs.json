@@ -1,0 +1,18 @@
+{
+  "id": "skilldb--row-to-group.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "row_to_group",
+  "src": "crates/skilldb/src/row_to_group.rs",
+  "folder": "crates/skilldb/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn row_to_group(r: &rusqlite::Row) -> rusqlite::Result<SkillGroup> {\n    Ok(SkillGroup {\n        id: r.get(0)?,\n        name: r.get(1)?,\n        hue: r.get(2)?,\n        skill_ids: json_to_arr(&r.get::<_, String>(3)?),\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "skills",
+  "crateDeps": [
+    "rusqlite"
+  ]
+}

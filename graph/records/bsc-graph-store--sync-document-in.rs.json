@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph-store--sync-document-in.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sync_document_in",
+  "src": "crates/bsc-graph-store/src/sync_document_in.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get-in.rs",
+    "bsc-graph-store--get.rs",
+    "bsc-graph-store--document-in.rs",
+    "bsc-graph-store--same-body.rs"
+  ],
+  "code": "use super::*;\n\n/// [`sync_document`] INTO A LANE — what a session bound to one must call.\n///\n/// Writes landed on `main` no matter which lane a session was bound to, because `save` reached\n/// `sync_document` and that wrote `MAIN` unconditionally. `$BSC_GRAPH_LANE` was honoured on READ\n/// (`document_in`) and by the `lane` verbs and the export, so a lane looked bound and isolated nothing:\n/// every `impl set` from every session still met on `main`, which is exactly the shared-store collision\n/// lanes were built to remove. MEASURED the day it was found: one branch's export pulled in 7 frontend\n/// records it never authored plus a `folder` normalisation across 15 more, all arriving through `main`.\n///\n/// Reads are lane-over-main, so the comparison has to be too: a record the lane has not touched is\n/// compared against MAIN's body, and only a record that actually differs gets a lane row. That is what\n/// keeps a lane the median 4 rows it is supposed to be rather than a copy of the whole graph.\npub fn sync_document_in(\n    conn: &Connection,\n    lane: &str,\n    doc: &Value,\n    by: &str,\n    note: Option<&str>,\n) -> Result<Sync, String> {\n    let mut out = Sync::default();\n    let mut seen: std::collections::BTreeSet<String> = Default::default();\n    for (key, tier) in [(\"implementations\", TIER_IMPL), (\"edges\", TIER_EDGE)] {\n        for rec in doc.get(key).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {\n            let Some(id) = rec.get(\"id\").and_then(Value::as_str) else { continue };\n            seen.insert(id.to_string());\n            let body = import::body_of(rec);\n            // AS THE LANE SEES IT. `get_in` is already lane-over-main, so a record the lane has not\n            // touched compares against MAIN's body and only a real difference mints a lane row — which\n            // is what keeps a lane the median 4 rows rather than a copy of the whole graph.\n            match get_in(conn, lane, id)? {\n                Some(cur) if same_body(&cur, &body) => out.unchanged += 1,\n                Some(_) => {\n                    put_in(conn, lane, id, &body, Write::by(by).note(note).tier(tier))?;\n                    out.changed += 1;\n                }\n                None => {\n                    put_in(conn, lane, id, &body, Write::by(by).note(note).tier(tier))?;\n                    out.added += 1;\n                }\n            }\n        }\n    }\n    let live: Vec<String> = document_in(conn, lane)?\n        .get(\"implementations\")\n        .and_then(Value::as_array)\n        .map(Vec::as_slice)\n        .unwrap_or(&[])\n        .iter()\n        .chain(\n            document_in(conn, lane)?\n                .get(\"edges\")\n                .and_then(Value::as_array)\n                .map(Vec::as_slice)\n                .unwrap_or(&[]),\n        )\n        .filter_map(|r| r.get(\"id\").and_then(Value::as_str).map(str::to_string))\n        .collect();\n    for id in live {\n        if !seen.contains(&id) {\n            remove_in(conn, lane, &id, by, note)?;\n            out.removed += 1;\n        }\n    }\n    Ok(out)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

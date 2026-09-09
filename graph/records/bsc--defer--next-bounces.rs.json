@@ -1,0 +1,11 @@
+{
+  "id": "bsc--defer--next-bounces.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "next_bounces",
+  "src": "crates/bsc/src/defer/next_bounces.rs",
+  "folder": "crates/bsc/src/defer",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Next bounce count: reset on PROGRESS (fewer open than at the last stop), else increment.\n///\n/// `prev_open: None` means there is nothing to compare against — a first stop, or an unreadable\n/// counter. That counts as NO progress, so an unreadable file cannot hold the cap open forever.\npub fn next_bounces(prev_bounces: u32, prev_open: Option<usize>, open: usize) -> u32 {\n    match prev_open {\n        Some(prev) if open < prev => 0,\n        _ => prev_bounces.saturating_add(1),\n    }\n}\n"
+}

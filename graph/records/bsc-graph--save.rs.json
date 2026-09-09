@@ -1,0 +1,20 @@
+{
+  "id": "bsc-graph--save.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "save",
+  "src": "crates/bsc-graph/src/save.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--without-seed-reconcile.rs"
+  ],
+  "code": "use super::*;\n\n/// Persist the graph to the runtime store. Errors when no store path resolves (no home dir).\npub fn save(g: &Value) -> Result<(), String> {\n    // Into the LEDGER when there is one, as a delta — `sync_document` writes only the records that\n    // actually moved, so one `impl set` is one revision rather than a new version of all 2,529.\n    if let Some(db) = graph_db() {\n        if bsc_graph_store::count(&db).unwrap_or(0) > 0 {\n            let owned = without_seed_reconcile(&db, g)?;\n            // INTO THE BOUND LANE. Writing `main` regardless of the binding is what made a lane\n            // isolate nothing — see `bsc_graph_store::sync_document_in`.\n            bsc_graph_store::sync_document_in(\n                &db,\n                &bound_lane(),\n                &owned,\n                &bsc_record::resolve_writer(None),\n                None,\n            )?;\n            return Ok(());\n        }\n    }\n    let p = store_path().ok_or(\"no home dir — cannot persist the knowledge graph\")?;\n    save_at(&p, g)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_graph_store",
+    "bsc_record"
+  ]
+}

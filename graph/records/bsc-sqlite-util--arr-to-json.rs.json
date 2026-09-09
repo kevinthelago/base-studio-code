@@ -1,0 +1,14 @@
+{
+  "id": "bsc-sqlite-util--arr-to-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "arr_to_json",
+  "src": "crates/bsc-sqlite-util/src/arr_to_json.rs",
+  "folder": "crates/bsc-sqlite-util/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Serialize a string list to a JSON array TEXT value for a SQLite column. Infallible in practice\n/// (a `Vec<String>` always serializes) — falls back to `\"[]\"` rather than erroring.\npub fn arr_to_json(v: &[String]) -> String {\n    serde_json::to_string(v).unwrap_or_else(|_| \"[]\".into())\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

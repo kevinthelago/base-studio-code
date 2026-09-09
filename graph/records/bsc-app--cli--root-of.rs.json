@@ -1,0 +1,16 @@
+{
+  "id": "bsc-app--cli--root-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "root_of",
+  "src": "crates/bsc-app/src/cli/root_of.rs",
+  "folder": "crates/bsc-app/src/cli",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-app--cli--flag.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn root_of(args: &[String]) -> Result<PathBuf, String> {\n    repo::app_root(flag(args, \"--root\").as_deref())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

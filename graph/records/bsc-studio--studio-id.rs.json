@@ -1,0 +1,17 @@
+{
+  "id": "bsc-studio--studio-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "studio_id",
+  "src": "crates/bsc-studio/src/studio_id.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-studio--get.rs"
+  ],
+  "code": "use super::*;\n\n/// A studio Value's non-empty string `id`, else `None`.\npub(crate) fn studio_id(v: &Value) -> Option<&str> {\n    v.get(\"id\").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform"
+}

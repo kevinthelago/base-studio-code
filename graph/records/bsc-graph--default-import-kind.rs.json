@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--default-import-kind.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "default_import_kind",
+  "src": "crates/bsc-graph/src/default_import_kind.rs",
+  "folder": "crates/bsc-graph/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn default_import_kind() -> String {\n    \"named\".to_string()\n}\n"
+}

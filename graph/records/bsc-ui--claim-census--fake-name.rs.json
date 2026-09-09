@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--claim-census--fake-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fake_name",
+  "src": "crates/bsc-ui/src/claim_census/fake_name.rs",
+  "folder": "crates/bsc-ui/src/claim_census",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Names that mark a record as carrying stand-in DATA its file never had.\npub(crate) fn fake_name() -> &'static regex::Regex {\n    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    RE.get_or_init(|| {\n        regex::Regex::new(r\"\\b(?:SAMPLE|MOCK|FAKE|DEMO|STUB|FIXTURE)_[A-Z0-9_]+\\b\")\n            .expect(\"fake-name pattern\")\n    })\n}\n",
+  "crateDeps": [
+    "regex"
+  ]
+}

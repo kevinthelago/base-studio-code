@@ -1,0 +1,11 @@
+{
+  "id": "bsc-sqlite-util--trim-or-empty-err.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "trim_or_empty_err",
+  "src": "crates/bsc-sqlite-util/src/trim_or_empty_err.rs",
+  "folder": "crates/bsc-sqlite-util/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Trim `buf` and reject empty/whitespace input — the shared guard both stdin readers run before\n/// parsing. `shape` is appended after `noun` in the error: `\"\"` for a lone object, the array hint for\n/// the object-or-array reader.\npub(crate) fn trim_or_empty_err<'a>(buf: &'a str, noun: &str, shape: &str) -> Result<&'a str, String> {\n    let buf = buf.trim();\n    if buf.is_empty() {\n        return Err(format!(\"expected {noun}{shape} as JSON on stdin\"));\n    }\n    Ok(buf)\n}\n"
+}

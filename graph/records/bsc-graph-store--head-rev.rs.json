@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--head-rev.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "head_rev",
+  "src": "crates/bsc-graph-store/src/head_rev.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--head-rev-in.rs"
+  ],
+  "code": "use super::*;\n\n/// [`head_rev_in`] on `main`.\npub fn head_rev(conn: &Connection, id: &str) -> Result<i64, String> {\n    head_rev_in(conn, MAIN, id)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

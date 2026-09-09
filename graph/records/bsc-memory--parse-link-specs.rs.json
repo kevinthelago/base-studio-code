@@ -1,0 +1,14 @@
+{
+  "id": "bsc-memory--parse-link-specs.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_link_specs",
+  "src": "crates/bsc-memory/src/parse_link_specs.rs",
+  "folder": "crates/bsc-memory/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Parse a `--link` value into TYPED links. Each comma item is `rel:ref`; an item with no colon is a\n/// `related` link to that ref. Case is preserved on the ref; de-duplicated by (rel, ref). So\n/// `--link about:bsc-graph--methods.rs,supersedes:old-id` is two edges, and a bare `--link some-id`\n/// is one `related` edge.\npub fn parse_link_specs(s: &str) -> Vec<Link> {\n    let mut out: Vec<Link> = Vec::new();\n    for raw in s.split(',') {\n        let item = raw.trim();\n        if item.is_empty() {\n            continue;\n        }\n        let link = match item.split_once(':') {\n            Some((rel, target)) if !rel.trim().is_empty() && !target.trim().is_empty() => {\n                Link::new(target.trim(), rel.trim().to_lowercase())\n            }\n            // No usable `rel:` prefix — the whole item is the target, related.\n            _ => Link::new(item, DEFAULT_REL),\n        };\n        if !out.iter().any(|l| l.target == link.target && l.rel == link.rel) {\n            out.push(link);\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

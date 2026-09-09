@@ -1,0 +1,19 @@
+{
+  "id": "bsc-studio--builtin-studios.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "builtin_studios",
+  "src": "crates/bsc-studio/src/builtin_studios.rs",
+  "folder": "crates/bsc-studio/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The packaged built-in studios, parsed from the embedded `src-tauri/data/studios/*.json` (#2894), in\n/// a stable order (by filename). A malformed file is skipped (never poisons the set). Each carries\n/// `\"builtin\": true` in its JSON so the library can tag + protect it.\npub fn builtin_studios() -> Vec<Value> {\n    bsc_util::packaged::read_dir_json(\"studios\")\n        .into_iter()\n        .filter_map(|(_name, body)| serde_json::from_str::<Value>(&body).ok())\n        .collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_util",
+    "serde_json"
+  ]
+}

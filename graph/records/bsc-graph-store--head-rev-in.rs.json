@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--head-rev-in.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "head_rev_in",
+  "src": "crates/bsc-graph-store/src/head_rev_in.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--get.rs"
+  ],
+  "code": "use super::*;\n\n/// The highest rev recorded for `id` IN `lane`, including a tombstone. `0` when the lane has never\n/// written it — which is how a read knows to fall through to main.\npub fn head_rev_in(conn: &Connection, lane: &str, id: &str) -> Result<i64, String> {\n    conn.query_row(\n        \"SELECT COALESCE(MAX(rev), 0) FROM record_revs WHERE id = ?1 AND lane = ?2\",\n        params![id, lane],\n        |r| r.get(0),\n    )\n    .map_err(|e| format!(\"head rev for '{id}' in lane '{lane}': {e}\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

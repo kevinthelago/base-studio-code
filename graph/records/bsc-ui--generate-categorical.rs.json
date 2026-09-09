@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--generate-categorical.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "generate_categorical",
+  "src": "crates/bsc-ui/src/generate_categorical.rs",
+  "folder": "crates/bsc-ui/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-ui--categorical-color.rs"
+  ],
+  "code": "use super::*;\n\n/// Generate `count` maximally-distinct categorical colours (#2634): evenly-spaced OKLCH hues from\n/// `seed_hue`, so N categories are equally vivid and equally spaced around the wheel. Deterministic.\npub fn generate_categorical(seed_hue: f64, count: usize) -> Vec<String> {\n    if count == 0 {\n        return Vec::new();\n    }\n    let step = 360.0 / count as f64;\n    (0..count).map(|i| categorical_color(seed_hue + i as f64 * step)).collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

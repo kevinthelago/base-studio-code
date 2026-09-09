@@ -1,52 +1,12 @@
 {
   "note": "GENERATED from @/app/console/lib/sessionLaunch resolveStartupPromptFreshOnly — do not hand-edit; see the .gen.test.ts",
   "studioPaneIds": [
-    "design-studio:designer-react",
-    "design-studio:designer-react-native",
-    "algorithms-studio:librarian-rust",
-    "algorithms-studio:librarian-typescript",
-    "algorithms-studio:librarian-python",
     "teams-studio:architect",
     "sound-studio:sound-designer",
     "integration-studio:integrator",
     "debug-studio:debugger"
   ],
   "cases": [
-    {
-      "label": "studio session design-studio:designer-react",
-      "paneId": "design-studio:designer-react",
-      "restoreRequested": false,
-      "freshOnly": true,
-      "freshOnlyNonClaude": true
-    },
-    {
-      "label": "studio session design-studio:designer-react-native",
-      "paneId": "design-studio:designer-react-native",
-      "restoreRequested": false,
-      "freshOnly": true,
-      "freshOnlyNonClaude": true
-    },
-    {
-      "label": "studio session algorithms-studio:librarian-rust",
-      "paneId": "algorithms-studio:librarian-rust",
-      "restoreRequested": false,
-      "freshOnly": true,
-      "freshOnlyNonClaude": true
-    },
-    {
-      "label": "studio session algorithms-studio:librarian-typescript",
-      "paneId": "algorithms-studio:librarian-typescript",
-      "restoreRequested": false,
-      "freshOnly": true,
-      "freshOnlyNonClaude": true
-    },
-    {
-      "label": "studio session algorithms-studio:librarian-python",
-      "paneId": "algorithms-studio:librarian-python",
-      "restoreRequested": false,
-      "freshOnly": true,
-      "freshOnlyNonClaude": true
-    },
     {
       "label": "studio session teams-studio:architect",
       "paneId": "teams-studio:architect",
@@ -71,6 +31,20 @@
     {
       "label": "studio session debug-studio:debugger",
       "paneId": "debug-studio:debugger",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session design-studio:designer-react",
+      "paneId": "design-studio:designer-react",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session algorithms-studio:librarian-rust",
+      "paneId": "algorithms-studio:librarian-rust",
       "restoreRequested": false,
       "freshOnly": true,
       "freshOnlyNonClaude": true

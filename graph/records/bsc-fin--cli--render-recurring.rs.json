@@ -1,0 +1,17 @@
+{
+  "id": "bsc-fin--cli--render-recurring.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_recurring",
+  "src": "crates/bsc-fin/src/cli/render_recurring.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--cli--clip.rs"
+  ],
+  "code": "use super::*;\n\n/// The standing charges, ANNUALISED.\n///\n/// The annual figure leads every line because that is the one that prompts action: \"$14.99\" reads as\n/// nothing and \"$179.88 a year\" reads as a decision. Same charge.\n///\n/// A LAPSED charge is shown rather than filtered — it either stopped or is about to land, and those\n/// want opposite responses, so the reader decides which.\npub fn render_recurring(rs: &[recurring::Recurring], live_total: crate::money::Money, txns: &[crate::txn::Txn], notes: &[String]) -> String {\n    let mut out = String::new();\n    if rs.is_empty() {\n        // Nothing found is TWO different situations, and saying which one costs a line.\n        out.push_str(if txns.is_empty() {\n            \"no transactions read yet — `bsc fin inbox --ingest` first\\n\"\n        } else {\n            \"no repeating charge found in what has been read\\n\"\n        });\n        for n in notes {\n            out.push_str(&format!(\"  · {n}\\n\"));\n        }\n        return out;\n    }\n    out.push_str(&format!(\"{} standing charge(s) · {} a year, live\\n\\n\", rs.len(), crate::money::format_minor(live_total.minor)));\n    for r in rs {\n        out.push_str(&format!(\n            \"  {:>12} /yr  {:<22} {:<10} {:>10} each  {}\\n\",\n            crate::money::format_minor(r.annualised.minor),\n            // The LABEL, not the key — a person recognises \"NETFLIX.COM\", not \"netflix\".\n            clip(&r.label, 22),\n            r.cadence.label(),\n            crate::money::format_minor(r.typical.minor),\n            if r.lapsed { \"LAPSED — cancelled, or about to hit\" } else { \"\" },\n        ));\n        // Both scores are reported whenever either is soft. A utility recurs while its amount moves,\n        // and hiding that would hide the charge rather than the uncertainty.\n        if r.regularity < 0.9 || r.amount_stability < 0.9 {\n            out.push_str(&format!(\n                \"               regularity {:.2} · amount stability {:.2} · {} seen since {}\\n\",\n                r.regularity, r.amount_stability, r.occurrences, r.first_seen\n            ));\n        }\n    }\n    for n in notes {\n        out.push_str(&format!(\"\\n  · {n}\\n\"));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

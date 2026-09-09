@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--lane-conflicts.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lane_conflicts",
+  "src": "crates/bsc-graph-store/src/lane_conflicts.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--lane-changes.rs"
+  ],
+  "code": "use super::*;\n\n/// The records that cannot land because main moved under them.\n///\n/// A CONFLICT IS ONE RECORD, and that is the difference this whole migration buys. It used to be a\n/// 27 MB file with markers in it; it is now \"lane wrote `x.rs` from main rev 5, main is at rev 7\", with\n/// base, ours and theirs all three still readable in the ledger.\npub fn lane_conflicts(conn: &Connection, lane: &str) -> Result<Vec<LaneChange>, String> {\n    Ok(lane_changes(conn, lane)?.into_iter().filter(|c| c.conflicted).collect())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

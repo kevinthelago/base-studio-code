@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-viable.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_viable",
+  "src": "crates/bsc-fin/src/cli/render_viable.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The income ladder — four tiers, on the WORST month.\n///\n/// The tiers are printed in order with what each one gives up, because the trade is the answer: a\n/// reader who sees only \"survival: 2460.00\" does not know they just agreed to cancel everything.\npub fn render_viable(v: &viable::ViableIncome, read_notes: &[String]) -> String {\n    let mut out = String::new();\n    let m = |x: i64| crate::money::format_minor(x);\n    let gap = v.gaps.as_ref().and_then(|gs| gs.iter().find(|g| g.tier == viable::Tier::Current));\n    let verdict = match gap {\n        None => String::new(),\n        Some(g) if g.clears => \" — the low income band already clears it\".to_string(),\n        Some(g) => format!(\" — the low income band is short by {}\", m(g.shortfall.minor)),\n    };\n    out.push_str(&format!(\n        \"{} a month keeps everything current, measured on {} — the worst month, not the average{}\\n\\n\",\n        m(v.headline.worst_month.minor),\n        v.headline.worst_month_name,\n        verdict\n    ));\n    out.push_str(\"  tier         usual month    WORST month   shortfall\\n\");\n    for t in &v.tiers {\n        let gap = v.gaps.as_ref().and_then(|gs| gs.iter().find(|g| g.tier == t.tier));\n        let short = match gap {\n            None => String::new(),\n            Some(g) if g.clears => \"clears\".to_string(),\n            Some(g) => m(g.shortfall.minor),\n        };\n        out.push_str(&format!(\"  {:<12}{:>12}   {:>12}   {:>9}\\n\", t.tier.label(), m(t.typical_month.minor), m(t.worst_month.minor), short));\n    }\n    out.push_str(&format!(\"\\n  the worst month is {}\\n\", v.headline.worst_month_name));\n\n    // What each tier GIVES UP is the half a bare number hides.\n    for t in &v.tiers {\n        if t.excludes.is_empty() {\n            continue;\n        }\n        out.push_str(&format!(\"\\n  {} gives up:\\n\", t.tier.label()));\n        for e in &t.excludes {\n            out.push_str(&format!(\"    · {e}\\n\"));\n        }\n    }\n\n    if !viable::ladder_is_ordered(v) {\n        // Stated rather than silently rendered: a ladder out of order means the tiers were built\n        // from figures that do not compose, and every number above is suspect.\n        out.push_str(\"\\n  WARNING: the ladder is out of order — a tier costs less than the one below it\\n\");\n    }\n    out.push_str(\"\\nWhat this is standing on:\\n\");\n    for n in &v.notes {\n        out.push_str(&format!(\"  · {n}\\n\"));\n    }\n    for n in read_notes {\n        out.push_str(&format!(\"  · {n}\\n\"));\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

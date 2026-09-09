@@ -1,0 +1,15 @@
+{
+  "id": "bsc-session--network-slug-with-tail.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "network_slug_with_tail",
+  "src": "crates/bsc-session/src/network_slug_with_tail.rs",
+  "folder": "crates/bsc-session/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The shared parse behind both network-session grammars.\npub(crate) fn network_slug_with_tail<'a>(id: &'a str, tail: &str) -> Option<&'a str> {\n    let rest = id.strip_prefix(NETWORK_PREFIX)?;\n    let slug = rest.strip_suffix(tail)?;\n    // VALIDATED, not accepted: this becomes a pane key and a directory name, so a separator or a space\n    // would reach somewhere it should not.\n    if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {\n        return None;\n    }\n    Some(slug)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "fleet"
+}

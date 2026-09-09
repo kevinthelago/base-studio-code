@@ -1,0 +1,17 @@
+{
+  "id": "bsc--defer--counter-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "counter_path",
+  "src": "crates/bsc/src/defer/counter_path.rs",
+  "folder": "crates/bsc/src/defer",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The persisted counter for one pane: `bounces open`.\n///\n/// `open` is stored alongside so the NEXT stop can tell progress from spinning — if fewer issues are\n/// outstanding than last time, the worker is working and the count resets.\npub(crate) fn counter_path(pane: &str) -> Option<std::path::PathBuf> {\n    let safe: String = pane\n        .chars()\n        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })\n        .collect();\n    Some(bsc_util::bsc_base_dir()?.join(\"defer\").join(format!(\"{safe}.txt\")))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

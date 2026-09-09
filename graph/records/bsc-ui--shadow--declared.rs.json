@@ -1,0 +1,17 @@
+{
+  "id": "bsc-ui--shadow--declared.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "declared",
+  "src": "crates/bsc-ui/src/shadow/declared.rs",
+  "folder": "crates/bsc-ui/src/shadow",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `/src/…` paths the catalogue declares, in source order.\npub fn declared(text: &str) -> Vec<String> {\n    static RE: OnceLock<regex::Regex> = OnceLock::new();\n    let re = RE.get_or_init(|| regex::Regex::new(r#\"file:\\s*\"(/src/[^\"]+)\"\"#).expect(\"declared\"));\n    re.captures_iter(text).map(|c| c[1].to_string()).collect()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "regex"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--request-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "request_id",
+  "src": "crates/plandb/src/cli/nouns/request_id.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `<id>` positional shared by the by-id request verbs, parsed with a usage-shaped error.\npub(crate) fn request_id(args: &Args, verb: &str) -> Result<i64, String> {\n    args.positional\n        .get(2)\n        .ok_or_else(|| format!(\"usage: bsc plan request {verb} <id>\"))?\n        .parse::<i64>()\n        .map_err(|_| format!(\"request id must be a number (usage: bsc plan request {verb} <id>)\"))\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

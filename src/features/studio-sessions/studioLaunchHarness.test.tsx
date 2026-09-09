@@ -28,11 +28,11 @@ import { render, cleanup, waitFor } from "@testing-library/react";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { StudioSessionMount } from "@/features/studio-sessions/StudioSessionMount";
 import { NetworkArchitectMount, networkArchitectPaneId } from "@/features/studio-sessions/NetworkArchitectMount";
-import { STUDIO_SESSIONS, studioInitCmd } from "@/features/studio-sessions/lib/studioSessions";
+import { studioSessionDef, studioInitCmd } from "@/features/studio-sessions/lib/studioSessions";
 import { useAppStore } from "@/store";
 import { invoke } from "@tauri-apps/api/core";
 
-const DEF = STUDIO_SESSIONS.designerReact;
+const DEF = studioSessionDef("designerReact")!;
 const NETWORK = "network-finance";
 
 vi.mock("@xterm/xterm", () => {

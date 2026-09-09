@@ -1,0 +1,15 @@
+{
+  "id": "bsc-graph-store--same-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "same_body",
+  "src": "crates/bsc-graph-store/src/same_body.rs",
+  "folder": "crates/bsc-graph-store/src",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether two bodies say the same thing, ignoring key order.\n///\n/// `preserve_order` is on in this workspace, so `==` on `Value` reports a difference for records that\n/// merely round-tripped through a map with a different insertion order — which would make every save a\n/// new version of everything, the exact thing [`sync_document`] exists to avoid.\npub(crate) fn same_body(a: &Value, b: &Value) -> bool {\n    fn canon(v: &Value) -> String {\n        match v {\n            Value::Object(m) => {\n                let mut keys: Vec<&String> = m.keys().collect();\n                keys.sort();\n                format!(\n                    \"{{{}}}\",\n                    keys.iter().map(|k| format!(\"{k}:{}\", canon(&m[*k]))).collect::<Vec<_>>().join(\",\")\n                )\n            }\n            Value::Array(a) => format!(\"[{}]\", a.iter().map(canon).collect::<Vec<_>>().join(\",\")),\n            other => other.to_string(),\n        }\n    }\n    canon(a) == canon(b)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--cli--render-inbox.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_inbox",
+  "src": "crates/bsc-fin/src/cli/render_inbox.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The inbox report, and what to do about each file.\n///\n/// SEPARATE FROM THE IO for the same reason `render_text` is: what this says is the whole product of\n/// the verb, and a verb whose output nothing can assert on has no test.\npub fn render_inbox(files: &[inbox::InboxFile]) -> String {\n    inbox::render(files)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

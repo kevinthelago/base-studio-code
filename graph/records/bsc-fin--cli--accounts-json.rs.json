@@ -1,0 +1,18 @@
+{
+  "id": "bsc-fin--cli--accounts-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "accounts_json",
+  "src": "crates/bsc-fin/src/cli/accounts_json.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The registry AND its gaps, as one value — because a caller that got the accounts without knowing\n/// what is missing from them would compute a confident number over a partial picture.\npub fn accounts_json(accounts: &[Account], rejected: &[String]) -> serde_json::Value {\n    let (known, possible) = account::completeness(accounts);\n    serde_json::json!({\n        \"accounts\": account::all_to_json(accounts),\n        \"gaps\": account::gaps(accounts).iter().map(|g| serde_json::json!({\n            \"account\": g.account, \"field\": g.field, \"blocks\": g.blocks,\n        })).collect::<Vec<_>>(),\n        \"known\": known,\n        \"knowable\": possible,\n        \"unreadable\": rejected,\n    })\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

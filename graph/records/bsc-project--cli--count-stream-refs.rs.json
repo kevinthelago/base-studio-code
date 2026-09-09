@@ -1,0 +1,16 @@
+{
+  "id": "bsc-project--cli--count-stream-refs.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "count_stream_refs",
+  "src": "crates/bsc-project/src/cli/count_stream_refs.rs",
+  "folder": "crates/bsc-project/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// How many distinct issue refs this project's fleet streams OWN (#4118).\n///\n/// `fleet_streams.data` is a JSON blob per stream carrying `issues: [\"#3898\", …]`. De-duplicated across\n/// streams: two streams naming the same ref are one piece of work, and double-counting would inflate\n/// every denominator on the board.\npub(crate) fn count_stream_refs(conn: &rusqlite::Connection) -> usize {\n    let Ok(mut stmt) = conn.prepare(\"SELECT data FROM fleet_streams\") else { return 0 };\n    let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else { return 0 };\n    let mut refs = std::collections::HashSet::new();\n    for raw in rows.flatten() {\n        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };\n        for r in v.get(\"issues\").and_then(serde_json::Value::as_array).into_iter().flatten() {\n            if let Some(s) = r.as_str().map(|s| s.trim().trim_start_matches('#')) {\n                if !s.is_empty() {\n                    refs.insert(s.to_string());\n                }\n            }\n        }\n    }\n    refs.len()\n}\n",
+  "feature": "cli-platform",
+  "crateDeps": [
+    "rusqlite",
+    "serde_json"
+  ]
+}
