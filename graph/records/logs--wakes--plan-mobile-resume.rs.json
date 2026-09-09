@@ -1,0 +1,14 @@
+{
+  "id": "logs--wakes--plan-mobile-resume.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_mobile_resume",
+  "code": "use super::*;\n\n/// Decide how to honour ONE mobile coordination request for `session`, from the folded coordination\n/// state and the waiters whose dependencies have landed (`ready`).\n///\n/// Returns `None` when the session is not in a state the request can resolve. That is the security\n/// property, not a convenience: the phone names a session id, and a plan is only ever produced for a\n/// session the LOG shows parked — never for an arbitrary one a peer asked about.\n///\n/// * `approve` resolves ONLY a session paused for the user (`state.waiting`). A mere dependency\n///   waiter is not a gate anyone paused, so approving one would resume a session on nobody's word.\n/// * `wake` resolves a ready dependency waiter, and also a user-paused session (a phone \"wake\" on a\n///   paused gate is a reasonable resume) — never an unknown session.\n///\n/// **A session that is both ready and paused takes the FRESH path.** A landed dependency is context\n/// the live pane does not have, so it is relaunched rather than nudged; the `ready` arm is checked\n/// first for exactly that reason and the case has its own test.\npub fn plan_mobile_resume(\n    kind: CoordControlKind,\n    session: &str,\n    state: &CoordState,\n    ready: &[Waiter],\n) -> Option<MobileResume> {\n    let paused = state.waiting.iter().find(|w| w.session == session);\n    let inject = |w: &WaitingSession| MobileResume {\n        session: session.to_string(),\n        prompt: waiting_wake_prompt(w),\n        via: ResumeVia::Inject,\n    };\n    match kind {\n        CoordControlKind::Approve => paused.map(inject),\n        CoordControlKind::Wake => match ready.iter().find(|w| w.session == session) {\n            Some(w) => Some(MobileResume {\n                session: session.to_string(),\n                prompt: wake_prompt_for(w, state),\n                via: ResumeVia::Fresh,\n            }),\n            None => paused.map(inject),\n        },\n    }\n}\n",
+  "src": "crates/logs/src/wakes/plan_mobile_resume.rs",
+  "folder": "crates/logs/src/wakes",
+  "moduleVis": "private",
+  "composes": [
+    "logs--wakes--wake-prompt-for.rs",
+    "logs--wakes--waiting-wake-prompt.rs"
+  ]
+}
