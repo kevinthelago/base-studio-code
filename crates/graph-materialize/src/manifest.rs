@@ -464,12 +464,37 @@ fn encode(v: &serde_json::Value) -> Result<String, String> {
         .map_err(|e| format!("cannot serialize: {e}"))
 }
 
-/// Write one manifest record per crate, from the crate's `Cargo.toml`.
+/// Options for [`sync_records`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncOptions {
+    pub dry_run: bool,
+    /// Delete a record whose manifest is absent from disk.
+    ///
+    /// OFF by default, and that default is load-bearing. See the refusal in [`sync_records`].
+    pub prune: bool,
+}
+
+/// IMPORT manifests into records — the MIGRATION direction, file to record.
 ///
-/// Only rewrites a file whose bytes actually change, so a sync of one crate does not restat every
-/// other into a diff. A record whose crate has gone is removed, because a manifest record for a crate
-/// that does not exist would materialize a phantom.
-pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, String> {
+/// This is not the authoring path and must not be used as one. The records are the source of truth
+/// and `Cargo.toml` is generated from them (`scripts/emit-manifests.mjs`); this exists to bring an
+/// existing file INTO the store, which is how the original 82 were created and how a vendored crate
+/// would arrive. To create a crate, write a RECORD — see [`new_crate_record`].
+///
+/// # It refuses rather than prunes, and that refusal prevents total data loss
+///
+/// A file-derived sync CANNOT distinguish "this crate was deleted" from "this crate has not been
+/// emitted yet". Since the flip those are the same observation — a missing `Cargo.toml` — and they
+/// want opposite actions.
+///
+/// MEASURED 2026-09-09 on a fresh-clone-shaped tree: 56 of 80 crate directories contain nothing but
+/// their (now untracked) manifest, so those directories DO NOT EXIST in a fresh checkout at all. An
+/// earlier version of this function removed records for crates it could not find, and in that tree it
+/// reported `78 removed` — of 82 records that are now the only copy of the manifest. So a missing
+/// manifest is a REFUSAL by default, and pruning is opt-in for the caller who has actually deleted a
+/// crate and can say so.
+pub fn sync_records(repo_root: &Path, opts: SyncOptions) -> Result<SyncReport, String> {
+    let dry_run = opts.dry_run;
     let dir = manifests_dir(repo_root);
     if !dry_run {
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -505,8 +530,11 @@ pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, Strin
             APP => repo_root.join(APP).join("Cargo.toml"),
             _ => crates.join(&d).join("Cargo.toml"),
         };
-        let text = std::fs::read_to_string(&toml)
-            .map_err(|e| format!("cannot read {}: {e}", toml.display()))?;
+        // A manifest that is not on disk is simply not IMPORTED — it is not an error here. Since the
+        // flip that is the normal state of a fresh checkout, and erroring would replace the refusal
+        // below (which explains the situation and how to fix it) with a bare "cannot read Cargo.toml"
+        // naming a file the reader is not expecting to exist.
+        let Ok(text) = std::fs::read_to_string(&toml) else { continue };
         let m = Manifest::parse(&text).map_err(|e| format!("{}: {e}", toml.display()))?;
         let src = match d.as_str() {
             WORKSPACE => "Cargo.toml".to_string(),
@@ -526,6 +554,7 @@ pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, Strin
         report.written.push(d);
     }
 
+    let mut orphaned: Vec<String> = Vec::new();
     for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
         let p = e.path();
         if p.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -533,13 +562,130 @@ pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, Strin
         }
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
         if !seen.contains(&stem) {
-            if !dry_run {
-                std::fs::remove_file(&p).map_err(|e| format!("cannot remove {}: {e}", p.display()))?;
-            }
-            report.removed.push(stem);
+            orphaned.push(stem);
         }
     }
+    orphaned.sort();
+
+    if !orphaned.is_empty() && !opts.prune {
+        return Err(format!(
+            "{} record(s) have no manifest on disk: {}{}\n\n\
+             REFUSING, because this cannot tell a DELETED crate from an UN-EMITTED one — since the \
+             manifests became generated and untracked, both look like a missing file, and 56 of 80 \
+             crate directories do not exist at all in a fresh checkout. Pruning here once reported 78 \
+             removals of 82 records that are the only copy.\n\n\
+             Emit first (`npm run emit:manifests`) and re-run; pass --prune only if you really did \
+             delete these crates.",
+            orphaned.len(),
+            orphaned.iter().take(6).cloned().collect::<Vec<_>>().join(", "),
+            if orphaned.len() > 6 { format!(", … and {} more", orphaned.len() - 6) } else { String::new() },
+        ));
+    }
+    for stem in orphaned {
+        if !dry_run {
+            let p = dir.join(format!("{stem}.json"));
+            std::fs::remove_file(&p).map_err(|e| format!("cannot remove {}: {e}", p.display()))?;
+        }
+        report.removed.push(stem);
+    }
     Ok(report)
+}
+
+// ── The authoring direction: create a crate BY CREATING A RECORD ────────────────────────────────
+//
+// The point of the migration, and the half that was missing while `sync_records` was the only path
+// in. Importing a file is a MIGRATION; this is how a crate comes into existence now.
+
+/// The workspace `members` entries, parsed out of the workspace record.
+pub fn workspace_members(repo_root: &Path) -> Result<Vec<String>, String> {
+    let p = manifest_record_path(repo_root, WORKSPACE);
+    let text = std::fs::read_to_string(&p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
+    let m = Manifest::from_json(&v)?;
+    let e = m
+        .section("[workspace]")
+        .and_then(|s| s.entries.iter().find(|e| e.key == "members"))
+        .ok_or("the workspace record has no `members`")?;
+    // The value is a TOML array of strings on one line, which is also valid JSON.
+    let arr: Vec<String> = serde_json::from_str(&e.value)
+        .map_err(|err| format!("`members` is not a parseable array: {err}"))?;
+    Ok(arr)
+}
+
+/// Author a NEW crate as a record, and register it in the workspace.
+///
+/// This is the only supported way to add a crate now. It writes no `Cargo.toml` — the emit does that
+/// — so the record is the thing that exists first, which is what "the database is authoritative"
+/// has to mean in practice rather than only in the read direction.
+///
+/// Registration is part of the SAME call on purpose: a crate record without a `members` entry is
+/// invisible to cargo, and a `members` entry without a record makes every cargo command fail on a
+/// manifest that no emit will ever produce. Those two halves drifting is the failure this repo would
+/// otherwise discover at the next build, so they are written together or not at all.
+pub fn new_crate_record(repo_root: &Path, name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(format!(
+            "`{name}` is not a usable crate directory name — lowercase letters, digits and dashes only"
+        ));
+    }
+    let dest = manifest_record_path(repo_root, name);
+    if dest.exists() {
+        return Err(format!("{} already has a manifest record at {}", name, dest.display()));
+    }
+    let members = workspace_members(repo_root)?;
+    let entry = format!("crates/{name}");
+    if members.contains(&entry) {
+        return Err(format!("the workspace already lists `{entry}` but it has no record — fix that first"));
+    }
+
+    // The FLOOR shape: a crate whose whole source lives in the graph owns no file but this manifest,
+    // and after the flip it does not own that either. `build` and `[lib] path` are what point it at
+    // the shared materializer and the shared crate root.
+    let lib = name.replace('-', "_");
+    let toml = format!(
+        "[package]\n\
+         name = \"{name}\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2021\"\n\
+         build = \"../graph-materialize/build.rs\"\n\
+         \n\
+         [lib]\n\
+         name = \"{lib}\"\n\
+         # THE SHARED CRATE ROOT — this crate owns no source file at all.\n\
+         path = \"../graph-materialize/crate_root.rs\"\n\
+         \n\
+         [dependencies]\n\
+         \n\
+         [build-dependencies]\n\
+         # build.rs parses the committed graph store directly.\n\
+         serde_json = \"1\"\n"
+    );
+    let m = Manifest::parse(&toml).map_err(|e| format!("the generated floor manifest does not parse: {e}"))?;
+    let body = encode(&m.to_json(&format!("crates/{name}/Cargo.toml")))?;
+
+    // Register FIRST in memory, write both, so a failure cannot leave a half-registered crate.
+    let wsp = manifest_record_path(repo_root, WORKSPACE);
+    let wtext = std::fs::read_to_string(&wsp).map_err(|e| format!("cannot read {}: {e}", wsp.display()))?;
+    let wv: serde_json::Value = serde_json::from_str(&wtext).map_err(|e| format!("{}: {e}", wsp.display()))?;
+    let mut wm = Manifest::from_json(&wv)?;
+    let me = wm
+        .sections
+        .iter_mut()
+        .find(|s| s.name == "[workspace]")
+        .and_then(|s| s.entries.iter_mut().find(|e| e.key == "members"))
+        .ok_or("the workspace record has no `members`")?;
+    // Textual insert before the closing bracket, so every other byte of the line is untouched — the
+    // list is not sorted (it is historical) and re-serializing it would reorder 80 entries into a
+    // diff that hides the one real change.
+    let close = me.value.rfind(']').ok_or("`members` has no closing bracket")?;
+    me.value = format!("{}, \"{entry}\"{}", &me.value[..close], &me.value[close..]);
+    let wbody = encode(&wm.to_json("Cargo.toml"))?;
+
+    std::fs::create_dir_all(manifests_dir(repo_root))
+        .map_err(|e| format!("cannot create the manifests dir: {e}"))?;
+    std::fs::write(&dest, &body).map_err(|e| format!("cannot write {}: {e}", dest.display()))?;
+    std::fs::write(&wsp, &wbody).map_err(|e| format!("cannot write {}: {e}", wsp.display()))?;
+    Ok(dest)
 }
 
 /// Read every stored manifest record back, as `(crate dir, manifest)`.
@@ -1106,7 +1252,8 @@ mod store_tests {
     /// churns every file on every run and a real change is invisible in the diff.
     #[test]
     fn a_sync_of_a_synced_tree_writes_nothing() {
-        let r = sync_records(repo(), true).expect("dry run must succeed");
+        let r = sync_records(repo(), SyncOptions { dry_run: true, prune: false })
+            .expect("dry run must succeed");
         assert!(
             r.written.is_empty(),
             "a dry sync wanted to rewrite {:?} — the store is out of date with the manifests",
@@ -1191,5 +1338,115 @@ mod encoding_tests {
         nsorted.sort();
         assert_eq!(nested, nsorted, "nested keys must be sorted; got {nested:?}");
         assert!(out.ends_with("}\n"), "one trailing newline");
+    }
+}
+
+#[cfg(test)]
+mod authoring_tests {
+    use super::*;
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    /// A scratch checkout holding only the records — enough for the authoring path, and never the
+    /// real repo, because these tests WRITE.
+    fn scratch(tag: &str) -> PathBuf {
+        let d = repo().join("target").join("gm-authoring").join(format!("{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("crates")).unwrap();
+        std::fs::create_dir_all(d.join("graph").join("manifests")).unwrap();
+        for e in std::fs::read_dir(manifests_dir(repo())).unwrap().flatten() {
+            std::fs::copy(e.path(), d.join("graph").join("manifests").join(e.file_name())).unwrap();
+        }
+        d
+    }
+
+    /// THE AUTHORING DIRECTION: a crate comes into existence as a RECORD, not as a file.
+    #[test]
+    fn a_new_crate_is_created_as_a_record_and_registered_in_one_step() {
+        let d = scratch("new");
+        let before = workspace_members(&d).unwrap().len();
+        let rec = new_crate_record(&d, "demo-crate").expect("authoring must succeed");
+        assert!(rec.is_file(), "the record is what exists first");
+        assert!(
+            !d.join("crates/demo-crate/Cargo.toml").exists(),
+            "authoring must NOT write a manifest — the emit does that, or the file is authoritative again"
+        );
+        let after = workspace_members(&d).unwrap();
+        assert_eq!(after.len(), before + 1);
+        assert!(after.contains(&"crates/demo-crate".to_string()), "registration is part of the same step");
+
+        // The record must render a manifest that parses back to itself.
+        let stored = load_records(&d).unwrap();
+        let (_, m) = stored.iter().find(|(s, _)| s == "crates/demo-crate/Cargo.toml").unwrap();
+        let rendered = m.render();
+        assert_eq!(Manifest::parse(&rendered).unwrap(), *m);
+        let cr = CrateRecord::extract(m, "demo-crate");
+        assert!(cr.materialized, "a new crate compiles from the graph by default");
+        assert_eq!(cr.name, "demo-crate");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn authoring_refuses_a_duplicate_and_a_bad_name() {
+        let d = scratch("dupe");
+        new_crate_record(&d, "demo-crate").unwrap();
+        let err = new_crate_record(&d, "demo-crate").expect_err("a second create must refuse");
+        assert!(err.contains("already has a manifest record"), "got: {err}");
+        for bad in ["", "Demo", "demo crate", "demo_crate"] {
+            assert!(new_crate_record(&d, bad).is_err(), "`{bad}` must be refused");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// THE DATA-LOSS GUARD. A file-derived import cannot tell a deleted crate from an un-emitted one,
+    /// and since the flip both look like a missing file. Measured: pruning in a fresh-clone-shaped
+    /// tree reported 78 removals of 82 records that are now the only copy.
+    #[test]
+    fn an_import_refuses_to_prune_records_whose_manifest_is_merely_un_emitted() {
+        let d = scratch("prune");
+        // A tree with records but no emitted manifests — exactly a fresh checkout.
+        let err = sync_records(&d, SyncOptions { dry_run: true, prune: false })
+            .expect_err("an un-emitted tree must be refused, not pruned");
+        assert!(err.contains("REFUSING"), "got: {err}");
+        assert!(err.contains("emit"), "the refusal must say how to proceed: {err}");
+        // …and the records are still there, because a dry run that refuses writes nothing either way.
+        assert!(load_records(&d).unwrap().len() >= 82);
+        // With --prune the caller has said they mean it.
+        let r = sync_records(&d, SyncOptions { dry_run: true, prune: true }).expect("--prune is allowed");
+        assert!(r.removed.len() >= 78, "the hazard is real: {} would go", r.removed.len());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A LIVE INVARIANT on the real repo: the workspace and the record set must agree. A crate record
+    /// with no `members` entry is invisible to cargo; a `members` entry with no record makes every
+    /// cargo command fail on a manifest no emit will produce.
+    #[test]
+    fn every_crate_record_is_registered_and_every_registration_has_a_record() {
+        let members = workspace_members(repo()).unwrap();
+        let records: Vec<String> = load_records(repo()).unwrap().into_iter().map(|(s, _)| s).collect();
+        assert!(members.len() >= 80, "only {} members", members.len());
+
+        for m in &members {
+            // `src-tauri` is a member that does not live under `crates/`; it has a record too.
+            let want = format!("{m}/Cargo.toml");
+            assert!(
+                records.contains(&want),
+                "the workspace lists `{m}` but there is no record at {want} — every cargo command in a \
+                 fresh checkout would fail on a manifest no emit can produce"
+            );
+        }
+        for r in &records {
+            let Some(dir) = r.strip_suffix("/Cargo.toml") else { continue };
+            if dir == "src-tauri" || r == "Cargo.toml" {
+                continue;
+            }
+            assert!(
+                members.contains(&dir.to_string()),
+                "there is a record for `{dir}` but the workspace does not list it — cargo would never \
+                 see the crate"
+            );
+        }
     }
 }
