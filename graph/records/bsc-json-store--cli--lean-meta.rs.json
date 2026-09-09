@@ -1,0 +1,19 @@
+{
+  "id": "bsc-json-store--cli--lean-meta.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lean_meta",
+  "src": "crates/bsc-json-store/src/cli/lean_meta.rs",
+  "folder": "crates/bsc-json-store/src/cli",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-json-store--cli--lean-meta-aliased.rs"
+  ],
+  "code": "use super::*;\n\n/// The lean `list` projection one record contributes: an object with just `fields`, each the stored\n/// string — a NON-string value (an array like the component store's `shapes`, #2475) rides verbatim —\n/// or `\"\"` when missing / null; robust to odd-shaped files (an unparseable blob yields all-empty,\n/// never a panic). `fields` are alphabetically ordered by the shipped specs (`id`,`name`,`role`,…),\n/// so the `serde_json::Map` (BTreeMap) render is byte-identical to the old derived structs.\n/// Public so a wrapper's custom read verbs (e.g. `bsc ui list --shape`) project the SAME lean shape.\npub fn lean_meta(json: &str, fields: &[&str]) -> Value {\n    lean_meta_aliased(json, fields, &[])\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "serde_json"
+  ]
+}

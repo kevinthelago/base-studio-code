@@ -1,0 +1,15 @@
+{
+  "id": "bsc-project--cli--plan-db-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_db_for",
+  "src": "crates/bsc-project/src/cli/plan_db_for.rs",
+  "folder": "crates/bsc-project/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The per-project plan store for `key`: `plans/<key>.db`.\n///\n/// The plan store was RELOCATED OUT of the hub (#2996) so it survives folder churn — reading\n/// `projects/<key>/plan.db` finds nothing on any current install (those hubs hold `error.db` only) and\n/// would make this command silently report no work anywhere.\npub(crate) fn plan_db_for(key: &str) -> Option<std::path::PathBuf> {\n    bsc_util::bsc_base_dir().map(|b| b.join(\"plans\").join(format!(\"{key}.db\")))\n}\n",
+  "feature": "cli-platform",
+  "crateDeps": [
+    "bsc_util"
+  ]
+}

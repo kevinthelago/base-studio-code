@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph-store--import--import-edges.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "import_edges",
+  "src": "crates/bsc-graph-store/src/import/import_edges.rs",
+  "folder": "crates/bsc-graph-store/src/import",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph-store--import--import-tier.rs"
+  ],
+  "code": "use super::*;\n\n/// The RELATIONSHIP tier, on the same terms as [`import`].\n///\n/// Edges were the migration's silent hole: the committed monolith carries 8 and the runtime store 81,\n/// and neither reached the ledger, so the first export wrote `\"edges\": []` over all of them. They are\n/// records like any other — same precedence, same lane rule, same recoverability — they just live on\n/// [`TIER_EDGE`], and nothing but the tier differs.\npub fn import_edges(\n    conn: &Connection,\n    committed: &[Value],\n    runtime: &[Value],\n    by: &str,\n) -> Result<Report, String> {\n    import_tier(conn, committed, runtime, by, TIER_EDGE)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "graph-store"
+}

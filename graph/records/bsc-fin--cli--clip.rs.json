@@ -1,0 +1,12 @@
+{
+  "id": "bsc-fin--cli--clip.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "clip",
+  "src": "crates/bsc-fin/src/cli/clip.rs",
+  "folder": "crates/bsc-fin/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The position, rendered. Gaps are not a footnote — they are why a figure is missing.\n/// Truncate to at most `n` CHARACTERS, never bytes.\n///\n/// `&s[..22]` panics when byte 22 lands inside a multi-byte character, and a statement description is\n/// exactly where that arrives: a merchant with an accent, a currency symbol, a non-Latin name. The\n/// crash would be in the RENDERER, so the analysis would be correct and the command would still die.\npub(crate) fn clip(s: &str, n: usize) -> String {\n    if s.chars().count() <= n { s.to_string() } else { s.chars().take(n).collect() }\n}\n",
+  "feature": "finance"
+}

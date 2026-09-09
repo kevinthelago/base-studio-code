@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--claim-census--summarize.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "summarize",
+  "src": "crates/bsc-ui/src/claim_census/summarize.rs",
+  "folder": "crates/bsc-ui/src/claim_census",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The census totals: how many of each kind, and how many must lose their claim.\npub fn summarize(verdicts: &[Verdict]) -> (usize, std::collections::BTreeMap<String, usize>, usize) {\n    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();\n    for v in verdicts {\n        *counts.entry(v.kind.clone()).or_insert(0) += 1;\n    }\n    let should_drop = verdicts.iter().filter(|v| !v.keeps_provides).count();\n    (verdicts.len(), counts, should_drop)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-app--cli--flag.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "flag",
+  "src": "crates/bsc-app/src/cli/flag.rs",
+  "folder": "crates/bsc-app/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn flag(args: &[String], name: &str) -> Option<String> {\n    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()\n}\n"
+}

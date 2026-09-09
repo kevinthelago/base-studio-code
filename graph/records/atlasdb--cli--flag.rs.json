@@ -1,0 +1,11 @@
+{
+  "id": "atlasdb--cli--flag.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "flag",
+  "src": "crates/atlasdb/src/cli/flag.rs",
+  "folder": "crates/atlasdb/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Pull `--flag <value>` out of the positional stream.\npub(crate) fn flag(args: &[String], name: &str) -> Option<String> {\n    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()\n}\n"
+}

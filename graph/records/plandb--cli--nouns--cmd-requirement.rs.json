@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--cmd-requirement.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_requirement",
+  "src": "crates/plandb/src/cli/nouns/cmd_requirement.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `classify` — the project classification (one blob, #3783/#3784/#4115): the planner's discovery\n/// output that shapes the plan (who renders the UI, where its algorithms come from, the UI mode, the\n/// taxonomy axes, and which optional stages the project needs). Validated at set-time; the echo\n/// mirrors the recorded uiSystem + algorithmSystem + uiMode + which optional stages are on.\n/// `requirement` — the architect's handoff (#requirement-and-authority-store): the user's\n/// statement, the discovery it ran, and the AUTHORITY clauses the tiers below cite when they decide\n/// something unattended. One blob per project, read whole by the director.\npub(crate) fn cmd_requirement(args: &Args) -> Result<(), String> {\n    cmd_blob_noun(\n        args, \"requirement\", \"requirement JSON\", \"(no requirement)\",\n        crate::validate::validate_requirement,\n        |s, v| s.requirement_set(v).map_err(|e| e.to_string()),\n        |s| s.requirement_get().map_err(|e| e.to_string()),\n        |v| {\n            let n = v.get(\"authority\").and_then(|a| a.as_array()).map(|a| a.len()).unwrap_or(0);\n            format!(\"requirement set ({n} authority clause{})\", if n == 1 { \"\" } else { \"s\" })\n        },\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

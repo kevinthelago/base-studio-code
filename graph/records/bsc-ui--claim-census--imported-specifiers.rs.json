@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--claim-census--imported-specifiers.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "imported_specifiers",
+  "src": "crates/bsc-ui/src/claim_census/imported_specifiers.rs",
+  "folder": "crates/bsc-ui/src/claim_census",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Every specifier a source imports FROM, deduped.\n///\n/// Deliberately looser than [`crate::record_source::runtime_imports`]: this is a similarity signal\n/// between two bodies, not a dependency claim anything resolves, so a `from` inside prose costing a\n/// false match is cheaper here than the machinery to exclude it.\npub fn imported_specifiers(src: &str) -> std::collections::BTreeSet<String> {\n    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    let re = RE.get_or_init(|| {\n        regex::Regex::new(r#\"\\bfrom\\s+[\"']([^\"']+)[\"']\"#).expect(\"from pattern\")\n    });\n    re.captures_iter(src).map(|c| c[1].to_string()).collect()\n}\n",
+  "crateDeps": [
+    "regex"
+  ]
+}

@@ -7,5 +7,5 @@
   "folder": "crates/bsc-graph/src/methods",
   "moduleVis": "private",
   "composes": [],
-  "code": "use super::*;\n\npub(crate) fn fn_name(node: Node, src: &[u8]) -> Option<String> {\n    let name = node.child_by_field_name(\"name\")?;\n    Some(name.utf8_text(src).unwrap_or_default().to_string())\n}\n"
+  "code": "use super::*;\n\n/// The name a definition node declares. One implementation covers both grammars because both spell it\n/// as a `name` FIELD: Rust's `function_item`, TypeScript's `function_declaration`, and the\n/// `variable_declarator` an arrow const is bound by.\n///\n/// The kind guard is what the TypeScript arm needs and Rust pays nothing for. A `variable_declarator`'s\n/// `name` may be a DESTRUCTURING PATTERN — `const { parse, format } = grammar` — whose text is\n/// `{ parse, format }`, not an identifier. Reading that as a function name would mint a leaf nothing can\n/// extract. Rust's `function_item` name is always an `identifier`, so the guard never fires there.\npub(crate) fn fn_name(node: Node, src: &[u8]) -> Option<String> {\n    let name = node.child_by_field_name(\"name\")?;\n    if name.kind() != \"identifier\" {\n        return None;\n    }\n    Some(name.utf8_text(src).unwrap_or_default().to_string())\n}\n"
 }

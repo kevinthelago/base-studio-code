@@ -1,0 +1,14 @@
+{
+  "id": "bsc-app--cli--survey-promote.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "survey_promote",
+  "src": "crates/bsc-app/src/cli/survey_promote.rs",
+  "folder": "crates/bsc-app/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Gather everything `plan_promote` is allowed to look at.\npub(crate) fn survey_promote(root: &Path) -> PromoteState {\n    let branch = repo::current_branch(root);\n    let (ahead, behind, ahead_content, ahead_adds_nothing) = match branch.as_deref() {\n        Some(b) => {\n            let ahead = repo::count(root, &format!(\"develop..{b}\"), &[]);\n            let behind = repo::count(root, &format!(\"{b}..develop\"), &[]);\n            // Both asked of git rather than inferred: how many ahead commits carry CONTENT (a merge\n            // carries none of its own), and whether the ref adds anything beyond the merge base.\n            let content =\n                if ahead > 0 { repo::count(root, &format!(\"develop..{b}\"), &[\"--no-merges\"]) } else { 0 };\n            let adds_nothing =\n                ahead > 0 && repo::adds_nothing_beyond_merge_base(root, b, \"develop\");\n            (ahead, behind, content, adds_nothing)\n        }\n        None => (0, 0, 0, false),\n    };\n    PromoteState {\n        tree_exists: true,\n        branch,\n        dirty: repo::tracked_dirty(root),\n        ahead,\n        behind,\n        ahead_content,\n        ahead_adds_nothing,\n        app_branch: Some(APP_BRANCH.to_string()),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

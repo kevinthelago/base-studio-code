@@ -1,0 +1,14 @@
+{
+  "id": "plandb--cli--nouns--render-transformation-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_transformation_line",
+  "src": "crates/plandb/src/cli/nouns/render_transformation_line.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// One queue line: `replace-bespoke-buttons      · replace  tier 0  Replace the bespoke buttons`\n/// (· = pending, ✓ = confirmed), emitted in queue (position) order.\npub(crate) fn render_transformation_line(t: &serde_json::Value) -> String {\n    let id = t.get(\"id\").and_then(|v| v.as_str()).unwrap_or(\"?\");\n    let mark = if t.get(\"confirmed\").and_then(|v| v.as_bool()).unwrap_or(false) { \"✓\" } else { \"·\" };\n    let verb = t.get(\"verb\").and_then(|v| v.as_str()).unwrap_or(\"?\");\n    let tier = t.get(\"tier\").and_then(|v| v.as_i64()).unwrap_or(0);\n    let title = t.get(\"title\").and_then(|v| v.as_str()).unwrap_or(\"\");\n    format!(\"{id:<28} {mark} {verb:<8} tier {tier}  {title}\")\n}\n",
+  "crateDeps": [
+    "serde_json"
+  ]
+}

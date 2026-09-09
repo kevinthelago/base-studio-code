@@ -1,0 +1,17 @@
+{
+  "id": "plandb--cli--nouns--cmd-feature-add.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cmd_feature_add",
+  "src": "crates/plandb/src/cli/nouns/cmd_feature_add.rs",
+  "folder": "crates/plandb/src/cli/nouns",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.\n/// Used for the detail-fill phase (`{\"slug\":\"…\",\"behavior\":…}`) — title rows are added by name.\n/// Validates the WHOLE batch before writing anything (#2395), so a bad item can't leave a\n/// half-written roster behind.\npub(crate) fn cmd_feature_add(s: &crate::Store) -> Result<Vec<String>, String> {\n    let feats: Vec<PlanFeature> = bsc_sqlite_util::read_stdin_json(\"feature\")?;\n    for (i, f) in feats.iter().enumerate() {\n        if f.slug.trim().is_empty() && f.name.trim().is_empty() {\n            return Err(format!(\n                \"feature add: features[{i}] needs a \\\"slug\\\" or a \\\"name\\\" — rejected; nothing was written\"\n            ));\n        }\n    }\n    let mut slugs = Vec::new();\n    for f in &feats {\n        slugs.push(s.feature_upsert(f).map_err(|e| e.to_string())?);\n    }\n    Ok(slugs)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "crateDeps": [
+    "bsc_sqlite_util"
+  ]
+}

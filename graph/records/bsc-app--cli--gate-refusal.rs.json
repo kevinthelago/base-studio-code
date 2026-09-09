@@ -1,0 +1,14 @@
+{
+  "id": "bsc-app--cli--gate-refusal.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "gate_refusal",
+  "src": "crates/bsc-app/src/cli/gate_refusal.rs",
+  "folder": "crates/bsc-app/src/cli",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Why a failed gate is not promotable, said in the caller's terms.\npub(crate) fn gate_refusal(v: &crate::promote::GateClassification) -> String {\n    let base = \"the gate FAILED — develop is not promotable. Nothing was moved.\";\n    let why = match v.reason {\n        \"no-verdict\" => \"\\n  The gate wrote no readable verdict at target/gate-result.json, so which legs were red is\\n  unknown. An absent verdict reads as ABSENT, never as a pass.\".to_string(),\n        \"stale-verdict\" => \"\\n  The verdict at target/gate-result.json predates this run, so it describes a DIFFERENT gate.\\n  A stale artifact is worse than none, because it looks authoritative.\".to_string(),\n        \"failed-outside-the-legs\" => \"\\n  The gate failed with no red leg — something failed around them (gate-tree-guard, a crash, a\\n  lock). A known-red declaration is about a leg and cannot speak for that.\".to_string(),\n        \"unexplained-red\" => format!(\n            \"\\n  Unexplained red leg(s): {}.\\n  Declare one with `bsc work known-red add <leg> --ref <plan-ref>` only if an item genuinely\\n  owns it — a declaration explains a failure, it never launders one.\",\n            v.unexplained.join(\", \")\n        ),\n        _ => String::new(),\n    };\n    format!(\"{base}{why}\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
