@@ -991,3 +991,120 @@ fn the_app_command_surface_materializes_out_of_the_committed_store() {
         }
     }
 }
+
+/// THE WATCH NARROWING, pinned against the real store.
+///
+/// `owned_record_files` selects by FILENAME PREFIX rather than by parsing 2,936 JSON files in every
+/// build script. That is only sound because a record's id is `<crate_dir>--<module path>` and
+/// [`Plan::select`] refuses any record whose id is not exactly `expected_id` for its `src` — so the
+/// filename already identifies the owner. This asserts the correspondence rather than trusting it.
+#[test]
+fn owned_record_files_are_exactly_the_records_whose_src_is_the_crates() {
+    let root = repo();
+    let records_dir = root.join("graph").join("records");
+    assert!(records_dir.is_dir(), "the file-per-record store must exist for this guard to mean anything");
+
+    let raw = load_merged_store(&root.join("graph").join("algorithms.json")).expect("store loads");
+    let store: serde_json::Value = serde_json::from_str(&raw).expect("store parses");
+    let impls = store.get("implementations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    assert!(impls.len() >= 2000, "only {} records — discovery is broken", impls.len());
+
+    let mut checked = 0usize;
+    let mut owned_total = 0usize;
+    for e in std::fs::read_dir(root.join("crates")).expect("crates/ reads").flatten() {
+        let dir = e.file_name().to_string_lossy().to_string();
+        let manifest = e.path();
+        let Ok(plan) = plan_for(&manifest, Some(root.as_path())) else { continue };
+
+        // By filename prefix — what the build script actually watches.
+        let by_name: std::collections::BTreeSet<String> = plan
+            .owned_record_files(&records_dir)
+            .into_iter()
+            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+            .collect();
+
+        // By the record's OWN `src` — the authoritative answer.
+        let by_src: std::collections::BTreeSet<String> = impls
+            .iter()
+            .filter(|i| {
+                i.get("src").and_then(|v| v.as_str()).is_some_and(|s| s.starts_with(&plan.src_prefix))
+            })
+            .filter_map(|i| i.get("id").and_then(|v| v.as_str()).map(str::to_string))
+            .collect();
+
+        assert_eq!(
+            by_name, by_src,
+            "crates/{dir}: the files watched by filename prefix are not the records whose `src` is \
+             this crate's. A build script that watches the wrong set either rebuilds for nothing or, \
+             worse, does NOT rebuild when its own record changes."
+        );
+        owned_total += by_name.len();
+        checked += 1;
+    }
+    assert!(checked >= 70, "only {checked} crates resolved a plan");
+    assert!(owned_total >= 1000, "only {owned_total} records attributed to a crate");
+    // The narrowing is the point: no crate watches anything like the whole store.
+    assert!(
+        owned_total < impls.len(),
+        "every record is attributed to some crate, so nothing was narrowed"
+    );
+}
+
+/// The `--` separator is load-bearing: `bsc-graph` must not claim `bsc-graph-store`'s records.
+#[test]
+fn a_crate_does_not_claim_the_records_of_a_crate_whose_name_extends_its_own() {
+    let root = repo();
+    let records_dir = root.join("graph").join("records");
+    let graph = plan_for(&root.join("crates").join("bsc-graph"), Some(root.as_path())).expect("resolves");
+    let store = plan_for(&root.join("crates").join("bsc-graph-store"), Some(root.as_path())).expect("resolves");
+
+    let g: Vec<String> = graph
+        .owned_record_files(&records_dir)
+        .iter()
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+        .collect();
+    assert!(!g.is_empty(), "bsc-graph owns records");
+    for id in &g {
+        assert!(
+            !id.starts_with("bsc-graph-store--"),
+            "bsc-graph claimed `{id}`, which belongs to bsc-graph-store — a bare name prefix would \
+             do exactly this, which is why the separator is part of the match"
+        );
+    }
+    let s: Vec<String> = store
+        .owned_record_files(&records_dir)
+        .iter()
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+        .collect();
+    for id in &s {
+        assert!(id.starts_with("bsc-graph-store--"), "bsc-graph-store picked up `{id}`");
+    }
+}
+
+/// A FRONTEND record belongs to no Rust crate, so no Rust crate may watch it. This is the 682-record
+/// population whose edits used to rebuild the entire backend.
+#[test]
+fn no_rust_crate_watches_a_frontend_record() {
+    let root = repo();
+    let records_dir = root.join("graph").join("records");
+    let frontend: Vec<String> = std::fs::read_dir(&records_dir)
+        .expect("records read")
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|n| n.ends_with(".ts.json") || n.ends_with(".tsx.json"))
+        .collect();
+    assert!(frontend.len() >= 100, "only {} frontend records found", frontend.len());
+
+    for e in std::fs::read_dir(root.join("crates")).expect("crates/ reads").flatten() {
+        let Ok(plan) = plan_for(&e.path(), Some(root.as_path())) else { continue };
+        for p in plan.owned_record_files(&records_dir) {
+            let n = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+            assert!(
+                !(n.ends_with(".ts.json") || n.ends_with(".tsx.json")),
+                "{} watches the frontend record {n} — editing it would rebuild this crate and relink \
+                 the app for nothing",
+                plan.crate_dir
+            );
+        }
+    }
+}
