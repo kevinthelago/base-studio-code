@@ -61,8 +61,12 @@ spawnable libraries/CLIs live under [`crates/`](../crates/).
 
 `run()` (in `app/run.rs`) builds the Tauri app, registers plugins,
 `manage()`s the shared state objects (`PtyState`, `TunnelState`, `PerfState`, `LogState`,
-`UncleanShutdown`), and registers **every** command in one `tauri::generate_handler![...]` block —
-that block is the canonical index of the backend's command surface.
+`UncleanShutdown`), and registers **every** command in one `tauri::generate_handler![...]` block. That
+block is GENERATED — `graph_tauri_handler!()`, written into `$OUT_DIR/crate.rs` by
+`crates/graph-materialize` from the `tauriCommands` facet of every record
+(`a-tauri-command-is-a-record-facet`). The canonical index of the backend's command surface is
+therefore the STORE, and `bsc graph impl get <id>` reads it; the 201-entry hand-written list that used
+to live in `run.rs` is gone, along with the drift between it and the attributes it mirrored.
 
 | Folder | Owns | Key files |
 |---|---|---|
@@ -211,9 +215,25 @@ the same CLI a live session uses (#2142) — not a per-verb Tauri command layer.
 
 ## 5. Tauri command conventions
 
-A backend command is an `async`/sync `fn` annotated `#[tauri::command]`, made `pub(crate)`, and
-listed in the `tauri::generate_handler![...]` block in `app/run.rs`.
-Shared state is injected via `State<'_, T>` (e.g. `State<'_, PtyState>`), the app handle via
+A backend command is an `async`/sync `fn` **declared on its record's `tauriCommands` facet** — NOT
+by writing `#[tauri::command]` above it, and NOT by adding it to a handler list
+(`a-tauri-command-is-a-record-facet`). `crates/graph-materialize` re-attaches the attribute on the way
+to the compiler and derives the whole `tauri::generate_handler![…]` list from the same declaration, so
+registering a command is no longer a second place to remember:
+
+```json
+"tauriCommands": [{ "name": "pick_directory" }]   // in graph/records/<id>.json, beside `moduleVis`
+```
+
+Three rules the materializer enforces rather than trusts: the name must match exactly one `fn` in the
+record's body; the module must not be a PRIVATE non-top-level one (the generated list names the command
+by its absolute `crate::…` path, and a private module is visible only inside its own parent's subtree —
+set `moduleVis` to `pub(crate)`); and two records may not declare one name, because a command name is
+crate-global and the frontend invokes it by that string. A `#[cfg(…)]` above the function is carried
+onto the handler entry too. Writing the attribute by hand instead fails
+`no_source_unit_carries_the_tauri_command_attribute_as_text` in `src-tauri/src/tests.rs`.
+
+Commands are made `pub(crate)`; shared state is injected via `State<'_, T>` (e.g. `State<'_, PtyState>`), the app handle via
 `AppHandle`. Commands return `Result<T, String>` (the `Err` string surfaces to the frontend) or a
 plain serializable value; errors are typically mapped with `.map_err(|e| e.to_string())`.
 

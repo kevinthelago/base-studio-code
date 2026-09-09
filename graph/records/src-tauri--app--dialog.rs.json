@@ -4,9 +4,20 @@
   "role": "algorithm",
   "name": "dialog",
   "composes": [],
-  "code": "\n#[tauri::command]\npub(crate) async fn pick_directory() -> Option<String> {\n    tauri::async_runtime::spawn_blocking(|| rfd::FileDialog::new().pick_folder())\n        .await\n        .ok()\n        .flatten()\n        .map(|p| p.to_string_lossy().into_owned())\n}\n\n/// Native \"save file\" picker (#2027 P3, config-bundle export) — the chosen path, or `None` if\n/// cancelled. Seeded with `default_name` + a JSON filter so the export lands with a sensible name.\n#[tauri::command]\npub(crate) async fn pick_save_file(default_name: String) -> Option<String> {\n    tauri::async_runtime::spawn_blocking(move || {\n        rfd::FileDialog::new()\n            .set_file_name(&default_name)\n            .add_filter(\"JSON\", &[\"json\"])\n            .save_file()\n    })\n    .await\n    .ok()\n    .flatten()\n    .map(|p| p.to_string_lossy().into_owned())\n}\n\n/// Native \"open file\" picker (#2027 P3, config-bundle import) — the chosen path, or `None` if\n/// cancelled.\n#[tauri::command]\npub(crate) async fn pick_open_file() -> Option<String> {\n    tauri::async_runtime::spawn_blocking(|| {\n        rfd::FileDialog::new().add_filter(\"JSON\", &[\"json\"]).pick_file()\n    })\n    .await\n    .ok()\n    .flatten()\n    .map(|p| p.to_string_lossy().into_owned())\n}\n",
+  "code": "\npub(crate) async fn pick_directory() -> Option<String> {\n    tauri::async_runtime::spawn_blocking(|| rfd::FileDialog::new().pick_folder())\n        .await\n        .ok()\n        .flatten()\n        .map(|p| p.to_string_lossy().into_owned())\n}\n\n/// Native \"save file\" picker (#2027 P3, config-bundle export) — the chosen path, or `None` if\n/// cancelled. Seeded with `default_name` + a JSON filter so the export lands with a sensible name.\npub(crate) async fn pick_save_file(default_name: String) -> Option<String> {\n    tauri::async_runtime::spawn_blocking(move || {\n        rfd::FileDialog::new()\n            .set_file_name(&default_name)\n            .add_filter(\"JSON\", &[\"json\"])\n            .save_file()\n    })\n    .await\n    .ok()\n    .flatten()\n    .map(|p| p.to_string_lossy().into_owned())\n}\n\n/// Native \"open file\" picker (#2027 P3, config-bundle import) — the chosen path, or `None` if\n/// cancelled.\npub(crate) async fn pick_open_file() -> Option<String> {\n    tauri::async_runtime::spawn_blocking(|| {\n        rfd::FileDialog::new().add_filter(\"JSON\", &[\"json\"]).pick_file()\n    })\n    .await\n    .ok()\n    .flatten()\n    .map(|p| p.to_string_lossy().into_owned())\n}\n",
   "domain": "src-tauri",
   "src": "src-tauri/src/app/dialog.rs",
   "folder": "src-tauri/src/app",
-  "moduleVis": "pub"
+  "moduleVis": "pub",
+  "tauriCommands": [
+    {
+      "name": "pick_directory"
+    },
+    {
+      "name": "pick_save_file"
+    },
+    {
+      "name": "pick_open_file"
+    }
+  ]
 }

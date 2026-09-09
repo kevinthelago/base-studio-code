@@ -754,3 +754,240 @@ fn imports_reach_the_generated_file_and_the_offset_header_stays_exact() {
     let code_line_1 = lines.iter().position(|l| l.contains("pub fn t() -> Foo {")).unwrap() + 1;
     assert_eq!(code_line_1 - k, 1, "record line 1 must still map to in-record line 1 after use-injection");
 }
+
+// ---------------------------------------------------------------------------------------------
+// THE TAURI COMMAND FACET (`a-tauri-command-is-a-record-facet`).
+//
+// `#[tauri::command]` is not formatting. It generates `__cmd__<name>` in the module that HOLDS the
+// function, and `generate_handler![m::name]` resolves it there — so as body text it pinned every
+// command to its module, and the 201-entry handler list in `app/run.rs` was a SECOND hand-maintained
+// statement of the same set. These assert the two properties that make one declaration serve both:
+// the attribute comes back on the way to the compiler WITHOUT moving a line, and the handler list is
+// built from the same declaration.
+// ---------------------------------------------------------------------------------------------
+
+fn cmd(name: &str) -> TauriCommand {
+    TauriCommand { name: name.into(), args: None }
+}
+
+/// THE LINE COUNT IS INVARIANT, and that is the whole reason the attribute goes ON the declaration
+/// line rather than above it.
+///
+/// Every module in a generated `crate.rs` carries `line N here is line N-<offset> in the record`, the
+/// only thing that makes a compiler error inside a 12,609-line record navigable. An attribute emitted
+/// on a line of its own would shift every line below it by one and make that subtraction wrong for the
+/// rest of the module — silently, because the header would still look correct.
+#[test]
+fn the_attribute_is_reattached_without_moving_a_single_line() {
+    let code = "/// docs\npub(crate) async fn pick_directory() -> Option<String> {\n    None\n}\n";
+    let (out, sites) = apply_tauri_commands("r", code, &[cmd("pick_directory")]).expect("applies");
+    assert_eq!(
+        out.split('\n').count(),
+        code.split('\n').count(),
+        "the attribute must share the declaration's line:\n{out}"
+    );
+    assert!(
+        out.contains("#[tauri::command] pub(crate) async fn pick_directory()"),
+        "attribute not on the declaration line:\n{out}"
+    );
+    assert_eq!(sites, vec![CommandSite { name: "pick_directory".into(), cfgs: Vec::new() }]);
+}
+
+/// A `#[cfg]` STAYS ABOVE the inserted attribute, and is carried onto the handler arm as well.
+///
+/// Attribute order is semantic: an attribute BEFORE an attribute macro applies to its expansion, one
+/// AFTER it is part of the item handed to the macro. `#[cfg]` must gate the whole expansion, and the
+/// registration too — six of this repo's commands are gated on `feature = "source-stage"`, and a
+/// handler entry that lost the gate would name a function that does not exist in that build.
+#[test]
+fn a_cfg_gate_stays_above_the_attribute_and_reaches_the_handler_entry() {
+    let code = "#[cfg(feature = \"source-stage\")]\npub fn data_get_model() -> u8 { 0 }\n";
+    let (out, sites) = apply_tauri_commands("r", code, &[cmd("data_get_model")]).expect("applies");
+    assert!(
+        out.starts_with("#[cfg(feature = \"source-stage\")]\n#[tauri::command] pub fn data_get_model()"),
+        "the cfg must stay above the inserted attribute:\n{out}"
+    );
+    assert_eq!(sites[0].cfgs, vec!["#[cfg(feature = \"source-stage\")]".to_string()]);
+}
+
+/// A NON-CFG attribute keeps the attribute above it, which is where it was.
+///
+/// Six commands carry `#[allow(clippy::too_many_arguments)]` and it sat BELOW `#[tauri::command]`, so
+/// the allow is part of the item the macro re-emits. Inserting the command attribute after it would
+/// silently change which item the allow applies to.
+#[test]
+fn a_non_cfg_attribute_keeps_the_command_attribute_above_it() {
+    let code = "#[allow(clippy::too_many_arguments)]\npub fn data_load_csv(a: u8) -> u8 { a }\n";
+    let (out, _) = apply_tauri_commands("r", code, &[cmd("data_load_csv")]).expect("applies");
+    assert!(
+        out.starts_with("#[tauri::command] #[allow(clippy::too_many_arguments)]\npub fn data_load_csv"),
+        "the command attribute must precede the non-cfg attribute:\n{out}"
+    );
+}
+
+/// A FACET NAMING A FUNCTION THAT IS NOT THERE is a hard error, not a silent skip. A skipped entry is
+/// a command that never registers, which is invisible at runtime.
+#[test]
+fn a_facet_naming_a_missing_function_is_a_hard_error() {
+    let err = apply_tauri_commands("mine--x.rs", "pub fn other() {}", &[cmd("gone")]).unwrap_err();
+    assert!(err.contains("mine--x.rs") && err.contains("gone"), "{err}");
+}
+
+/// TWO DECLARATIONS OF ONE NAME is a hard error rather than a first-match. A doc example or a fixture
+/// string holding Rust source reads exactly like a declaration, and attaching the attribute to the
+/// wrong one registers the wrong function — `crates/bsc-graph/src/methods` holds precisely such a
+/// fixture, which is why this is not hypothetical.
+#[test]
+fn an_ambiguous_name_is_a_hard_error_naming_both_lines() {
+    let code = "pub fn f() {}\n// a fixture:\npub fn f() {}";
+    let err = apply_tauri_commands("mine--x.rs", code, &[cmd("f")]).unwrap_err();
+    assert!(err.contains("2 lines") && err.contains("1, 3"), "{err}");
+}
+
+/// `declares_fn` matches a DECLARATION and not a mention. A call, a `use`, a type or a where-clause
+/// naming the command must not be mistaken for the function itself.
+#[test]
+fn only_a_declaration_matches() {
+    assert!(declares_fn("pub(crate) async fn foo(a: u8) {", "foo"));
+    assert!(declares_fn("    fn foo<T>() {", "foo"));
+    assert!(declares_fn("pub unsafe extern \"C\" fn foo() {", "foo"));
+    assert!(!declares_fn("    foo();", "foo"));
+    assert!(!declares_fn("use crate::x::foo;", "foo"));
+    assert!(!declares_fn("let x = self.foo(1);", "foo"));
+    assert!(!declares_fn("pub fn foobar() {", "foo"));
+    assert!(!declares_fn("// fn foo() is documented here", "foo"));
+}
+
+/// THE HANDLER LIST IS THE SAME DECLARATION, reaching the generated file as an absolute path.
+///
+/// End to end: two records declaring commands produce a `graph_tauri_handler!` macro above every
+/// module, with `crate::`-absolute paths derived from where each record actually is — never from a
+/// re-export, which is how 53 of the 201 hand-written entries reached their command and why a record
+/// move was invisible to the list.
+#[test]
+fn the_handler_list_is_generated_from_the_facet() {
+    let root = scratch("cmd-rt");
+    std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    let store = serde_json::json!({
+        "implementations": [
+            {
+                "id": "mine--dialog.rs",
+                "src": "crates/mine/src/dialog.rs",
+                "code": "pub fn pick() -> u8 { 0 }",
+                "tauriCommands": [{ "name": "pick" }]
+            },
+            {
+                "id": "mine--data.rs",
+                "src": "crates/mine/src/data.rs",
+                "code": "#[cfg(feature = \"source-stage\")]\npub fn scan() -> u8 { 0 }",
+                "tauriCommands": [{ "name": "scan" }]
+            }
+        ]
+    });
+    std::fs::write(root.join("graph").join("algorithms.json"), serde_json::to_string(&store).unwrap())
+        .expect("store");
+    let out = scratch("cmd-rt-out");
+    emit_into(&root.join("crates").join("mine"), &out, None, Adoption::Required).expect("emits");
+    let crate_rs = std::fs::read_to_string(out.join("crate.rs")).expect("crate.rs");
+
+    assert!(crate_rs.contains("macro_rules! graph_tauri_handler"), "no handler macro:\n{crate_rs}");
+    assert!(crate_rs.contains("crate::dialog::pick,"), "absolute path missing:\n{crate_rs}");
+    assert!(crate_rs.contains("crate::data::scan,"), "absolute path missing:\n{crate_rs}");
+    assert!(
+        crate_rs.contains("#[cfg(feature = \"source-stage\")]\n            crate::data::scan,"),
+        "the cfg must gate the handler ARM too:\n{crate_rs}"
+    );
+    // The macro is DEFINED before any module, because `macro_rules!` is textually scoped and the
+    // record that invokes it is a module below.
+    let macro_at = crate_rs.find("macro_rules! graph_tauri_handler").unwrap();
+    let first_mod = crate_rs.find("pub mod ").unwrap();
+    assert!(macro_at < first_mod, "the macro must precede every module:\n{crate_rs}");
+}
+
+/// A CRATE THAT DECLARES NO COMMAND GETS NO MACRO. That is what makes a total loss of the facet a
+/// COMPILE ERROR — the record invoking `graph_tauri_handler!()` finds no macro — rather than an app
+/// that starts with an empty command surface and rejects every invoke in silence.
+#[test]
+fn no_command_means_no_macro() {
+    let root = scratch("cmd-none");
+    repo_with(&root, &[("mine--thing.rs", "crates/mine/src/thing.rs", "pub fn t() {}")]);
+    let out = scratch("cmd-none-out");
+    emit_into(&root.join("crates").join("mine"), &out, None, Adoption::Required).expect("emits");
+    let crate_rs = std::fs::read_to_string(out.join("crate.rs")).expect("crate.rs");
+    assert!(!crate_rs.contains("graph_tauri_handler"), "a macro with no commands:\n{crate_rs}");
+}
+
+/// TWO RECORDS DECLARING ONE COMMAND NAME is a hard error. `#[tauri::command]` `#[macro_export]`s
+/// `__cmd__<name>` for a `pub`/`pub(crate)` fn, so the name is crate-GLOBAL, and `generate_handler!`
+/// matches an invoke on that string — a collision is reported by rustc as a macro redefinition far
+/// from its cause, and the frontend would reach whichever arm was tried first.
+#[test]
+fn two_records_cannot_declare_the_same_command_name() {
+    let root = scratch("cmd-dup");
+    std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    let store = serde_json::json!({
+        "implementations": [
+            { "id": "mine--a.rs", "src": "crates/mine/src/a.rs", "code": "pub fn go() {}",
+              "tauriCommands": [{ "name": "go" }] },
+            { "id": "mine--b.rs", "src": "crates/mine/src/b.rs", "code": "pub fn go() {}",
+              "tauriCommands": [{ "name": "go" }] }
+        ]
+    });
+    std::fs::write(root.join("graph").join("algorithms.json"), serde_json::to_string(&store).unwrap())
+        .expect("store");
+    let out = scratch("cmd-dup-out");
+    let err = emit_into(&root.join("crates").join("mine"), &out, None, Adoption::Required).unwrap_err();
+    assert!(err.contains("crate-global") && err.contains("`go`"), "{err}");
+}
+
+/// THE REAL STORE, materialized: `src-tauri`'s whole command surface reaches the generated file, and
+/// every command the facet declares is in the generated handler list exactly once.
+///
+/// This is the end-to-end half of the guard whose other half lives in `src-tauri/src/tests.rs`. It
+/// runs HERE as well because this crate is where the generator lives: a change to `render` that
+/// stopped emitting entries would be caught by its own test suite rather than by the app's, three
+/// minutes of build later.
+#[test]
+fn the_app_command_surface_materializes_out_of_the_committed_store() {
+    /// MEASURED 2026-09-08: 201 commands across 67 records, and the hand-written list it replaced held
+    /// exactly the same 201. A FLOOR, not a ratchet — it detects the facet collapsing (a parser that
+    /// stopped matching, a store read that lost records), which is the failure that would otherwise
+    /// leave the app with a silently smaller command surface.
+    const FLOOR: usize = 195;
+
+    let raw = load_merged_store(&repo().join("graph").join("algorithms.json")).expect("store");
+    let store: serde_json::Value = serde_json::from_str(&raw).expect("json");
+    let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
+    let plan = plan_for(&repo().join("src-tauri"), None).expect("plan");
+    let units = plan.select(impls);
+    let declared: usize = units.iter().map(|u| u.commands.len()).sum();
+    assert!(
+        declared >= FLOOR,
+        "`src-tauri`'s command surface collapsed to {declared} declarations (floor {FLOOR}). Every one \
+         of them is a function the frontend invokes by name; a record that lost its `tauriCommands` \
+         facet takes its commands out of the generated handler list, and `safeInvoke` turns the \
+         rejection into a silent empty result.",
+    );
+
+    let body = plan.render_store(&raw, Adoption::Required).expect("renders").expect("a body");
+    let start = body.find("tauri::generate_handler![").expect("a generated handler list");
+    let end = body[start..].find("]\n    };").expect("the list is closed") + start;
+    let list = &body[start..end];
+    let registered = list.matches("            crate::").count();
+    assert_eq!(
+        registered, declared,
+        "the generated handler list holds {registered} entries for {declared} declared commands — the \
+         generator and the facet must agree exactly, or a command is declared and never reachable",
+    );
+    for u in &units {
+        for c in &u.commands {
+            let path = format!("crate::{}::{},", u.path.join("::"), c.name);
+            assert_eq!(
+                list.matches(&path).count(),
+                1,
+                "`{path}` appears {} times in the generated handler list, expected exactly once",
+                list.matches(&path).count(),
+            );
+        }
+    }
+}
