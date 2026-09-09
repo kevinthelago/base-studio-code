@@ -892,8 +892,19 @@ mod materialize_tests {
             assert!(ours.len() > 200, "{dir}: generated body is implausibly small ({} bytes)", ours.len());
             checked += 1;
 
-            // Cargo's copy, if this tree has been built.
-            let cargos = std::fs::read_dir(&build)
+            // Cargo's copy, if this tree has been built — the NEWEST one.
+            //
+            // A crate accumulates build directories: cargo never reclaims an old one, so every
+            // distinct feature set, profile and rustc version leaves its own `<crate>-<hash>/out/`
+            // behind. MEASURED after merging develop, `plandb` had FIVE, two current at 830404 bytes
+            // and three stale at 786825-792032 from before the store changed.
+            //
+            // An earlier version took `.find()` over an unordered `read_dir`, which picks an
+            // arbitrary one, and it duly reported a difference against a copy generated before the
+            // merge. That is the same mistake this module warns about for rlibs one tier down —
+            // selecting arbitrarily among candidates that a name cannot tell apart — so it is fixed
+            // the same way: choose deliberately, here by modification time.
+            let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&build)
                 .into_iter()
                 .flatten()
                 .flatten()
@@ -904,7 +915,11 @@ mod materialize_tests {
                         .is_some_and(|n| n.starts_with(&format!("{dir}-")))
                 })
                 .map(|p| p.join("out/crate.rs"))
-                .find(|p| p.is_file());
+                .filter(|p| p.is_file())
+                .filter_map(|p| std::fs::metadata(&p).and_then(|m| m.modified()).ok().map(|t| (t, p)))
+                .collect();
+            candidates.sort_by(|a, b| b.0.cmp(&a.0));
+            let cargos = candidates.first().map(|(_, p)| p.clone());
             if let Some(c) = cargos {
                 let theirs = std::fs::read_to_string(&c).unwrap();
                 assert_eq!(
