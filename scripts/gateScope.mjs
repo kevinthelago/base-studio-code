@@ -191,26 +191,46 @@ export function isFrontendPath(file) {
 }
 
 /**
- * The RECORD STORES — frontend source that lives under `src-tauri/data/` (#3604, "the graph IS the app").
+ * The RECORD STORES — frontend source that does not live under `src/` (#3604, "the graph IS the app").
  *
- * ~1,050 modules ship as records rather than files: ~447 components under `data/components/app/**` and
- * ~676 implementations inside `data/knowledge/algorithms.json`. `npm run emit:records` materializes them
- * into `.bsc-records/` for tsc, vite and vitest, so editing one edits frontend source — it just does not
- * look like it from the path.
+ * ~1,050 modules ship as records rather than files: the components under `data/components/app/**`, and
+ * the ~900 implementations in the COMMITTED store (`graph/algorithms.json` + `graph/records/*.json`).
+ * `npm run emit:records` materializes them into `.bsc-records/` for tsc, vite and vitest, so editing one
+ * edits frontend source — it just does not look like it from the path.
  *
- * WITHOUT THIS the scope split (by path: `src-tauri/**` is Rust) classified the single file carrying the
- * most frontend source in the repo as backend. MEASURED on a change that rewrote `personaBridge`: the
- * gate printed `frontend files: 0` and ran neither typecheck, lint nor vitest, then reported PASS. That
- * is this repo's signature failure — a gate that covers less than the reader assumes — and the summary
- * line made it worse, because `0` reads as "no frontend change" rather than "I could not see it".
+ * WITHOUT THIS the scope split (by path: `src-tauri/**` is Rust, `graph/**` is the graph step) classified
+ * the files carrying the most frontend source in the repo as backend. MEASURED on a change that rewrote
+ * `personaBridge`: the gate printed `frontend files: 0` and ran neither typecheck, lint nor vitest, then
+ * reported PASS. That is this repo's signature failure — a gate that covers less than the reader assumes
+ * — and the summary line made it worse, because `0` reads as "no frontend change" rather than "I could
+ * not see it".
  *
- * These paths stay RUST too (`crateForPath` still claims `src-tauri/**`), which is correct rather than a
- * compromise: `algorithms.json` is a bundle resource and `src-tauri/src/tests.rs` asserts things about
- * the seeds, so both sides genuinely depend on it.
+ * THE COMMITTED STORE JOINED THIS LIST when `retire-the-packaged-seed-directories` re-pointed
+ * `bsc-emit` off the packaged algorithms seed and onto it. Before that, `graph/**` was claimed only by
+ * `isGraphSourcePath` — a question about Rust — so the moment the emitter started reading it, editing
+ * the record holding a frontend module would have run neither tsc nor vitest. The same bug, one
+ * directory over.
+ *
+ * BY RECORD, NOT BY DIRECTORY, and the distinction is worth ~128s and an 11 GB gate slot per edit.
+ * `graph/records/` is 2,661 files of which only 658 carry an `@/` provides; the other 1,944 are Rust
+ * crate source that no frontend arm can see. Claiming the whole directory would put every record of the
+ * decomposition fleet's Rust work through the full unscoped vitest suite. A record's id ENDS in the
+ * extension of the module it is (`a11y.ts`, `use-tabs.tsx`, `bsc-emit--plan.rs`), so the file name
+ * answers the question — and `gate-scope.test.ts` asserts, over the store itself, that EVERY record
+ * carrying an `@/` provides lands on a path claimed here. A record that broke the convention would fail
+ * that, loudly, rather than quietly dropping out of the frontend gate.
+ *
+ * These paths stay RUST/graph too, which is correct rather than a compromise: `graph-materialize`
+ * compiles 25 crates from the committed store, `algorithms.json` is a bundle resource, and
+ * `src-tauri/src/tests.rs` asserts things about the seeds — both sides genuinely depend on them.
  */
 export function isRecordStorePath(file) {
   return file.startsWith("src-tauri/data/components/")
-    || file.startsWith("src-tauri/data/knowledge/");
+    || file.startsWith("src-tauri/data/knowledge/")
+    // The document half can hold `implementations` outright (the pre-`store split` layout), so it is
+    // claimed whatever it currently contains.
+    || file === "graph/algorithms.json"
+    || (file.startsWith("graph/records/") && /\.tsx?\.json$/.test(file));
 }
 
 /**

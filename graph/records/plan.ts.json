@@ -9,7 +9,9 @@
     "plan-stages.ts",
     "agent-flow.ts",
     "update-helpers.ts",
-    "project-scoped-maps.ts"
+    "project-scoped-maps.ts",
+    "blueprints.ts",
+    "store-types.ts"
   ],
   "domain": "store",
   "folder": "store/slices",

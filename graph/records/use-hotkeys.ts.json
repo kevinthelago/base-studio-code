@@ -17,7 +17,8 @@
     "pane-identity.ts",
     "pane-status.ts",
     "app-registry.ts",
-    "view-defs.ts"
+    "view-defs.ts",
+    "settings-index.tsx"
   ],
   "tests": [
     {

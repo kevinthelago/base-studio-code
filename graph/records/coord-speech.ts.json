@@ -1,6 +1,9 @@
 {
   "code": "// Which coordination alerts to speak, by verbosity (#3804, a11y epic #2725 Tier 1). Pure so the\n// policy is unit-tested without the engine. `AlertKind`/verbosity are the same taxonomy the ARIA\n// announcer + mobile alerts use, so spoken output stays consistent with the rest of the app.\nimport type { AlertKind } from \"@/features/tunnel\";\nimport type { TtsVerbosity } from \"@/shared/lib/a11y/speech\";\n\n// The needs-you / went-wrong alerts — the actionable ones, always spoken. `verbose` ADDS the progress\n// alerts (`fleet-landed`, `gate-ready`) so a user driving by ear hears the fleet make headway too.\nconst TERSE_KINDS: readonly AlertKind[] = [\n  \"agent-paused\",\n  \"prompt-waiting\",\n  \"worker-question\",\n  \"planner-waiting\",\n  \"fleet-failed\",\n];\n\n/** Whether an alert of `kind` should be spoken at the chosen `verbosity`. */\nexport function shouldSpeak(kind: AlertKind, verbosity: TtsVerbosity): boolean {\n  return verbosity === \"verbose\" || TERSE_KINDS.includes(kind);\n}\n",
-  "composes": [],
+  "composes": [
+    "features--tunnel--index.ts",
+    "speech.ts"
+  ],
   "domain": "shell",
   "folder": "app/a11y",
   "id": "coord-speech.ts",

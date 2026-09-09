@@ -3,7 +3,8 @@
   "composes": [
     "safe-invoke.ts",
     "update-helpers.ts",
-    "app-state.ts"
+    "app-state.ts",
+    "store-types.ts"
   ],
   "domain": "store",
   "folder": "store/slices",

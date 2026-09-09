@@ -8,7 +8,9 @@
   "folder": "store",
   "src": "src/store/persist.ts",
   "provides": "@/store/persist",
-  "composes": [],
+  "composes": [
+    "store-types.ts"
+  ],
   "tests": [
     {
       "name": "persistedState — the persist allowlist (#3610)",

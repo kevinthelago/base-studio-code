@@ -8,7 +8,9 @@
   "folder": "app/chrome",
   "src": "src/app/chrome/locationCrumb.ts",
   "provides": "@/app/chrome/locationCrumb",
-  "composes": [],
+  "composes": [
+    "app-registry.ts"
+  ],
   "tests": [
     {
       "name": "locationCrumb (#3036) — every page shows in the titlebar",

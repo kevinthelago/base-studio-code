@@ -5,7 +5,8 @@
     "use-poll.ts",
     "worker-end.ts",
     "stream-progress.ts",
-    "fleet-plan-progress.ts"
+    "fleet-plan-progress.ts",
+    "bsc-shared.ts"
   ],
   "domain": "glance",
   "folder": "features/glance/lib",

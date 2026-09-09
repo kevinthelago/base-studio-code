@@ -12,7 +12,9 @@
     "dependencies.ts",
     "stream-gate.ts",
     "use-coord-log.ts",
-    "ensure-claude-running.ts"
+    "ensure-claude-running.ts",
+    "bsc-shared.ts",
+    "stream-completion.ts"
   ],
   "domain": "glance",
   "folder": "features/glance/lib",

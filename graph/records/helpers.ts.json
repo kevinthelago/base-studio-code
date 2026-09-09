@@ -7,7 +7,8 @@
     "agent-flow.ts",
     "flow-kickoff.ts",
     "scheduler.ts",
-    "grid-layout.ts"
+    "grid-layout.ts",
+    "store-types.ts"
   ],
   "domain": "store",
   "folder": "store",

@@ -3,7 +3,8 @@
   "composes": [
     "app-registry.ts",
     "navigate-bridge.ts",
-    "human-presence.ts"
+    "human-presence.ts",
+    "designs-index.ts"
   ],
   "domain": "shell",
   "folder": "app",

@@ -20,7 +20,8 @@
     "glance-index.ts",
     "broadcast.ts",
     "clear-input.ts",
-    "pane-select.ts"
+    "pane-select.ts",
+    "module-registry.ts"
   ],
   "domain": "shell",
   "folder": "app/console",

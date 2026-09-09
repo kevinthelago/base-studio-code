@@ -1,6 +1,8 @@
 {
   "code": "// Pure derivation for the Claude Config editor (#2128), extracted verbatim from ClaudeConfigCard.tsx.\r\n// Kept React-free so it can be unit-tested in isolation.\r\n\r\nimport { projectRepoCwd } from \"@/shared/lib/core/projectPaths\";\r\n\r\n/** A cloned repo the editor can target, with its local clone path. */\r\nexport interface RepoTarget {\r\n  full_name: string;\r\n  local_path: string;\r\n}\r\n\r\n/**\r\n * All unique cloned repos across all projects, with their local clone paths.\r\n * Repos live under `<base>/projects/<projectKey>/<repoShort>`, so the path is\r\n * derived from the project key each repo was cloned under. (Every hub lives under\r\n * the single `projects/` root since #922, so published-ness never affects the path\r\n * — the old alias-based published check is gone with the alias, #2409.)\r\n */\r\nexport function deriveAllRepos(\r\n  projectLocalRepos: Record<string, string[]>,\r\n  bscBaseDir: string,\r\n): RepoTarget[] {\r\n  const seen = new Map<string, string>(); // full_name → local_path (first seen wins)\r\n  for (const [projectKey, fullNames] of Object.entries(projectLocalRepos)) {\r\n    for (const fullName of fullNames) {\r\n      if (!seen.has(fullName)) seen.set(fullName, projectRepoCwd(bscBaseDir, projectKey, fullName));\r\n    }\r\n  }\r\n  return Array.from(seen.entries()).map(([fullName, local_path]) => ({\r\n    full_name: fullName,\r\n    local_path,\r\n  }));\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "project-paths.ts"
+  ],
   "domain": "settings",
   "folder": "features/settings/cards",
   "id": "claude-config.helpers.ts",

@@ -16,7 +16,14 @@
     "system-sessions.ts",
     "turn-hooks.ts",
     "studio-sessions-index.ts",
-    "logs-index.ts"
+    "logs-index.ts",
+    "models.ts",
+    "planner-index.tsx",
+    "profile-enforcement.ts",
+    "providers-index.ts",
+    "shared--lib--session--surface-catalog.ts",
+    "skills-index.ts",
+    "store-types.ts"
   ],
   "tests": [
     {

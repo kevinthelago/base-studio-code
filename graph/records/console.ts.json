@@ -12,7 +12,11 @@
     "tab-reorder.ts",
     "navigate.ts",
     "helpers.ts",
-    "update-helpers.ts"
+    "update-helpers.ts",
+    "pane-stops.ts",
+    "store--pane-state.ts",
+    "store--types--console.ts",
+    "store-types.ts"
   ],
   "domain": "store",
   "folder": "store/slices",

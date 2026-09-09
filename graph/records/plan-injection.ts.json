@@ -8,7 +8,10 @@
   "folder": "features/planner/lib",
   "src": "src/features/planner/lib/planInjection.ts",
   "provides": "@/features/planner/lib/planInjection",
-  "composes": [],
+  "composes": [
+    "injection-scan.ts",
+    "safe-invoke.ts"
+  ],
   "tests": [
     {
       "name": "findPlanInjections",

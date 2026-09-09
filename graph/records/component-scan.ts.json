@@ -3,7 +3,9 @@
   "composes": [
     "component-runtime-probe.ts",
     "library-modules.ts",
-    "model.ts"
+    "model.ts",
+    "index.ts",
+    "seed-refresh.ts"
   ],
   "domain": "designs",
   "folder": "features/designs/lib",

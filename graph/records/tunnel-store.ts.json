@@ -1,6 +1,9 @@
 {
   "code": "// Tunnel feature store slice (#1309) — the mobile-relay connection state. Extracted from the\r\n// residual `shell` slice (formerly the `github` grab-bag). Composed by store/index.ts.\r\nimport type { StateCreator } from \"zustand\";\r\nimport type { AppStore } from \"@/store/types\";\r\nimport type { PaneDescriptor } from \"@/features/tunnel/lib/tunnel\";\r\n\r\nexport interface TunnelSlice {\r\n  // The relay Worker URL is persisted (the user's BYO relay); `tunnelRunning` mirrors the Rust\r\n  // client's connected state (transient) so ConsoleWorkspace knows whether to push live pane metadata.\r\n  tunnelRelayUrl: string;\r\n  setTunnelRelayUrl: (url: string) => void;\r\n  tunnelRunning: boolean;\r\n  setTunnelRunning: (v: boolean) => void;\r\n  /** Ad-hoc session panes outside the Console tab grid, mirrored over the relay alongside the\r\n   *  Console panes (#801/#2497), keyed by the REGISTERING SOURCE (`\"planner\"`, `\"designer\"`, …)\r\n   *  so independent owners never clobber each other. Transient — not persisted. */\r\n  tunnelExtraPanes: Record<string, PaneDescriptor[]>;\r\n  /** Register (or replace) one source's mirrored panes; pass `[]` to unregister the source. */\r\n  registerTunnelPanes: (source: string, panes: PaneDescriptor[]) => void;\r\n}\r\n\r\nexport const createTunnelSlice: StateCreator<AppStore, [], [], TunnelSlice> = (set) => ({\r\n  tunnelRelayUrl: \"\",\r\n  setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),\r\n  tunnelRunning: false,\r\n  setTunnelRunning: (v) => set({ tunnelRunning: v }),\r\n  tunnelExtraPanes: {},\r\n  registerTunnelPanes: (source, panes) =>\r\n    set((s) => {\r\n      const next = { ...s.tunnelExtraPanes };\r\n      if (panes.length === 0) delete next[source];\r\n      else next[source] = panes;\r\n      return { tunnelExtraPanes: next };\r\n    }),\r\n});\r\n",
-  "composes": [],
+  "composes": [
+    "store-types.ts",
+    "tunnel.ts"
+  ],
   "domain": "tunnel",
   "folder": "features/tunnel",
   "id": "tunnel-store.ts",

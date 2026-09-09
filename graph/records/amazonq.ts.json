@@ -1,6 +1,8 @@
 {
   "code": "import type { ConsoleProvider } from \"@/app/console/lib/providers/types\";\r\n\r\nexport const amazonQProvider: ConsoleProvider = {\r\n  id: \"amazonq\",\r\n  displayName: \"Amazon Q Developer\",\r\n  buildLaunchCmd: () => \"q\",\r\n  prereqProbe: \"which q\",\r\n};\r\n",
-  "composes": [],
+  "composes": [
+    "types.ts"
+  ],
   "domain": "shell",
   "folder": "app/console/lib/providers/providers",
   "id": "amazonq.ts",

@@ -4,7 +4,8 @@
     "bsc.ts",
     "sha256.ts",
     "gist.ts",
-    "gist-manifest.ts"
+    "gist-manifest.ts",
+    "blueprints.ts"
   ],
   "domain": "planner",
   "folder": "features/planner/blueprints",

@@ -1,6 +1,9 @@
 {
   "code": "// One-time persisted-state migration: the legacy unified `extensions` list (an mcp+hook\r\n// discriminated union) → the split `mcpServers` / `hooks` slices, plus the renamed MCP route\r\n// key. Runs in the store's onRehydrateStorage; pure + idempotent (no-op once migrated).\r\n// (#mcp-hooks-split)\r\n\r\nimport { type McpServer } from \"@/features/mcp/lib/mcpServers\";\r\nimport { type Hook } from \"@/features/mcp/lib/hooks\";\r\n\r\ninterface LegacyState {\r\n  extensions?: Array<Record<string, unknown>>;\r\n  mcpServers?: McpServer[];\r\n  hooks?: Hook[];\r\n  activeWorkspace?: string;\r\n}\r\n\r\n/** Split a persisted `extensions` array into `mcpServers` + `hooks` (by `kind`), mapping the old\r\n *  hook `hookCommand` field to `command`, and migrate the `extensions` → `mcp` route key.\r\n *  Mutates `state` in place. Safe to call on already-migrated or empty state. */\r\nexport function migrateLegacyExtensions(stateArg: unknown): void {\r\n  const state = stateArg as LegacyState | undefined;\r\n  if (!state) return;\r\n\r\n  if (Array.isArray(state.extensions)) {\r\n    const exts = state.extensions;\r\n    state.mcpServers = exts\r\n      .filter((e) => e.kind === \"mcp\")\r\n      .map((e) => ({\r\n        id: e.id, name: e.name, enabled: e.enabled, projects: (e.projects as string[]) ?? [],\r\n        transport: e.transport ?? \"stdio\", command: e.command, args: e.args, url: e.url, env: e.env,\r\n      } as McpServer));\r\n    state.hooks = exts\r\n      .filter((e) => e.kind === \"hook\")\r\n      .map((e) => ({\r\n        id: e.id, name: e.name, enabled: e.enabled, projects: (e.projects as string[]) ?? [],\r\n        event: e.event ?? \"PostToolUse\", matcher: e.matcher, command: (e.hookCommand ?? e.command ?? \"\"), env: e.env,\r\n      } as Hook));\r\n    delete state.extensions;\r\n  }\r\n\r\n  if (state.activeWorkspace === \"extensions\") state.activeWorkspace = \"mcp\";\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "hooks.ts",
+    "mcp-servers.ts"
+  ],
   "domain": "mcp",
   "folder": "features/mcp/lib",
   "id": "migrate-extensions.ts",

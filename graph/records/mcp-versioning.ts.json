@@ -1,6 +1,9 @@
 {
   "code": "// Version/install status of a downloadable (first-party) MCP server (#885). Pure (no React/Tauri)\n// so the status type + its derivation are unit-testable and shared by the screen's install hook.\n\nimport { catalogLink } from \"@/features/mcp/lib/mcpInstall\";\nimport type { McpServer } from \"@/features/mcp/lib/mcpServers\";\n\n/** Install/version status of a downloadable MCP server (#885). */\nexport type McpStat =\n  | \"checking\" | \"current\" | \"outdated\" | \"needs-build\"\n  | \"downloading\" | \"building\" | \"updating\" | \"error\";\n\n/** The shape `mcp_check_update` resolves to: whether the clone exists, is built, and is behind. */\nexport interface McpCheckResult {\n  downloaded: boolean;\n  built: boolean;\n  updateAvailable: boolean;\n}\n\n/** Map a backend `mcp_check_update` result to the row status shown on an installed server (#885):\n *  not cloned (or not yet built) → needs-build, behind its remote → outdated, else current. */\nexport function deriveCheckStat(r: McpCheckResult): McpStat {\n  return !r.downloaded ? \"needs-build\" : r.updateAvailable ? \"outdated\" : !r.built ? \"needs-build\" : \"current\";\n}\n\n/** The names of installed servers that are downloadable (first-party, install-from-source) — the\n *  ones the version check runs against. */\nexport function installedDownloadableNames(servers: McpServer[]): string[] {\n  return servers.filter(e => catalogLink(e.name)).map(e => e.name);\n}\n",
-  "composes": [],
+  "composes": [
+    "mcp-install.ts",
+    "mcp-servers.ts"
+  ],
   "domain": "mcp",
   "folder": "features/mcp/lib",
   "id": "mcp-versioning.ts",

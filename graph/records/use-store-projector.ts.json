@@ -8,7 +8,22 @@
   "folder": "features/tunnel",
   "src": "src/features/tunnel/useStoreProjector.ts",
   "provides": "@/features/tunnel/useStoreProjector",
-  "composes": [],
+  "composes": [
+    "alert-hub.ts",
+    "alerts.ts",
+    "console-model.ts",
+    "designs-index.ts",
+    "glance-index.ts",
+    "lessons.ts",
+    "logs-bridge.ts",
+    "logs-index.ts",
+    "pane-identity.ts",
+    "skills-index.ts",
+    "store-projections.ts",
+    "tunnel-domains.ts",
+    "use-coord-log.ts",
+    "use-poll.ts"
+  ],
   "tests": [
     {
       "name": "useStoreProjector",

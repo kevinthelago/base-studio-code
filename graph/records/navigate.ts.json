@@ -8,7 +8,10 @@
   "folder": "app",
   "src": "src/app/navigate.ts",
   "provides": "@/app/navigate",
-  "composes": [],
+  "composes": [
+    "app-registry.ts",
+    "store-types.ts"
+  ],
   "tests": [
     {
       "name": "applyNavigation — per-workspace page dispatch (#3602)",

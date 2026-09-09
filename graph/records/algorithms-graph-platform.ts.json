@@ -15,7 +15,8 @@
     "scalar-view-motion.ts",
     "stack-view-motion.ts",
     "tree-view-motion.ts",
-    "renderers-tree-layout.ts"
+    "renderers-tree-layout.ts",
+    "module-registry.ts"
   ],
   "domain": "algorithms",
   "folder": "features/algorithms",

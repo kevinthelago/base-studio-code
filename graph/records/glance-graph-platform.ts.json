@@ -24,9 +24,10 @@
     "team-fleet.ts",
     "studio-sessions-index.ts",
     "designs-index.ts",
-    "debug-index.ts",
+    "features--debug--index.ts",
     "teams-index.ts",
-    "pane-identity.ts"
+    "pane-identity.ts",
+    "module-registry.ts"
   ],
   "domain": "glance",
   "folder": "features/glance",

@@ -1,6 +1,11 @@
 {
   "code": "// The tunnel feature's graph-platform surface (register-the-feature-logic-surface) — the modules a\n// graph-loaded record imports from this feature but does NOT redraw.\n//\n// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545)\n// and eager-importing them from `app/` would de-lazy the whole feature at boot. The feature's BARREL\n// calls this at module load, so the shadow catalogue's `ensurePlatform: () => import(\"@/features/tunnel\")`\n// is what registers them — the same shape `registerAutomationsPlatform` already uses.\n//\n// These files STAY on disk: registration is not migration. It makes a record that imports them\n// loadable, which is the prerequisite for migrating the modules that import THEM.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as Tunnel from \"@/features/tunnel/lib/tunnel\";\nimport * as TunnelClient from \"@/features/tunnel/lib/tunnelClient\";\nimport * as RelayProbe from \"@/features/tunnel/lib/relayProbe\";\n// `qrcode.react`, registered HERE and not in `appModules`: the pairing QR is the tunnel's own\n// dependency and registration is EAGER, so putting it in the shell's set would pull the QR\n// renderer into the boot bundle for every user who never pairs a phone.\nimport * as QrcodeReact from \"qrcode.react\";\n\nlet done = false;\n\n/** Register this feature's injected graph-platform modules by the specifiers a record imports. Idempotent. */\nexport function registerTunnelPlatform(): void {\n  if (done) return;\n  done = true;\n  registerAppModule(\"@/features/tunnel/lib/tunnel\", Tunnel);\n  registerAppModule(\"@/features/tunnel/lib/tunnelClient\", TunnelClient);\n  registerAppModule(\"@/features/tunnel/lib/relayProbe\", RelayProbe);\n  registerAppModule(\"qrcode.react\", QrcodeReact);\n}\n",
-  "composes": [],
+  "composes": [
+    "module-registry.ts",
+    "relay-probe.ts",
+    "tunnel-client.ts",
+    "tunnel.ts"
+  ],
   "domain": "tunnel",
   "folder": "features/tunnel",
   "id": "tunnel-graph-platform.ts",

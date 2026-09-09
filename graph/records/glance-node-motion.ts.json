@@ -1,6 +1,9 @@
 {
   "code": "// The `glance-node` kit's MOTION wiring (#4032, epic #2942) — compiles the authored animation DATA\n// into CSS once and injects it into a managed <style>. Mirrors `ensureGraphViewMotion` on its own\n// style id; the animation data itself lives in `@/shared/ui/kit/glanceNodeAnimations` so the designer\n// and this renderer read ONE definition.\nimport { animClassName, compileAnimationsCss, kitAnimations } from \"@/shared/ui/kit\";\nimport { GLANCE_NODE_KIT_ID, GLANCE_NODE_ANIMATIONS } from \"@/shared/ui/kit/glanceNodeAnimations\";\n\nexport { GLANCE_NODE_KIT_ID, GLANCE_NODE_ANIMATIONS };\n\n/** The applying classes the node carries so the state-scoped rules match it. */\nexport const GLANCE_NODE_ANIM_CLASSES: string = GLANCE_NODE_ANIMATIONS.map((a) =>\n  animClassName({ kit: GLANCE_NODE_KIT_ID, name: a.name }),\n).join(\" \");\n\n/** The compiled motion CSS — produced ONCE from the authored data. Pure. */\nexport const GLANCE_NODE_MOTION_CSS: string = compileAnimationsCss(\n  kitAnimations([{ id: GLANCE_NODE_KIT_ID, animations: GLANCE_NODE_ANIMATIONS }]),\n);\n\nconst STYLE_ID = \"bsc-glance-node-animations\";\n\n/** Inject the compiled node motion CSS into a dedicated managed `<style>` (idempotent). `doc` param'd\n *  for tests. */\nexport function ensureGlanceNodeMotion(doc: Document = document): void {\n  if (!GLANCE_NODE_MOTION_CSS) return;\n  let el = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;\n  if (!el) {\n    el = doc.createElement(\"style\");\n    el.id = STYLE_ID;\n    doc.head.appendChild(el);\n  }\n  if (el.textContent !== GLANCE_NODE_MOTION_CSS) el.textContent = GLANCE_NODE_MOTION_CSS;\n}\n",
-  "composes": [],
+  "composes": [
+    "glance-node-animations.ts",
+    "kit-index.ts"
+  ],
   "domain": "glance",
   "folder": "features/glance",
   "id": "glance-node-motion.ts",

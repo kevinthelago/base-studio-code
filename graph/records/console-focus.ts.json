@@ -1,6 +1,8 @@
 {
   "code": "// Focus policy for console panes.\r\n\r\n// Canonical pane-status vocabulary (#435), re-exported for this module's importers.\r\nexport type { PaneStatus } from \"@/app/console/lib/paneStatus\";\r\nimport type { PaneStatus } from \"@/app/console/lib/paneStatus\";\r\n\r\n/**\r\n * Whether replying to the focused agent — it just went idle -> run — should\r\n * auto-advance focus to the next waiting pane (complete an interaction, move on).\r\n * Only the focused pane's reply triggers it; a background pane resuming on its\r\n * own must not move the cursor.\r\n */\r\nexport function shouldAdvanceOnReply(\r\n  prevStatus: PaneStatus,\r\n  status: PaneStatus,\r\n  paneIdx: number,\r\n  focusedIdx: number,\r\n): boolean {\r\n  return status === \"run\" && prevStatus === \"idle\" && focusedIdx >= 0 && paneIdx === focusedIdx;\r\n}\r\n\r\n/**\r\n * Resolve the next `fullscreenPaneIdx` when toggling maximize/minimize on a pane.\r\n * Shared by the header button (via Console's handler) and the Ctrl+Shift+F hotkey\r\n * so both follow identical maximize ⇄ restore semantics.\r\n *\r\n * @param targetIdx the pane to act on (e.g. the focused pane); negative means\r\n *   nothing is selected.\r\n * @param currentFullscreenIdx the pane currently maximized, or -1 for none.\r\n * @returns -1 to restore the grid (target was already maximized), the target\r\n *   index to maximize it, or `null` when there is no pane to act on (no-op).\r\n */\r\nexport function nextFullscreen(targetIdx: number, currentFullscreenIdx: number): number | null {\r\n  if (targetIdx < 0) return null;\r\n  return currentFullscreenIdx === targetIdx ? -1 : targetIdx;\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "pane-status.ts"
+  ],
   "domain": "shell",
   "folder": "app/console/lib",
   "id": "console-focus.ts",

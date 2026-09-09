@@ -8,7 +8,25 @@
   "folder": "features/tunnel/lib",
   "src": "src/features/tunnel/lib/storeProjections.ts",
   "provides": "@/features/tunnel/lib/storeProjections",
-  "composes": [],
+  "composes": [
+    "alerts.ts",
+    "blueprint-types.ts",
+    "designs-index.ts",
+    "general-node.ts",
+    "glance-index.ts",
+    "hooks.ts",
+    "lessons.ts",
+    "logs-index.ts",
+    "mcp-servers.ts",
+    "personas-index.ts",
+    "plan-fleet.ts",
+    "project-links.ts",
+    "scheduler.ts",
+    "skill-groups.ts",
+    "skills-model.ts",
+    "teams-index.ts",
+    "themes.ts"
+  ],
   "tests": [
     {
       "name": "buildGlancePayload",

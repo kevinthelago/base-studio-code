@@ -3,7 +3,8 @@
   "composes": [
     "scheduler.ts",
     "cron.ts",
-    "automations-format.ts"
+    "automations-format.ts",
+    "module-registry.ts"
   ],
   "domain": "automations",
   "folder": "features/automations",

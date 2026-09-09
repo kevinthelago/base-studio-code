@@ -1,6 +1,8 @@
 {
   "code": "// Resolve the GitHub assignee for a published issue (#847). A worker/stream is an agent\r\n// session, not a GitHub user, so the assignee is a human/collaborator login configured per\r\n// stream (`AgentStream.assignee`), falling back to the account running the publish. The\r\n// `stream:<id>` label stays as the agent-ownership marker; this drives the first-class\r\n// GitHub assignee field. Pure + unit-tested; the publish flow applies it best-effort.\r\n\r\nimport type { AgentStream } from \"@/features/planner/fleet/planFleet\";\r\n\r\n/**\r\n * The GitHub login to assign an issue to, given its owning stream id.\r\n *\r\n * - The owning stream's configured `assignee`, when set and non-empty.\r\n * - Otherwise the publishing account (`viewerLogin`) — so issues are never left unassigned.\r\n * - `null` only when there's no stream login AND no viewer login (assignment is then skipped).\r\n *\r\n * Trims whitespace; an all-whitespace stream assignee is treated as unset.\r\n */\r\nexport function resolveIssueAssignee(\r\n  streamId: string | undefined,\r\n  streams: readonly AgentStream[],\r\n  viewerLogin: string,\r\n): string | null {\r\n  const stream = streamId ? streams.find((s) => s.id === streamId) : undefined;\r\n  const streamLogin = stream?.assignee?.trim();\r\n  if (streamLogin) return streamLogin;\r\n  const viewer = viewerLogin.trim();\r\n  return viewer || null;\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "plan-fleet.ts"
+  ],
   "domain": "planner",
   "folder": "features/planner/fleet",
   "id": "fleet-assignee.ts",

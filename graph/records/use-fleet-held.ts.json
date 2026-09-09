@@ -7,7 +7,9 @@
     "use-coord-log.ts",
     "fleet-issue-state.ts",
     "stream-gate.ts",
-    "plan-issues.ts"
+    "plan-issues.ts",
+    "bsc-shared.ts",
+    "stream-completion.ts"
   ],
   "domain": "glance",
   "folder": "features/glance/lib",

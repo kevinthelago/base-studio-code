@@ -1,6 +1,8 @@
 {
   "code": "import type { ConsoleProvider } from \"@/app/console/lib/providers/types\";\r\n\r\nconst DEFAULT_MODEL = \"llama3\";\r\n\r\nexport const ollamaProvider: ConsoleProvider = {\r\n  id: \"ollama\",\r\n  displayName: \"Ollama\",\r\n  buildLaunchCmd: (config) => `ollama run ${config?.model ?? DEFAULT_MODEL}`,\r\n  prereqProbe: \"which ollama\",\r\n};\r\n",
-  "composes": [],
+  "composes": [
+    "types.ts"
+  ],
   "domain": "shell",
   "folder": "app/console/lib/providers/providers",
   "id": "ollama.ts",

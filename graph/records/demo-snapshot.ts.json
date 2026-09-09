@@ -8,7 +8,8 @@
     "plan-fleet.ts",
     "mock.ts",
     "scheduler.ts",
-    "app-state.ts"
+    "app-state.ts",
+    "blueprints.ts"
   ],
   "domain": "store",
   "folder": "store",

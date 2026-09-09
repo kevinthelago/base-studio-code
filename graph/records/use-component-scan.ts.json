@@ -5,7 +5,8 @@
     "collect-app-css.ts",
     "component-scan.ts",
     "library-modules.ts",
-    "model.ts"
+    "model.ts",
+    "batch-writer.ts"
   ],
   "domain": "designs",
   "folder": "features/designs/lib",

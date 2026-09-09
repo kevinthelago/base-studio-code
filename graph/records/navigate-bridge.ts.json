@@ -10,7 +10,9 @@
   "provides": "@/app/navigateBridge",
   "composes": [
     "app-registry.ts",
-    "navigate.ts"
+    "navigate.ts",
+    "banners.ts",
+    "store-types.ts"
   ],
   "tests": [
     {

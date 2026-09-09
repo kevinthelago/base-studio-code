@@ -3,7 +3,9 @@
   "composes": [
     "use-poll.ts",
     "bsc.ts",
-    "plan-issues.ts"
+    "plan-issues.ts",
+    "bsc-shared.ts",
+    "stream-completion.ts"
   ],
   "domain": "glance",
   "folder": "features/glance/lib",

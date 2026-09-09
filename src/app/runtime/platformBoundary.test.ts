@@ -42,7 +42,13 @@ import { registerConsolePlatform } from "@/app/console/graphPlatform";
 // the app stays broken. If a specifier needs to resolve, register it in `appModules` where the runtime
 // will actually see it.
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
-import algorithmsSeed from "@data/knowledge/algorithms.json";
+// READS THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`). The seed
+// used to be the right source here for a stated reason — it is what ships, and a guard has to hold on a
+// fresh clone and in CI where no local runtime store exists. Both halves of that are now true of
+// `graph/algorithms.json` + `graph/records/*.json`, which is git-tracked, and it is what `bsc-emit`
+// materializes `.bsc-records/` from and what `graph-materialize` compiles 25 crates from. Left on the
+// seed, this guard would police a copy nothing compiles.
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 // A relative path on purpose: `scripts/` is outside the `@/` alias (which maps to `src/`).
 import { runtimeImports } from "../../../scripts/lib/recordSource.mjs";
 
@@ -96,6 +102,16 @@ describe("the platform-kernel boundary (#3858)", () => {
     expect(RECORDS.length).toBeGreaterThan(50);
   });
 
+  it("has the IMPLEMENTATION half too — a vacuous store load resolves every import", () => {
+    // The impl `provides` set is the third resolution path (see below), so an empty load does not fail
+    // — it reports every migrated module as a broken import, or, once the specifier moves, silently
+    // stops answering. `loadImplementations()` reads the committed store off disk relative to the cwd,
+    // which is exactly the kind of thing that returns `[]` rather than throwing.
+    const impls = (loadImplementations() ?? []) as { provides?: string }[];
+    expect(impls.length, "the committed store loaded no implementations").toBeGreaterThan(600);
+    expect(impls.filter((im) => im.provides?.startsWith("@/")).length).toBeGreaterThan(500);
+  });
+
   it("EVERY packaged record's first-party imports resolve", () => {
     const ids = new Set(RECORDS.map((r) => r.id));
     const provides = new Set(RECORDS.map((r) => r.provides?.trim()).filter(Boolean) as string[]);
@@ -104,7 +120,7 @@ describe("the platform-kernel boundary (#3858)", () => {
     // field. A retired module's specifier resolves here and NOWHERE else, so omitting this reports every
     // migrated module as a broken import — a false alarm about the change that just landed.
     const implProvides = new Set(
-      ((algorithmsSeed as { implementations?: { provides?: string }[] }).implementations ?? [])
+      ((loadImplementations() ?? []) as { provides?: string }[])
         .map((im) => im.provides?.trim())
         .filter(Boolean) as string[],
     );

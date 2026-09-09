@@ -5,7 +5,8 @@
     "skills-filter.ts",
     "skill-telemetry.ts",
     "lessons.ts",
-    "skill-styles.ts"
+    "skill-styles.ts",
+    "module-registry.ts"
   ],
   "domain": "skills",
   "folder": "features/skills",

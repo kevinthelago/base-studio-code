@@ -1,6 +1,11 @@
 {
   "code": "// useCoordSpeaker (#3804, a11y epic #2725 Tier 1) — SPEAKS new coordination events aloud via the\n// app-owned TTS engine (`speechSynthesis`), so a blind developer can drive the fleet BY EAR. The\n// sibling of `useCoordAnnouncer` (#3770): both read the SAME seam — `useCoordLog()` → `coordAlerts`,\n// whose `text` is already the human line (\"api-stream paused and is waiting for you\") — but the\n// announcer writes to an ARIA live region for the user's OWN screen reader, while this one speaks with\n// the app's voice. It speaks only the STRUCTURED events, never the raw terminal stream.\n//\n// Opt-in + fully off by default; settings (enabled/rate/voice/verbosity) are read FRESH per event from\n// the store, so toggling on mid-session takes effect immediately WITHOUT replaying history. The mount\n// backlog is seeded SILENT, and every alert id is remembered whether or not it was spoken — so enabling\n// TTS never buries the user under the events that were already on screen.\nimport { useEffect, useRef } from \"react\";\nimport { useCoordLog } from \"@/shared/lib/fleet/useCoordLog\";\nimport { coordAlerts } from \"@/features/tunnel\";\nimport { useAppStore } from \"@/store\";\nimport { speak } from \"@/shared/lib/a11y/speech\";\nimport { shouldSpeak } from \"@/app/a11y/coordSpeech\";\n\nexport function useCoordSpeaker(): void {\n  const { state } = useCoordLog();\n  const seen = useRef<Set<string>>(new Set());\n  const seeded = useRef(false);\n\n  useEffect(() => {\n    const alerts = coordAlerts(state);\n    const firstSeed = !seeded.current;\n    seeded.current = true;\n    for (const a of alerts) {\n      if (seen.current.has(a.id)) continue;\n      // Remember EVERY alert (even while off / on the initial backlog) so enabling never replays them.\n      seen.current.add(a.id);\n      if (firstSeed) continue;\n      const st = useAppStore.getState();\n      if (st.ttsEnabled && shouldSpeak(a.kind, st.ttsVerbosity)) {\n        speak(a.text, { rate: st.ttsRate, voiceURI: st.ttsVoice || undefined });\n      }\n    }\n  }, [state]);\n}\n",
-  "composes": [],
+  "composes": [
+    "coord-speech.ts",
+    "features--tunnel--index.ts",
+    "speech.ts",
+    "use-coord-log.ts"
+  ],
   "domain": "shell",
   "folder": "app/a11y",
   "id": "use-coord-speaker.ts",

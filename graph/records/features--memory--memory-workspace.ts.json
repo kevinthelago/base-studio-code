@@ -8,7 +8,12 @@
   "folder": "features/memory",
   "src": "src/features/memory/MemoryWorkspace.tsx",
   "provides": "@/features/memory/MemoryWorkspace",
-  "composes": [],
+  "composes": [
+    "bsc.ts",
+    "features--memory--lib--memory.ts",
+    "features--memory--memory-graph-view.ts",
+    "use-page-tabs.ts"
+  ],
   "tests": [
     {
       "name": "MemoryWorkspace",

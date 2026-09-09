@@ -1,6 +1,11 @@
 {
   "code": "// The studio-sessions feature's graph-platform surface (register-the-feature-logic-surface) — the modules a\n// graph-loaded record imports from this feature but does NOT redraw.\n//\n// Registered HERE, inside the feature, because the shell must not reach a feature's internals (#1545)\n// and eager-importing them from `app/` would de-lazy the whole feature at boot. The feature's BARREL\n// calls this at module load, so the shadow catalogue's `ensurePlatform: () => import(\"@/features/studio-sessions\")`\n// is what registers them — the same shape `registerAutomationsPlatform` already uses.\n//\n// These files STAY on disk: registration is not migration. It makes a record that imports them\n// loadable, which is the prerequisite for migrating the modules that import THEM.\nimport { registerAppModule } from \"@/shared/lib/runtime/moduleRegistry\";\nimport * as UseStudioReaper from \"@/features/studio-sessions/useStudioReaper\";\nimport * as Store from \"@/features/studio-sessions/store\";\nimport * as StudioSessions from \"@/features/studio-sessions/lib/studioSessions\";\n\nlet done = false;\n\n/** Register this feature's injected graph-platform modules by the specifiers a record imports. Idempotent. */\nexport function registerStudioSessionsPlatform(): void {\n  if (done) return;\n  done = true;\n  registerAppModule(\"@/features/studio-sessions/useStudioReaper\", UseStudioReaper);\n  registerAppModule(\"@/features/studio-sessions/store\", Store);\n  registerAppModule(\"@/features/studio-sessions/lib/studioSessions\", StudioSessions);\n}\n",
-  "composes": [],
+  "composes": [
+    "module-registry.ts",
+    "studio-sessions-store.ts",
+    "studio-sessions.ts",
+    "use-studio-reaper.ts"
+  ],
   "domain": "studio-sessions",
   "folder": "features/studio-sessions",
   "id": "studio-sessions-graph-platform.ts",

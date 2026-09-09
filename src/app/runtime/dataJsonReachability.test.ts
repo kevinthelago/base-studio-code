@@ -15,7 +15,13 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { dataSpecifierFor } from "./appModules";
-import algorithmsSeed from "@data/knowledge/algorithms.json";
+// READS THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`). The seed
+// used to be the right source here for a stated reason — it is what ships, and a guard has to hold on a
+// fresh clone and in CI where no local runtime store exists. Both halves of that are now true of
+// `graph/algorithms.json` + `graph/records/*.json`, which is git-tracked, and it is what `bsc-emit`
+// materializes `.bsc-records/` from and what `graph-materialize` compiles 25 crates from. Left on the
+// seed, this guard would police a copy nothing compiles.
+import { loadImplementations } from "@scripts/lib/recordStore.mjs";
 
 const SRC = join(process.cwd(), "src");
 
@@ -44,7 +50,7 @@ const seedRecordSources = (): { path: string; text: string }[] => {
     const t = m.default?.srcText;
     if (t) out.push({ path: `record ${m.default.id ?? p}`, text: t });
   }
-  for (const im of (algorithmsSeed as { implementations?: { id: string; code?: string }[] }).implementations ?? []) {
+  for (const im of ((loadImplementations() ?? []) as { id: string; code?: string }[])) {
     if (im.code) out.push({ path: `impl ${im.id}`, text: im.code });
   }
   return out;
@@ -65,6 +71,12 @@ describe("every @data JSON a module imports is reachable through the registry", 
   it("finds modules to check at all", () => {
     // Non-vacuity: a listing that stopped walking would make an empty sweep read as a clean one.
     expect(modules.length).toBeGreaterThan(200);
+    // The RECORD half separately, because it is loaded off disk rather than globbed: a store load that
+    // returns nothing would leave the file sweep above satisfying this floor on its own.
+    expect(
+      ((loadImplementations() ?? []) as { code?: string }[]).filter((im) => im.code).length,
+      "the committed store loaded no implementations",
+    ).toBeGreaterThan(600);
   });
 
   it("every imported @data/*.json specifier is registered", () => {

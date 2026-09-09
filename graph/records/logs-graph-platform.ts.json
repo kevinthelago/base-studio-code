@@ -3,7 +3,8 @@
   "composes": [
     "console-model.ts",
     "audit-rows.ts",
-    "module-registry.ts"
+    "module-registry.ts",
+    "skills-index.ts"
   ],
   "domain": "security",
   "folder": "features/logs",

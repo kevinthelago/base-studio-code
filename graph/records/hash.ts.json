@@ -1,6 +1,8 @@
 {
   "code": "// The glance sample-data hash (#2421) — the one home for the private copies glanceData.ts and\r\n// glanceFleet.ts each carried, derived from the shared `hashString` (shared/lib/core/format.ts)\r\n// instead of re-implementing the loop.\r\n//\r\n// NOT plain `hashString`: the glance copies truncated each step with `| 0` (signed) and took a\r\n// final `Math.abs`, while `hashString` truncates with `>>> 0` (unsigned). The per-step low 32 bits\r\n// track identically either way (the 2^32 offset vanishes mod 2^32 under `* 31 + c`), so the two\r\n// differ only in the FINAL reduction: when the sign bit is set, `Math.abs(h | 0)` = 2^32 − hashString.\r\n// Reinterpreting `hashString`'s result as signed and abs-ing it therefore reproduces the historical\r\n// values EXACTLY — which matters because the sample role / worker-count / status assignments\r\n// (`hashAbs(id) % n`) must stay stable for existing projects.\r\nimport { hashString } from \"@/shared/lib/core/format\";\r\n\r\n/** Stable small hash of a string → non-negative int (deterministic sample role/status/count\r\n *  assignment). Same outputs as the former private `hash()` copies — see the header. */\r\nexport function hashAbs(s: string): number {\r\n  return Math.abs(hashString(s) | 0);\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "format.ts"
+  ],
   "domain": "glance",
   "folder": "features/glance/lib",
   "id": "hash.ts",

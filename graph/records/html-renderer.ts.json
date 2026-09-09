@@ -3,7 +3,8 @@
   "composes": [
     "preview-registry.ts",
     "preview-types.ts",
-    "streaming-runtime.ts"
+    "streaming-runtime.ts",
+    "preview-bundle.ts"
   ],
   "domain": "planner",
   "folder": "features/planner/preview/renderers",

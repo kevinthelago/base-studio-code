@@ -1,6 +1,8 @@
 {
   "code": "// useDockBack (#3919) — the main window's half of \"drag a torn-off tab home\".\n//\n// A detached window cannot deliver its drop to this window's DOM: the tab drag is HTML5 drag-and-drop,\n// scoped to one webview (#3917). So it emits over the Tauri app-global bus instead, and this clears the\n// detached flag — which is what makes the tab reappear in its persisted place (`usePageTabs` filters the\n// strip by `detachedSections`).\n//\n// Idempotent by construction: `setSectionDetached(..., false)` filters an id out of a list, so the event\n// arriving alongside the window's own `tauri://destroyed` re-dock (the pre-existing backstop) is harmless.\nimport { useEffect } from \"react\";\nimport { useAppStore } from \"@/store\";\nimport { onDockBack } from \"@/shared/lib/core/dockBack\";\n\n/** Install the dock-back listener. Main window only — a detached window must not re-dock its own page. */\nexport function useDockBack(enabled: boolean): void {\n  const setSectionDetached = useAppStore((s) => s.setSectionDetached);\n  useEffect(() => {\n    if (!enabled) return;\n    let unlisten: (() => void) | undefined;\n    let cancelled = false;\n    void onDockBack(({ page, section }) => setSectionDetached(page, section, false)).then((fn) => {\n      // The listener resolves asynchronously; if the effect already tore down, drop it immediately rather\n      // than leaking a subscription onto an unmounted shell.\n      if (cancelled) fn();\n      else unlisten = fn;\n    });\n    return () => { cancelled = true; unlisten?.(); };\n  }, [enabled, setSectionDetached]);\n}\n",
-  "composes": [],
+  "composes": [
+    "dock-back.ts"
+  ],
   "domain": "shell",
   "folder": "app",
   "id": "use-dock-back.ts",

@@ -1,6 +1,9 @@
 {
   "code": "// The frontend ↔ github-state bridge (#2446) — mirrors the last-known GitHub board state into the\r\n// bsc-project store (`~/.base-studio-code/github-state.json`) so the durable copy is reachable from a\r\n// live session via `bsc project github-state` (golden rule: every persistent app store is\r\n// `bsc`-reachable). Same pattern as projectLinksBridge (#2253): the zustand copy is the write-through\r\n// CACHE; each successful fetch pushes the whole state here. Global (no project key) → null.\r\nimport { bscWrite } from \"@/shared/lib/core/bsc\";\r\nimport type { GithubState } from \"@/shared/lib/github/githubState\";\r\n\r\n/** Write-through the whole state (`bsc project github-state set`, JSON on stdin). Fire-and-forget;\r\n *  never throws (degrades to cache-only when the bridge/binary is absent). */\r\nexport async function pushGithubState(state: GithubState): Promise<void> {\r\n  await bscWrite(null, [\"project\", \"github-state\", \"set\"], state);\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "bsc.ts",
+    "github-state.ts"
+  ],
   "domain": "github",
   "folder": "shared/lib/github",
   "id": "github-state-bridge.ts",

@@ -1,6 +1,8 @@
 {
   "code": "// Neighbor spotlight (#2215, graph-core epic #2214) — the shared \"focus dims the rest\" primitive. Given\r\n// a node in focus (hovered/selected), it returns the node itself + its direct neighbors (in either\r\n// direction) and every edge touching it, so the view can brighten those and dim everything else. Both\r\n// Glance (focusSets) and the agent-relationship graph (computeSpotlight) resolve their node/agent focus\r\n// this way; each layers its own domain extras on top (Glance's edge/cycle branches; the relationship\r\n// graph's artifact lighting).\r\nimport type { GraphEdge } from \"@/shared/lib/graph/types\";\r\n\r\nexport interface Spotlight {\r\n  /** The focused node + its direct neighbors. */\r\n  litNodes: Set<string>;\r\n  /** Every edge incident to the focused node. */\r\n  litEdges: Set<string>;\r\n}\r\n\r\n/** The node in focus + its neighbors (either direction) + the edges touching it. Pure. */\r\nexport function neighborSpotlight(edges: readonly GraphEdge[], focusId: string): Spotlight {\r\n  const litNodes = new Set<string>([focusId]);\r\n  const litEdges = new Set<string>();\r\n  for (const e of edges) {\r\n    if (e.from === focusId) { litNodes.add(e.to); litEdges.add(e.id); }\r\n    if (e.to === focusId) { litNodes.add(e.from); litEdges.add(e.id); }\r\n  }\r\n  return { litNodes, litEdges };\r\n}\r\n",
-  "composes": [],
+  "composes": [
+    "graph-types.ts"
+  ],
   "domain": "graph",
   "folder": "shared/lib/graph",
   "id": "spotlight.ts",
