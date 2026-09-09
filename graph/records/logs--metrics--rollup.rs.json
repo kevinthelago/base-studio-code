@@ -1,0 +1,14 @@
+{
+  "id": "logs--metrics--rollup.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rollup",
+  "src": "crates/logs/src/metrics/rollup.rs",
+  "folder": "crates/logs/src/metrics",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The pure rollup: fold the per-pane costs + activity timestamps + optional completion into one\n/// [`ProjectMetrics`]. `activity` is `(pane, epoch_ms)` for every activity event (unfiltered — this\n/// filters by project itself, so one test drives the whole computation).\npub fn rollup(\n    project: &str,\n    costs: &[Cost],\n    activity: &[(String, i64)],\n    completion: Option<(u64, u64)>,\n) -> ProjectMetrics {\n    let mut m = ProjectMetrics {\n        project: project.to_string(),\n        panes: 0,\n        input: 0,\n        output: 0,\n        cache_creation: 0,\n        cache_read: 0,\n        cost_usd: 0.0,\n        build_cost_usd: 0.0,\n        run_cost_usd: 0.0,\n        build_tokens: 0,\n        run_tokens: 0,\n        cache_hit_rate: 0.0,\n        wall_clock_ms: 0,\n        issues_done: completion.map(|(d, _)| d),\n        issues_total: completion.map(|(_, t)| t),\n        per_pane: Vec::new(),\n    };\n\n    for c in costs.iter().filter(|c| attributed_to(project, &c.session)) {\n        m.input += c.input;\n        m.output += c.output;\n        m.cache_creation += c.cache_creation;\n        m.cache_read += c.cache_read;\n        m.cost_usd += c.cost_usd;\n        // #3814: split the spend by build (the construction fleet) vs run (triage/operate).\n        let tokens = c.input + c.output;\n        if crate::category_of(&c.session) == \"build\" {\n            m.build_cost_usd += c.cost_usd;\n            m.build_tokens += tokens;\n        } else {\n            m.run_cost_usd += c.cost_usd;\n            m.run_tokens += tokens;\n        }\n        m.per_pane.push(c.clone());\n    }\n    m.panes = m.per_pane.len();\n\n    let cacheable = m.input + m.cache_read;\n    if cacheable > 0 {\n        m.cache_hit_rate = m.cache_read as f64 / cacheable as f64;\n    }\n\n    m.wall_clock_ms = latest_run_span_ms(project, activity);\n    m\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

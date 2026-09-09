@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--fleet--teardown--exclude-build-artifacts.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "exclude_build_artifacts",
+  "src": "src-tauri/src/fleet/teardown/exclude_build_artifacts.rs",
+  "folder": "src-tauri/src/fleet/teardown",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Add the heavy build-output dirs (`target/`, `node_modules/`, …) to a worktree's git\n/// `info/exclude` so they never enter the worker's diff and are unambiguously app-owned scratch\n/// (#1080). Resolved through git (`git_exclude`) so it works in a linked worktree where `.git` is a\n/// file. Idempotent; a no-op when `wt` is not a git worktree. Called from `ensure_worktree`.\npub(crate) fn exclude_build_artifacts(wt: &Path) {\n    for entry in WORKTREE_BUILD_EXCLUDES {\n        crate::git_exclude(wt, entry);\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

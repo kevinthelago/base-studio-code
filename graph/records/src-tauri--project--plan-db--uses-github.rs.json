@@ -1,0 +1,17 @@
+{
+  "id": "src-tauri--project--plan-db--uses-github.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "uses_github",
+  "src": "src-tauri/src/project/plan_db/uses_github.rs",
+  "folder": "src-tauri/src/project/plan_db",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--project--plan-db--db-path.rs",
+    "src-tauri--project--plan-db--open.rs"
+  ],
+  "code": "use super::*;\n\n/// Does this project ship to GitHub? (`classify.usesGithub`, decided at discovery.)\n///\n/// ABSENT reads as TRUE, matching `bsc fleet clone`'s own default: unclassified means discovery has\n/// not run, and the historical behaviour is the GitHub one. Like [`fleet_for`] this never creates a\n/// db — it is called from error paths that probe projects which may have no store at all.\npub(crate) fn uses_github(project_key: &str) -> bool {\n    if !db_path(project_key).exists() {\n        return true;\n    }\n    open(project_key)\n        .ok()\n        .and_then(|s| s.classify_get().ok().flatten())\n        .and_then(|c| c.get(\"usesGithub\").and_then(serde_json::Value::as_bool))\n        .unwrap_or(true)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

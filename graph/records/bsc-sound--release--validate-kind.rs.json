@@ -1,0 +1,14 @@
+{
+  "id": "bsc-sound--release--validate-kind.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_kind",
+  "src": "crates/bsc-sound/src/release/validate_kind.rs",
+  "folder": "crates/bsc-sound/src/release",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn validate_kind(kind: &str) -> Result<(), String> {\n    if KIT_KINDS.contains(&kind) {\n        Ok(())\n    } else {\n        Err(format!(\"invalid sound-kit kind '{kind}' — want one of: {}\", KIT_KINDS.join(\" | \")))\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

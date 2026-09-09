@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--shot--capture-scale.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "capture_scale",
+  "src": "src-tauri/src/shot/capture_scale.rs",
+  "folder": "src-tauri/src/shot",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The capture's device-pixels-per-CSS-pixel ratio (#3467).\n///\n/// Every crop rect arrives in CSS pixels (`getBoundingClientRect()`), while `CapturePreview` emits\n/// device pixels — so on a HiDPI display the two disagree by this factor. It is derived from the\n/// capture and the live window rather than trusted from a caller: `img_w / css_viewport_w`, where the\n/// CSS width is the window's physical inner width over the OS scale factor. That self-corrects if the\n/// captured surface is not exactly the window, and reduces to the plain scale factor when it is.\n///\n/// Falls back to 1.0 on anything implausible (no window, a failed query, a ratio outside a sane\n/// range). A wrong-but-sane crop beats failing a capture mid-loop, and 1.0 is exactly today's\n/// behaviour — so the fallback can never be worse than the bug this fixes.\npub(crate) fn capture_scale(app: &tauri::AppHandle, label: &str, img_w: u32) -> f64 {\n    use tauri::Manager;\n    // The window the pixels CAME from, not `main`: a scale read off a different window would crop the\n    // wrong region of a correct capture and report success about it.\n    let Some(win) = app.get_webview_window(label) else { return 1.0 };\n    let size = match win.inner_size() {\n        Ok(s) => s,\n        Err(_) => return 1.0,\n    };\n    let sf = match win.scale_factor() {\n        Ok(s) => s,\n        Err(_) => return 1.0,\n    };\n    if size.width == 0 || !sf.is_finite() || sf <= 0.0 {\n        return 1.0;\n    }\n    let css_w = size.width as f64 / sf;\n    if css_w <= 0.0 {\n        return 1.0;\n    }\n    let scale = img_w as f64 / css_w;\n    // A real display is 1.0–4.0; anything outside a generous band means a query we misread.\n    if !scale.is_finite() || !(0.25..=8.0).contains(&scale) {\n        return 1.0;\n    }\n    scale\n}\n"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "logs--metrics--help.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "help",
+  "src": "crates/logs/src/metrics/help.rs",
+  "folder": "crates/logs/src/metrics",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn help(prog: &str) -> String {\n    format!(\n        \"{prog} — the fleet-wide generation scoreboard (#3449)\\n\\\n         \\n\\\n         USAGE:\\n  \\\n         {prog} <project> [--json|--pretty]\\n\\\n         \\n\\\n         Rolls up one project's whole generation from data the platform already records — every fleet\\n\\\n         pane's token cost, the activity-log wall-clock, and the plan.db completion — into the numbers\\n\\\n         the north-star metric (an app in <1s for <$0.01) is chased against:\\n\\\n         \\n  \\\n         cost      total USD across the director + workers + triage\\n  \\\n         tokens    input / output / cache-creation / cache-read\\n  \\\n         cache     cache-hit-rate = cache_read / (input + cache_read) — the prompt-caching dial\\n  \\\n         wall      first→last activity across the project's panes\\n  \\\n         issues    complete+verified / total (from plan.db) — so an in-flight build is not read as final\\n\\\n         \\n\\\n         <project> is the project KEY (the hub dir name), e.g. `bsc project list` shows them.\\n\\\n         Default output is one terse line; --json is a stable shape for a loop; --pretty is a breakdown.\"\n    )\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

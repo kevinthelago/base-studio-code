@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--imagination--is-safe-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_safe_id",
+  "src": "src-tauri/src/imagination/is_safe_id.rs",
+  "folder": "src-tauri/src/imagination",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Whether an entry id is safe to turn into a filename.\n///\n/// Deliberately a whitelist. Ids are minted by the producer as timestamp-and-counter strings, so\n/// this rejects everything a real id never contains.\npub fn is_safe_id(id: &str) -> bool {\n    !id.is_empty()\n        && id.len() <= 128\n        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')\n}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-record--record-source--inline-spec.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "inline_spec",
+  "src": "crates/bsc-record/src/record_source/inline_spec.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn inline_spec() -> &'static regex::Regex {\n    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    RE.get_or_init(|| {\n        regex::Regex::new(\n            r#\"\\b(?:import|require|vi\\.(?:mock|doMock|unmock))\\s*\\(\\s*[\"']([^\"']+)[\"']\"#,\n        )\n        .expect(\"inline pattern\")\n    })\n}\n"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--retirable--symbols.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "symbols",
+  "src": "crates/bsc-ui/src/retirable/symbols.rs",
+  "folder": "crates/bsc-ui/src/retirable",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The identifiers a source DECLARES, split by whether they are exported.\n///\n/// IMPORTS ARE STRIPPED FIRST, or `import { type Foo }` reads as a `type Foo` DECLARATION and three\n/// deploy modules get reported as drifted when they are not. A false \"drifted\" costs as much as a missed\n/// one.\n///\n/// The export/internal split is the SEVERITY. A missing EXPORT breaks importers at once — retiring\n/// `SettingsPageHeader.tsx` against its current seed would delete `SettingsSubHeader`, which three other\n/// files render — while a missing internal name means the seed is merely an older revision: still drift,\n/// still a reason to refresh the seed first, but not an immediate break.\npub fn symbols(src: &str) -> (BTreeSet<String>, BTreeSet<String>) {\n    static IMPORT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    static DECL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    let import = IMPORT.get_or_init(|| {\n        regex::Regex::new(r#\"(?m)^[ \\t]*import\\s+[^;]*?from\\s*[\"'][^\"']+[\"'];?[ \\t]*$\"#)\n            .expect(\"import pattern\")\n    });\n    let decl = DECL.get_or_init(|| {\n        regex::Regex::new(\n            r\"(?:^|\\n)[ \\t]*(export\\s+)?(?:default\\s+)?(?:async\\s+)?(?:function|const|let|var|class|interface|type|enum)\\s+([A-Za-z_$][\\w$]*)\",\n        )\n        .expect(\"declaration pattern\")\n    });\n    let body = import.replace_all(src, \"\");\n    let (mut all, mut exported) = (BTreeSet::new(), BTreeSet::new());\n    for c in decl.captures_iter(&body) {\n        let name = c[2].to_string();\n        if c.get(1).is_some() {\n            exported.insert(name.clone());\n        }\n        all.insert(name);\n    }\n    (all, exported)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-news--sources--sitemap--fetch.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fetch",
+  "src": "crates/bsc-news/src/sources/sitemap/fetch.rs",
+  "folder": "crates/bsc-news/src/sources/sitemap",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Fetch and parse one news sitemap.\npub fn fetch(http: &Http, url: &str) -> Result<Vec<FeedItem>, String> {\n    parse(&http.get_text(url)?)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

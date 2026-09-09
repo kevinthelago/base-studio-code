@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--shot--destination.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "destination",
+  "src": "src-tauri/src/shot/destination.rs",
+  "folder": "src-tauri/src/shot",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Where this capture's PNG goes — named and separated from [`capture`] purely so it is TESTABLE, since\n/// `capture` needs a live `AppHandle` and this is the line that got it wrong.\n///\n/// It must go through the shared [`resolve_out`] and never `PathBuf::from` alone: a bare relative `out`\n/// reaches `fs::write` below and anchors at THIS process's cwd — `src-tauri/` under `tauri dev`. That is\n/// how ten captures came to be committed to the repo (merge 6b52a96d); each reported success, at a path\n/// nobody had asked for. The CLI resolves the caller's half the same way (#3662).\npub(crate) fn destination(req: &ShotRequest, shots: &std::path::Path, id: &str) -> PathBuf {\n    resolve_out(req.out.as_deref(), shots, id)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

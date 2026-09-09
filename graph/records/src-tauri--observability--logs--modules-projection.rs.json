@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--observability--logs--modules-projection.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "modules_projection",
+  "src": "src-tauri/src/observability/logs/modules_projection.rs",
+  "folder": "src-tauri/src/observability/logs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// [`graph_modules`]' projection, separated so a test can drive it without a Tauri runtime or a store.\npub(crate) fn modules_projection(doc: &serde_json::Value) -> serde_json::Value {\n    let empty = Vec::new();\n    let list = doc.get(\"implementations\").and_then(|v| v.as_array()).unwrap_or(&empty);\n    let mods: Vec<serde_json::Value> = list\n        .iter()\n        .filter(|r| {\n            r.get(\"provides\").and_then(serde_json::Value::as_str).is_some_and(|s| !s.trim().is_empty())\n        })\n        .map(|r| {\n            serde_json::json!({\n                \"id\": r.get(\"id\").cloned().unwrap_or(serde_json::Value::Null),\n                \"provides\": r.get(\"provides\").cloned().unwrap_or(serde_json::Value::Null),\n                \"code\": r.get(\"code\").cloned().unwrap_or(serde_json::Value::Null),\n            })\n        })\n        .collect();\n    serde_json::json!({ \"implementations\": mods })\n}\n"
+}

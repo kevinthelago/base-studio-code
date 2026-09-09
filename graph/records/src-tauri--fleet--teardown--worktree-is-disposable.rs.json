@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--fleet--teardown--worktree-is-disposable.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worktree_is_disposable",
+  "src": "src-tauri/src/fleet/teardown/worktree_is_disposable.rs",
+  "folder": "src-tauri/src/fleet/teardown",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Is `wt` a worktree that's SAFE to reclaim at boot? Only when it's a real git worktree, its tree\n/// is clean (no uncommitted/untracked work — build artifacts are git-excluded so don't count), AND\n/// its branch is already merged into the owning clone's current branch (its work is landed; the\n/// progress-gated relaunch skips it anyway). A DIRTY worktree is NEVER disposable. Conservative on\n/// purpose — a worktree merged only on the remote (the local clone hasn't pulled) reads as not-merged\n/// and is kept, which is the safe direction.\npub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {\n    if !wt.join(\".git\").exists() || !clone.join(\".git\").exists() {\n        return false;\n    }\n    let wt_str = wt.to_string_lossy();\n    let clone_str = clone.to_string_lossy();\n    // Clean tree: `status --porcelain` prints nothing. Untracked source files block reclaim;\n    // node_modules/target are git-excluded (ensure_worktree) so they never appear here.\n    if !crate::git_lines(&wt_str, &[\"status\", \"--porcelain\"]).is_empty() {\n        return false;\n    }\n    // Merged: the worktree's HEAD is an ancestor of the clone's current HEAD (local merge).\n    let Ok(sha) = crate::git_run(&wt_str, &[\"rev-parse\", \"HEAD\"]) else { return false };\n    if sha.is_empty() {\n        return false;\n    }\n    crate::git_ok(&clone_str, &[\"merge-base\", \"--is-ancestor\", &sha, \"HEAD\"])\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

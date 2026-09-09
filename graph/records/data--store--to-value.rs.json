@@ -1,0 +1,14 @@
+{
+  "id": "data--store--to-value.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "to_value",
+  "src": "crates/data/src/store/to_value.rs",
+  "folder": "crates/data/src/store",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn to_value(c: Coerced) -> Value {\n    match c {\n        Coerced::Null => Value::Null,\n        Coerced::Text(s) => Value::Text(s),\n        Coerced::Num(n) => Value::Double(n),\n        Coerced::Bool(b) => Value::Boolean(b),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

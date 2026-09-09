@@ -1,0 +1,14 @@
+{
+  "id": "bsc-deploy--remote--revert.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "revert",
+  "src": "crates/bsc-deploy/src/remote/revert.rs",
+  "folder": "crates/bsc-deploy/src/remote",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Put `current` back to `previous`. Local to the device, so it works with the workstation gone.\npub fn revert(device: &Device, name: &str) -> Result<(), String> {\n    let script = format!(\n        \"r=$HOME/{REMOTE_ROOT}; \\\n         [ -L \\\"$r/{name}.previous\\\" ] || {{ echo 'no previous'; exit 1; }}; \\\n         cp -P \\\"$r/{name}.previous\\\" \\\"$r/{name}.current.tmp\\\" && mv -T \\\"$r/{name}.current.tmp\\\" \\\"$r/{name}.current\\\" && echo OK\"\n    );\n    ssh(device, &script).map(|_| ())\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

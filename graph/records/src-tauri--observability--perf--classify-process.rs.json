@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--observability--perf--classify-process.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "classify_process",
+  "src": "src-tauri/src/observability/perf/classify_process.rs",
+  "folder": "src-tauri/src/observability/perf",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--observability--perf--webview-label.rs"
+  ],
+  "code": "use super::*;\n\n/// Whether one entry in the process table is a webview process worth sampling.\n///\n/// ⚠️ `is_thread` IS NOT OPTIONAL. `sysinfo` lists a process's THREADS alongside processes on Linux,\n/// each carrying the parent's name AND its `VmRSS` — so without this filter the renderer is counted\n/// once per thread. Observed live on the first working run: `app:webview` and `app:webview-2` both\n/// reporting exactly 1319 MB, where `ps` showed a single `WebKitWebProcess`. `/proc/266432` was a\n/// thread of `/proc/266397`, and a curve that double-counts is worse than no curve, because it looks\n/// like data.\n///\n/// Split out from [`webview_label`] as a pure function precisely so this rule is testable: a\n/// `sysinfo::Process` cannot be constructed in a unit test, so the decision has to leave the type\n/// behind before it can be pinned.\npub(crate) fn classify_process(name: &str, is_thread: bool) -> Option<&'static str> {\n    if is_thread {\n        return None;\n    }\n    webview_label(name)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

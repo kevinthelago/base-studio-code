@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--inbox--free-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "free_path",
+  "src": "crates/bsc-fin/src/inbox/free_path.rs",
+  "folder": "crates/bsc-fin/src/inbox",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A destination that does not already exist, by suffixing rather than replacing.\npub(crate) fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {\n    let first = dir.join(if ext.is_empty() { stem.to_string() } else { format!(\"{stem}.{ext}\") });\n    if !first.exists() {\n        return first;\n    }\n    for n in 2..1000 {\n        let candidate = dir.join(if ext.is_empty() {\n            format!(\"{stem}-{n}\")\n        } else {\n            format!(\"{stem}-{n}.{ext}\")\n        });\n        if !candidate.exists() {\n            return candidate;\n        }\n    }\n    first\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ],
+  "feature": "finance"
+}

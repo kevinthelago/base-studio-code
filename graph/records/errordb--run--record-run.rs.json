@@ -1,0 +1,14 @@
+{
+  "id": "errordb--run--record-run.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "record_run",
+  "src": "crates/errordb/src/run/record_run.rs",
+  "folder": "crates/errordb/src/run",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Apply one [`Action`] to the store at `path`, returning the one-line note to print (or `None` when\n/// there is nothing to say).\n///\n/// **Every failure here is a silent no-op, deliberately.** The child has already run and its exit code\n/// is already decided; an unopenable db, a failed write or a missing directory must never surface as\n/// anything the caller could mistake for the command's own failure. This is the same fail-open rule\n/// `record_supply_fault` states for this store, and it is why this returns a note rather than a Result.\n/// Append one `runs` row — what this command cost, regardless of whether it worked.\n///\n/// **Fail-open, exactly like [`apply_to_store`].** The child has run and its exit code is decided; a\n/// missing hub, an unopenable db or a failed insert must never reach the caller. Returns whether the\n/// row landed, for tests — nothing in the wrapper branches on it.\n///\n/// Unlike a fault, this records the CLEAN runs too. That is the point: a store holding only failures\n/// can say what is broken but not whether the build is getting slower, and the second question is the\n/// one `bsc mem build` was added to answer.\npub fn record_run(\n    path: &std::path::Path,\n    cost: &Cost,\n    outcome: &Outcome,\n    stage: &str,\n    source: &str,\n    cmd: &[String],\n    now_ms: i64,\n) -> bool {\n    // An INTERRUPTED run is not a measurement. Ctrl-C on a build stops it part-way, so its wall clock\n    // is however long someone waited before giving up and its peak is whatever it had reached — a\n    // number that would sit in the trend looking like a fast cheap build. Same judgment `is_fault`\n    // makes for faults, applied to cost.\n    if outcome.interrupted {\n        return false;\n    }\n    let Some(store) = crate::Store::open(path).ok() else { return false };\n    store\n        .conn\n        .execute(\n            \"INSERT INTO runs (ts, stage, source, cmd, ok, exit_code, ms, peak_rss_bytes)\n             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)\",\n            rusqlite::params![\n                now_ms,\n                stage,\n                source,\n                cmd.join(\" \"),\n                i64::from(outcome.is_clean()),\n                i64::from(outcome.exit_code()),\n                cost.ms,\n                cost.peak_rss_bytes,\n            ],\n        )\n        .is_ok()\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

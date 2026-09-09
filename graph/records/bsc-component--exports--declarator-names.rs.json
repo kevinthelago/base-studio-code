@@ -1,0 +1,14 @@
+{
+  "id": "bsc-component--exports--declarator-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "declarator_names",
+  "src": "crates/bsc-component/src/exports/declarator_names.rs",
+  "folder": "crates/bsc-component/src/exports",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The names an `export const/let/var …` declaration list binds — one per top-level, comma-separated\n/// DECLARATOR. `export const a = 1, b = 2;` exports BOTH `a` and `b`; a parser that reads only the first\n/// reports a record's second binding clean when that is the one a broken import actually needed (#149,\n/// \"a checker that stops at the barrel reports clean on exactly this bug\" — this is the sibling gap the\n/// same request named: stopping at the FIRST declarator).\n///\n/// Scoped to ONE LINE: depth-balanced `(){}[]` comma-splitting over what remains after the keyword, up to\n/// that line's own top-level `;` if it has one. An initializer that itself spans further lines (an object\n/// literal opened here and closed later) is not followed past this line — the FIRST declarator is still\n/// read correctly either way, and a LATER declarator after such a multi-line initializer is missed. Rare\n/// enough in this library's style to leave as a known gap rather than growing this into a real expression\n/// parser. A destructuring pattern (`{ a, b }` / `[a, b]`) is not a plain declarator name and is skipped —\n/// no destructured export existed in the store when this was written, so behavior is unchanged for it.\npub(crate) fn declarator_names(body: &str) -> Vec<String> {\n    let stmt = trim_to_statement(body);\n    let mut out = Vec::new();\n    for decl in split_top_level_commas(stmt) {\n        let decl = decl.trim_start();\n        if decl.starts_with('{') || decl.starts_with('[') {\n            continue;\n        }\n        let name: String =\n            decl.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$').collect();\n        if !name.is_empty() {\n            out.push(name);\n        }\n    }\n    out\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

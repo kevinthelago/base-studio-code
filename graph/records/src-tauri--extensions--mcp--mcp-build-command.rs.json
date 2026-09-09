@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--extensions--mcp--mcp-build-command.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mcp_build_command",
+  "src": "src-tauri/src/extensions/mcp/mcp_build_command.rs",
+  "folder": "src-tauri/src/extensions/mcp",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The shell build command for a downloaded MCP server, detected from its repo files,\n/// or `None` if the toolchain isn't recognized. A `uv`/Python project builds with\n/// `python -m uv sync` (uv is a Python module; its shim is often off PATH — `python -m uv`\n/// runs without any PATH setup, #887); a pnpm project with `pnpm install && pnpm build`;\n/// any other Node project falls back to npm. Pure over the dir contents — unit-tested.\npub(crate) fn mcp_build_command(dir: &std::path::Path) -> Option<String> {\n    if dir.join(\"pyproject.toml\").exists() || dir.join(\"uv.lock\").exists() {\n        Some(\"python -m uv sync\".into())\n    } else if dir.join(\"pnpm-lock.yaml\").exists() {\n        Some(\"pnpm install && pnpm build\".into())\n    } else if dir.join(\"package.json\").exists() {\n        Some(\"npm install && npm run build\".into())\n    } else {\n        None\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

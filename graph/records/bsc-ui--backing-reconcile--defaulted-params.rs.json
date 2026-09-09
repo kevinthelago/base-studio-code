@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--backing-reconcile--defaulted-params.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "defaulted_params",
+  "src": "crates/bsc-ui/src/backing_reconcile/defaulted_params.rs",
+  "folder": "crates/bsc-ui/src/backing_reconcile",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Parameter names the definition gives a DEFAULT value. Top level only: a default that is itself an\n/// object/JSX literal must not have its inner commas read as further parameters.\npub fn defaulted_params(sig: &str) -> Vec<String> {\n    let body = sig.strip_prefix('(').unwrap_or(sig);\n    let body = body.strip_suffix(')').unwrap_or(body);\n    let mut parts: Vec<String> = Vec::new();\n    let (mut depth, mut start) = (0i32, 0usize);\n    for (i, c) in body.char_indices() {\n        if \"([{<\".contains(c) {\n            depth += 1;\n        } else if \")]}>\".contains(c) {\n            depth -= 1;\n        } else if c == ',' && depth <= 1 {\n            parts.push(body[start..i].to_string());\n            start = i + 1;\n        }\n    }\n    parts.push(body[start..].to_string());\n\n    static A: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    static B: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    let a = A.get_or_init(|| regex::Regex::new(r\"^\\s*\\{?\\s*(\\w+)\\s*=\").expect(\"a\"));\n    let b = B.get_or_init(|| regex::Regex::new(r\"^\\s*(\\w+)\\s*=\").expect(\"b\"));\n    static LEAD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();\n    let lead = LEAD.get_or_init(|| regex::Regex::new(r\"^\\s*\\{\").expect(\"lead\"));\n    let mut names: Vec<String> = Vec::new();\n    for p in &parts {\n        // Two reads of the same part, in the JS's order: the first tolerates a leading `{`, and the\n        // fallback strips one before trying the tighter pattern.\n        let found = a\n            .captures(p)\n            .map(|c| c[1].to_string())\n            .or_else(|| b.captures(&lead.replace(p, \"\")).map(|c| c[1].to_string()));\n        if let Some(n) = found {\n            if !names.contains(&n) {\n                names.push(n);\n            }\n        }\n    }\n    names\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

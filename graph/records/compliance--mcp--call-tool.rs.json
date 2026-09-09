@@ -1,0 +1,14 @@
+{
+  "id": "compliance--mcp--call-tool.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "call_tool",
+  "src": "crates/compliance/src/mcp/call_tool.rs",
+  "folder": "crates/compliance/src/mcp",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Run one tool, returning its result Value (the shared core wraps it in `tool_text`/`tool_error`).\npub(crate) fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String> {\n    match name {\n        \"list_standards\" => {\n            let domain = parse_domain_arg(args)?;\n            Ok(json!({ \"standards\": engine.list_standards(domain), \"meta\": engine.meta() }))\n        }\n        \"get_standard\" => {\n            let id = arg_str(args, \"id\")?;\n            match engine.get_standard(&id) {\n                Some(s) => Ok(serde_json::to_value(s).map_err(|e| e.to_string())?),\n                None => Err(format!(\"standard not found: {id}\")),\n            }\n        }\n        \"requirements_for\" => {\n            let regions = arg_str_array(args, \"regions\");\n            let data_types = arg_str_array(args, \"data_types\");\n            let domains = parse_domains_arg(args)?;\n            Ok(serde_json::to_value(engine.requirements_for(&regions, &data_types, &domains))\n                .map_err(|e| e.to_string())?)\n        }\n        \"accessibility_checklist\" => {\n            let target = arg_str(args, \"target\")?;\n            Ok(serde_json::to_value(engine.accessibility_checklist(&target)).map_err(|e| e.to_string())?)\n        }\n        \"privacy_requirements\" => {\n            let data_types = arg_str_array(args, \"data_types\");\n            if data_types.is_empty() {\n                return Err(\"missing required array argument 'data_types'\".into());\n            }\n            let regions = arg_str_array(args, \"regions\");\n            Ok(serde_json::to_value(engine.privacy_requirements(&data_types, &regions))\n                .map_err(|e| e.to_string())?)\n        }\n        other => Err(format!(\"unknown tool '{other}'\")),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

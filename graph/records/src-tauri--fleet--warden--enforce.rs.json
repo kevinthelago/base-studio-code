@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--fleet--warden--enforce.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "enforce",
+  "src": "src-tauri/src/fleet/warden/enforce.rs",
+  "folder": "src-tauri/src/fleet/warden",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Hard-pause one worker: kill the PTY FIRST (a hijacked session cannot be trusted to stop itself),\n/// then record it and fire the mobile push.\npub(crate) fn enforce(app: &AppHandle, trip: &WardenTrip) {\n    let pane_id = &trip.pane_id;\n    // Killing before recording is deliberate: if this process dies between the two, a live hijacked\n    // session is worse than a quarantine we re-fire on the next sweep. `kill_pane` is the same entry\n    // the background reaper uses — split out of `pty_kill` precisely because a `tauri::command` can\n    // only be reached from a frontend, and this loop must work when there is not one.\n    match (app.try_state::<crate::console::pty::PtyState>(), app.try_state::<crate::observability::perf::PerfState>()) {\n        (Some(pty), Some(perf)) => crate::console::pty::kill_pane(pane_id, &pty, &perf),\n        _ => log::error!(\"[warden] cannot kill {pane_id}: pty/perf state unavailable\"),\n    }\n    note_quarantined(pane_id);\n    log::warn!(\"[warden] quarantined {pane_id} ({}) — {}\", trip.stream_id, trip.summary);\n\n    // #1102 slice 2a: a `quarantine` push to paired phones, so the user is alerted even off the\n    // desktop. Best-effort; a push failure must never hold the enforcement.\n    if let Some(state) = app.try_state::<crate::mobile::tunnel::TunnelState>() {\n        state.enqueue_warden_push(pane_id, &trip.summary);\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

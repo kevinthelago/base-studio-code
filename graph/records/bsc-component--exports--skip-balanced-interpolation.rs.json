@@ -1,0 +1,16 @@
+{
+  "id": "bsc-component--exports--skip-balanced-interpolation.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "skip_balanced_interpolation",
+  "src": "crates/bsc-component/src/exports/skip_balanced_interpolation.rs",
+  "folder": "crates/bsc-component/src/exports",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-component--exports--template-literal-end.rs"
+  ],
+  "code": "use super::*;\n\n/// The index just past the `}` matching a `${` whose own `{` sat at `from - 1` (i.e. `from` is the index\n/// right after that `{`). Tracks further `{…}` nesting (an object literal, another `${…}`) and skips over\n/// any nested string/template/REGEX literal so a `}` — or, for a regex, a stray quote — INSIDE one of\n/// those can't end the interpolation early or be misread as a string opener — mutually recursive with\n/// [`template_literal_end`], since the interpolation may itself hold a template.\npub(crate) fn skip_balanced_interpolation(chars: &[char], from: usize) -> usize {\n    let n = chars.len();\n    let mut i = from;\n    let mut depth = 0i32; // `{` opened INSIDE this interpolation, beyond the one already consumed\n    while i < n {\n        match chars[i] {\n            '\\\\' => i += 2,\n            '{' => {\n                depth += 1;\n                i += 1;\n            }\n            '}' if depth == 0 => return i + 1,\n            '}' => {\n                depth -= 1;\n                i += 1;\n            }\n            '`' => i = template_literal_end(chars, i),\n            // A REGEX LITERAL can hold a quote character (`/'/g`, real shape from `aider.ts`, #149) that\n            // is not a string opener at all — reading it as one desyncs everything scanned after it,\n            // including a NESTED template a few characters later. `is_regex_context` disambiguates from\n            // division the same way any hand-rolled JS scanner must: by what token precedes the `/`.\n            '/' if is_regex_context(chars, i) => i = skip_regex_literal(chars, i),\n            q @ ('\\'' | '\"') => {\n                i += 1;\n                while i < n && chars[i] != q {\n                    if chars[i] == '\\\\' {\n                        i += 1;\n                    }\n                    i += 1;\n                }\n                i = (i + 1).min(n);\n            }\n            _ => i += 1,\n        }\n    }\n    n\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

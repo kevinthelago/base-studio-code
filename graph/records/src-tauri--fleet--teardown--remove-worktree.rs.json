@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--fleet--teardown--remove-worktree.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "remove_worktree",
+  "src": "src-tauri/src/fleet/teardown/remove_worktree.rs",
+  "folder": "src-tauri/src/fleet/teardown",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Resolve a fleet worker's worktree path the same way `ensure_worktree` does, then remove it\n/// (`remove_worktree_at`). Idempotent: a worker that was never launched (no worktree) is `Ok(())`.\npub(crate) fn remove_worktree(project_key: &str, repo: &str, agent_id: &str) -> Result<(), String> {\n    let clone = repo_dir(project_key, repo);\n    let wt = worktrees_dir(project_key).join(worktree_dir_name(repo, agent_id));\n    remove_worktree_at(&clone, &wt)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

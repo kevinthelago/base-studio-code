@@ -1,0 +1,16 @@
+{
+  "id": "src-tauri--observability--logs--app-log-file.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "app_log_file",
+  "src": "src-tauri/src/observability/logs/app_log_file.rs",
+  "folder": "src-tauri/src/observability/logs",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--observability--logs--stream-path.rs"
+  ],
+  "code": "use super::*;\n\n/// The rotating application log path (`<app_log_dir>/base-studio-code.log`) — the file the\n/// [`GraphLogger`](crate::observability::graph_log) file sink appends to and the `\"app\"` reader\n/// stream consumes. Exposed so the cap paths can rotate it now that no plugin does (#1389).\npub fn app_log_file(app: &tauri::AppHandle) -> Option<PathBuf> {\n    stream_path(app, \"app\")\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}

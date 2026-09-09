@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--imagination--dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dir",
+  "src": "src-tauri/src/imagination/dir.rs",
+  "folder": "src-tauri/src/imagination",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Where the feed lives, or an error naming why the base directory could not be resolved.\npub(crate) fn dir() -> Result<std::path::PathBuf, String> {\n    let base = bsc_util::bsc_base_dir()\n        .ok_or(\"no home directory, so ~/.base-studio-code could not be resolved\")?;\n    Ok(bsc_imagine::store::feed_dir(&base))\n}\n"
+}

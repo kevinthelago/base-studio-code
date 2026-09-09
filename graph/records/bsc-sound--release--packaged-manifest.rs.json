@@ -1,0 +1,14 @@
+{
+  "id": "bsc-sound--release--packaged-manifest.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "packaged_manifest",
+  "src": "crates/bsc-sound/src/release/packaged_manifest.rs",
+  "folder": "crates/bsc-sound/src/release",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The packaged entry's manifest, from the embedded sidecar, with `\"source\": \"packaged\"` stamped so a\n/// reader can tell it apart from a fetched entry. `None` only on a malformed sidecar (guarded by\n/// tests, so not in practice).\npub fn packaged_manifest() -> Option<Value> {\n    let mut m: Value = serde_json::from_str(PACKAGED_KIT_META_JSON).ok()?;\n    m.as_object_mut()?.insert(\"source\".into(), json!(\"packaged\"));\n    Some(m)\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
