@@ -23,7 +23,7 @@ import { resolve } from "node:path";
 // The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`) — the store is a file
 // PLUS `graph/records/<id>.json` per record, and `bsc-session--lib.rs` may be in either.
 import { loadStore } from "../../../../scripts/lib/recordStore.mjs";
-import { STUDIO_KINDS, studioIds, studioSessionsFor, studioAxis } from "@/features/studio-sessions";
+import { STUDIO_KINDS, studioIds, studioSessionsFor, studioSessionDef, studioAxis } from "@/features/studio-sessions";
 
 /** The committed graph store, resolved from this file rather than the cwd so it works from a worktree
  *  and from the repo root alike.
@@ -150,6 +150,29 @@ describe("the projection is the session set", () => {
     // The rosterName is what the mobile session list shows, and a technology with no display spelling
     // must still get a readable one rather than an empty suffix.
     expect(def?.rosterName).toBe("Algorithms Studio · Python");
+  });
+
+  it("parses an id the same way the Rust half does, capital for capital", () => {
+    // THE ONE PLACE THE KIND COMPARISON ABOVE CANNOT REACH. Both halves turn `librarianRust` back into
+    // `librarian` + `rust` with their own `kebab`, and two inverses that disagree mean an id one side
+    // resolves and the other refuses — the exact silent drift this file exists to prevent, in the one
+    // form comparing tables cannot show.
+    //
+    // The disagreement was real and was CONSECUTIVE CAPITALS: `/([a-z0-9])([A-Z])/` reads `AB` as `ab`
+    // while the Rust loop reads it as `a-b`. No technology in the stores has them, so it was reachable
+    // only by a hand-typed id — which is what this parse is the boundary for. The cases below are the
+    // ones that separate the two rules; they are not illustrative.
+    // `studioSessionDef` is the PARSE — the direction `kebab` is actually on. `studioSessionsFor`
+    // builds ids from an axis and never calls it, so asserting through the projection would pass under
+    // either rule and prove nothing.
+    for (const [id, tech] of [
+      ["librarianRust", "rust"],
+      ["designerReactNative", "react-native"],
+      ["librarianAB", "a-b"],
+      ["librarianReactNNative", "react-n-native"],
+    ] as const) {
+      expect(studioSessionDef(id)?.tech, `${id} must parse back to ${tech}`).toBe(tech);
+    }
   });
 
   it("drops a technology that cannot be a pane tail rather than minting a pane from it", () => {
