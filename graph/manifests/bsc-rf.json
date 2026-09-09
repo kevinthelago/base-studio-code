@@ -1,0 +1,128 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-rf\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF denial-of-service against 2.4/5 GHz WiFi from a commodity adapter. Reads the radio's own telemetry (nl80211 survey occupancy, monitor-mode radiotap frame statistics) and fuses several weak signals into a verdict that carries its evidence. Nothing here transmits — there is no injection, no deauth and no active probing path, and a test asserts it.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_rf\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "",
+            "# The radio is plugged into the monitor Pi, so the tool must run THERE — and the",
+            "# unified `bsc` carries bundled DuckDB against a device with 1.1 GB free on its",
+            "# SD card. Same precedent as bsc-lan; tests/lean.rs keeps it honest.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-rf\""
+        },
+        {
+          "key": "path",
+          "lead": [],
+          "value": "\"src/main.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[[bin]]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# The shared CLI scaffold (#1762): CmdDoc help catalog + the emit/absent-marker conventions every",
+            "# other `bsc` noun renders through."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "thiserror",
+          "lead": [
+            "# Proc-macro only: no runtime weight, and tests/lean.rs still pins the closure."
+          ],
+          "value": "\"2\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-rf/Cargo.toml",
+  "tail": []
+}

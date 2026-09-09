@@ -1,0 +1,117 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-runtime\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Runtime-attestation store (SQLite) for base-studio-code — what ACTUALLY served each module while the app ran. The graph ships ~930 modules as records; this is the only place that can say whether a given record served, was declined and fell back to the platform module, or never ran at all.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Tauri-free core lib + the `bsc runtime` subcommand, so the app (writer) and the umbrella binary",
+        "# (reader, and doctor's source) share one implementation. Mirrors bsc-request/plandb/errordb."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_runtime\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "rusqlite",
+          "lead": [
+            "# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite open + busy_timeout plumbing — the app writes while a session reads, so a CLI read",
+            "# must never race the app's flush."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold: the CmdDoc help system + emit()."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-runtime/Cargo.toml",
+  "tail": []
+}

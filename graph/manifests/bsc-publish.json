@@ -1,0 +1,152 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-publish\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "plandb",
+          "lead": [
+            "# The plan is the input: repos, issues (with their GitHub identity), and fleet streams."
+          ],
+          "value": "{ path = \"../plandb\" }"
+        },
+        {
+          "key": "bsc-github",
+          "lead": [
+            "# The transport, extracted so this crate can exist at all."
+          ],
+          "value": "{ path = \"../bsc-github\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        "",
+        "# Publish a plan's GitHub structure with no frontend involved",
+        "# (`headless-publish-so-the-ui-is-not-the-only-publisher`).",
+        "#",
+        "# It lives in its OWN crate rather than under `bsc plan` because `bsc plan` routes wholly into",
+        "# `plandb`, a store crate with no networking — putting reqwest + TLS behind a SQLite store would be",
+        "# a layering inversion, and depending the other way (plandb -> publish -> plandb) is a cycle. So",
+        "# publish sits ABOVE both stores and the transport, and `bsc` dispatches to it directly."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"board_adoption\""
+        },
+        {
+          "key": "path",
+          "lead": [],
+          "value": "\"../graph-materialize/test_root.rs\""
+        }
+      ],
+      "lead": [
+        "",
+        "# THE TEST SOURCES ARE IN THE GRAPH, not in this directory",
+        "# (`the-integration-test-targets-become-edges`). Neither `tests/board_adoption.rs` nor",
+        "# `tests/idempotency.rs` exists: each whole file is an EDGE in graph/algorithms.json",
+        "# (`bsc-publish--board-adoption`, `bsc-publish--idempotency`), which also records the member records",
+        "# it spans. The shared build script materializes each into `$OUT_DIR/tests/<name>.rs` and the shared",
+        "# root below `include!`s the one named by `CARGO_CRATE_NAME` — which is the TARGET's name, so both",
+        "# entries point at ONE file and each still resolves its own body."
+      ],
+      "name": "[[test]]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"idempotency\""
+        },
+        {
+          "key": "path",
+          "lead": [],
+          "value": "\"../graph-materialize/test_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[[test]]"
+    }
+  ],
+  "src": "crates/bsc-publish/Cargo.toml",
+  "tail": []
+}

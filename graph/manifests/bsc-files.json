@@ -1,0 +1,113 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-files\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# `bsc-files` — the agent-facing filesystem/structure CLI (#1078 follow-up). A LEAN, standalone",
+        "# sidecar (like `bsc-project`): it depends only on the shared CLI scaffold + a gitignore-aware",
+        "# walker, NOT on Tauri, so it spawns cheaply per session AND runs on its own from any terminal."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_files\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-graph",
+          "lead": [
+            "# #82 — `read` resolves a missing path against the algorithms store before calling it absent, reusing",
+            "# the SAME lookup `bsc graph harvest` uses (#75) rather than restating it here. A retired module's file",
+            "# is deliberately gone, so the filesystem alone is the wrong thing to answer with."
+          ],
+          "value": "{ path = \"../bsc-graph\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "ignore",
+          "lead": [
+            "# ripgrep's directory walker: respects .gitignore/.ignore + skips hidden/.git by default, follows no",
+            "# symlinks (avoids the node_modules junction hazard), and yields per-entry metadata for file sizes."
+          ],
+          "value": "\"0.4\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-files/Cargo.toml",
+  "tail": []
+}

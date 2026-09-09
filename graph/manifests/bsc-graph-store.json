@@ -1,0 +1,123 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-graph-store\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"The graph's RECORD STORE, as a database (epic-retire-json-ledgers-for-db-and-git-drivers). One row per record, queried by id; every version ever written kept as rows and appended by TRIGGER, so no write path can skip recording history and a bad write is recoverable by moving back a version. Replaces the 27.5 MB committed JSON ledger, the 50 MB runtime blob, and the four-copy propagation between them.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# The shared SQLite helpers every store in this workspace opens through (plandb/skilldb/logs/json-store),",
+            "# so the graph store resolves its path, migrates and reads exactly as its siblings do rather than",
+            "# inventing a fourth way to open a database."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "key": "rusqlite",
+          "lead": [
+            "# The same rusqlite every SQLite store here links (plandb/skilldb/compliance): `bundled` so the store",
+            "# does not depend on a system SQLite, matching its siblings rather than introducing a second answer."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# `vendored::sha256_hex` — the ONE content-hash form in this workspace, for the ledger's signature."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [
+            "# `preserve_order` — LOAD-BEARING, and not merely inherited. This crate's promise is that exporting",
+            "# `main` reproduces the store it imported, BYTE for byte; a BTreeMap sorts every record's keys on the",
+            "# way through and rewrites all 1,808 files to no effect. It was passing only by cargo's per-invocation",
+            "# feature unification with `bsc-graph`, which sets it — so `cargo test -p bsc-graph-store` silently got",
+            "# a BTreeMap and the export guard could not see key-order drift at all."
+          ],
+          "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    }
+  ],
+  "src": "crates/bsc-graph-store/Cargo.toml",
+  "tail": []
+}

@@ -1,0 +1,101 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-blueprint\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"User blueprint store (SQLite store at ~/.base-studio-code/blueprints.db) for base-studio-code (#1719) — a thin blueprint-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's blueprint commands and the session-facing `bsc blueprint` CLI.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly. NOT via bsc_graph: a build script must not depend",
+            "# on the crate graph it is part of, and load() reconciles the packaged seed into what it reads."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app",
+        "# in. The hyphenated package name maps to the `bsc_blueprint` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_blueprint\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-json-store",
+          "lead": [
+            "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
+            "# blueprint-specific nouns + lean `list` fields via a CliSpec."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-blueprint/Cargo.toml",
+  "tail": []
+}

@@ -1,0 +1,96 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-hook\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# DELIBERATELY TWO DEPENDENCIES, both pure Rust.",
+        "#",
+        "# This binary is bound read-only INTO an agent's mount namespace, so every dependency is a thing",
+        "# that ships inside the cage. `bsc-util` has zero dependencies of its own and carries the shared",
+        "# decision logic; `serde_json` parses the tool payload Claude Code writes to stdin.",
+        "#",
+        "# It must stay this thin for two reasons. (1) The umbrella `bsc` binary is ~69 MB because it links",
+        "# ~20 subcommand crates including DuckDB — binding THAT would mean binding a writable store, the",
+        "# ambient authority the isolation exists to remove. (2) The maintainer intends to run this on",
+        "# aarch64 (Pi 4/5) and ARMv6 (Pi Zero); zero non-pure-Rust dependencies is what makes a static musl",
+        "# build for those targets a re-target rather than a port."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-hook\""
+        },
+        {
+          "key": "path",
+          "lead": [],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[[bin]]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-hook/Cargo.toml",
+  "tail": []
+}

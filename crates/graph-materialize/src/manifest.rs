@@ -23,6 +23,7 @@
 // "round-trips" for every line it did keep.
 
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 /// A comment/blank run preceding an item. This is where the prose lives.
 pub type Lead = Vec<String>;
@@ -347,6 +348,180 @@ pub fn topo_order(crates: &[CrateRecord]) -> Result<Vec<String>, String> {
         ));
     }
     Ok(order)
+}
+
+// ── Where manifest records live, and why NOT beside the implementations ─────────────────────────
+//
+// `graph/manifests/`, a sibling of `graph/records/` — deliberately, on evidence.
+//
+// `graph/records/` was tried first and is unsafe for this. Two independent reasons, both measured
+// rather than reasoned about:
+//
+//  1. EVERY file there is appended to the store's `implementations` array by `load_merged_store`. A
+//     Cargo.toml is not an implementation: it has no `code`, `tech`, `role`, `provides` or `feature`,
+//     so it would appear as a malformed implementation to every consumer that iterates them — the
+//     census, doctor, dedup, method extraction and the Algorithms page. (An `id` alone is enough to
+//     satisfy the store's own parse guard; all 506 `bsc-graph` tests pass with one present. The
+//     objection is a category error, not a crash.)
+//  2. IT WOULD NOT SURVIVE. `bsc_graph::repo_store::write_at` says it plainly: "any record file whose
+//     id is no longer in the document is removed". Manifest records exist only in the repo store and
+//     never in the runtime ledger, so the next `bsc graph` write by ANY session on the box would
+//     delete all 80 — silently, and long after whoever wrote them had moved on.
+//
+// A sibling directory is swept by nothing and merged into nothing, so both problems disappear rather
+// than being managed.
+
+/// The record name for the workspace manifest, which has no crate directory. Leading underscore so
+/// it sorts before every crate and cannot collide with one — a crate directory cannot start with `_`
+/// and also be a valid package name.
+pub const WORKSPACE: &str = "_workspace";
+
+/// The directory holding one manifest record per crate.
+pub fn manifests_dir(repo_root: &Path) -> PathBuf {
+    repo_root.join("graph").join("manifests")
+}
+
+/// The record file for one crate directory.
+fn manifest_record_path(repo_root: &Path, crate_dir: &str) -> PathBuf {
+    manifests_dir(repo_root).join(format!("{crate_dir}.json"))
+}
+
+/// What a sync did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncReport {
+    pub written: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+/// Rebuild a document with every object's keys in sorted order.
+///
+/// THIS IS NOT COSMETIC. `serde_json::Value` is a `BTreeMap` (sorted) normally and an `IndexMap`
+/// (insertion-ordered) when the `preserve_order` feature is on. Four crates here enable it —
+/// `bsc-graph`, `bsc-graph-store`, `bsc-json-store`, `bsc-ui` — each documenting it as load-bearing,
+/// and cargo unifies features per INVOCATION. So the same `to_string_pretty` call emits sorted keys
+/// under `cargo run -p graph-materialize` and insertion-ordered keys under `cargo nextest run
+/// --workspace`: the bytes on disk depended on which command wrote them.
+///
+/// MEASURED 2026-09-09: the two encodings of the workspace record were both 11313 bytes and differed
+/// at byte 5, which is why the length check in a hand-written comparison would not have caught it.
+/// Sorting explicitly makes the format identical under both, so a record written by one command is
+/// byte-identical to one written by the other.
+fn canonicalize(v: &serde_json::Value) -> serde_json::Value {
+    match v {
+        serde_json::Value::Object(m) => {
+            let mut keys: Vec<&String> = m.keys().collect();
+            keys.sort();
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                out.insert(k.clone(), canonicalize(&m[k.as_str()]));
+            }
+            serde_json::Value::Object(out)
+        }
+        serde_json::Value::Array(a) => serde_json::Value::Array(a.iter().map(canonicalize).collect()),
+        other => other.clone(),
+    }
+}
+
+/// The committed on-disk format: two-space pretty JSON, keys sorted, one trailing newline.
+fn encode(v: &serde_json::Value) -> Result<String, String> {
+    serde_json::to_string_pretty(&canonicalize(v))
+        .map(|s| s + "\n")
+        .map_err(|e| format!("cannot serialize: {e}"))
+}
+
+/// Write one manifest record per crate, from the crate's `Cargo.toml`.
+///
+/// Only rewrites a file whose bytes actually change, so a sync of one crate does not restat every
+/// other into a diff. A record whose crate has gone is removed, because a manifest record for a crate
+/// that does not exist would materialize a phantom.
+pub fn sync_records(repo_root: &Path, dry_run: bool) -> Result<SyncReport, String> {
+    let dir = manifests_dir(repo_root);
+    if !dry_run {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    }
+    let mut report = SyncReport::default();
+    let mut seen: Vec<String> = Vec::new();
+
+    let crates = repo_root.join("crates");
+    let mut dirs: Vec<String> = std::fs::read_dir(&crates)
+        .map_err(|e| format!("cannot read {}: {e}", crates.display()))?
+        .flatten()
+        .filter(|e| e.path().join("Cargo.toml").is_file())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    dirs.sort();
+
+    // The WORKSPACE manifest is the 81st and carries the most prose in the repo — the whole
+    // `[profile.dev]` reasoning, plus the hand-maintained `members` list. Excluding it because it is
+    // not under `crates/` would leave the one manifest whose comments are most load-bearing as the
+    // only file with no record.
+    let mut dirs: Vec<String> = dirs;
+    dirs.insert(0, WORKSPACE.to_string());
+
+    for d in dirs {
+        let toml = if d == WORKSPACE { repo_root.join("Cargo.toml") } else { crates.join(&d).join("Cargo.toml") };
+        let text = std::fs::read_to_string(&toml)
+            .map_err(|e| format!("cannot read {}: {e}", toml.display()))?;
+        let m = Manifest::parse(&text).map_err(|e| format!("{}: {e}", toml.display()))?;
+        let src = if d == WORKSPACE { "Cargo.toml".to_string() } else { format!("crates/{d}/Cargo.toml") };
+        let body = encode(&m.to_json(&src))?;
+        let dest = manifest_record_path(repo_root, &d);
+        seen.push(d.clone());
+        if std::fs::read_to_string(&dest).is_ok_and(|cur| cur == body) {
+            report.unchanged.push(d);
+            continue;
+        }
+        if !dry_run {
+            std::fs::write(&dest, &body).map_err(|e| format!("cannot write {}: {e}", dest.display()))?;
+        }
+        report.written.push(d);
+    }
+
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
+        if !seen.contains(&stem) {
+            if !dry_run {
+                std::fs::remove_file(&p).map_err(|e| format!("cannot remove {}: {e}", p.display()))?;
+            }
+            report.removed.push(stem);
+        }
+    }
+    Ok(report)
+}
+
+/// Read every stored manifest record back, as `(crate dir, manifest)`.
+pub fn load_records(repo_root: &Path) -> Result<Vec<(String, Manifest)>, String> {
+    // Keyed by the record's OWN `src`, not by its filename: the workspace record is `_workspace.json`
+    // and regenerates `Cargo.toml`, so deriving the path from the filename would look for
+    // `crates/_workspace/Cargo.toml` and report a drift that does not exist.
+    let dir = manifests_dir(repo_root);
+    let mut out = Vec::new();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    for p in files {
+        let text = std::fs::read_to_string(&p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        let v: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("{} is not valid JSON: {e}", p.display()))?;
+        let m = Manifest::from_json(&v).map_err(|e| format!("{}: {e}", p.display()))?;
+        let src = v
+            .get("src")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| format!("{} has no `src`", p.display()))?
+            .to_string();
+        out.push((src, m));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -815,5 +990,129 @@ mod record_form_tests {
         let mut json2 = m.to_json("x");
         json2.as_object_mut().unwrap().remove("tail");
         assert!(Manifest::from_json(&json2).is_err(), "a missing tail must not default either");
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    /// THE POINT OF THE WHOLE MIGRATION: every stored record regenerates its `Cargo.toml`
+    /// byte-for-byte. If this holds, the file is a build product and the record is the source.
+    #[test]
+    fn every_stored_record_regenerates_its_manifest_byte_for_byte() {
+        let stored = load_records(repo()).expect("the manifest records must load");
+        assert!(
+            stored.len() >= 81,
+            "expected >=81 stored manifest records (80 crates + the workspace), found {} — run the sync; a short store here \
+             means crates whose manifest has NO record and would be silently un-regenerable",
+            stored.len()
+        );
+        for (src, m) in &stored {
+            let dir = src;
+            let on_disk = std::fs::read_to_string(repo().join(src))
+                .unwrap_or_else(|e| panic!("{src}: record exists but the manifest does not: {e}"));
+            assert_eq!(
+                &m.render(),
+                &on_disk,
+                "{dir}: the stored record no longer regenerates its manifest — the two have drifted, \
+                 and the FILE is what cargo compiles, so the record is the stale one"
+            );
+        }
+    }
+
+    /// A sync must be idempotent: running it on a synced tree writes nothing. Without this, the sync
+    /// churns every file on every run and a real change is invisible in the diff.
+    #[test]
+    fn a_sync_of_a_synced_tree_writes_nothing() {
+        let r = sync_records(repo(), true).expect("dry run must succeed");
+        assert!(
+            r.written.is_empty(),
+            "a dry sync wanted to rewrite {:?} — the store is out of date with the manifests",
+            r.written
+        );
+        assert!(r.removed.is_empty(), "a dry sync wanted to remove {:?}", r.removed);
+        assert!(r.unchanged.len() >= 81, "only {} unchanged (80 crates + the workspace)", r.unchanged.len());
+    }
+
+    /// Manifest records must NOT live beside the implementations. `repo_store::write_at` removes any
+    /// file under `graph/records/` whose id is absent from the document it is writing, and a manifest
+    /// record is never in that document — so storing them there means the next `bsc graph` write by
+    /// ANY session silently deletes all of them.
+    #[test]
+    fn no_manifest_record_sits_where_a_graph_write_would_sweep_it() {
+        let swept = repo().join("graph").join("records");
+        assert!(swept.is_dir(), "graph/records must exist for this guard to mean anything");
+        let strays: Vec<String> = std::fs::read_dir(&swept)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("Cargo.toml"))
+            .collect();
+        assert!(
+            strays.is_empty(),
+            "manifest records found under graph/records/, which `bsc graph` sweeps: {strays:?}"
+        );
+        assert_ne!(manifests_dir(repo()), swept, "the two directories must be distinct");
+    }
+
+    /// A stored record must round-trip through the store the same way it does in memory.
+    #[test]
+    fn a_stored_record_reparses_to_the_same_manifest() {
+        let stored = load_records(repo()).unwrap();
+        let (src, m) = stored
+            .iter()
+            .find(|(s, _)| s == "crates/bsc-hook/Cargo.toml")
+            .expect("bsc-hook has a record");
+        let parsed = Manifest::parse(&std::fs::read_to_string(repo().join(src)).unwrap()).unwrap();
+        assert_eq!(m, &parsed);
+        let rec = CrateRecord::extract(m, "bsc-hook");
+        assert!(rec.materialized);
+        assert_eq!(rec.normal_deps().len(), 2, "bsc-hook is DELIBERATELY two dependencies");
+    }
+}
+
+#[cfg(test)]
+mod encoding_tests {
+    use super::*;
+
+    /// The on-disk format must not depend on which cargo invocation wrote it.
+    ///
+    /// `serde_json`'s `preserve_order` is enabled by four crates here and unified in by any
+    /// `--workspace` build, flipping `Value` from a sorted `BTreeMap` to an insertion-ordered
+    /// `IndexMap`. This assertion holds under BOTH configurations once keys are sorted explicitly,
+    /// and fails under the workspace one if they are not — which is exactly where the bug lived, and
+    /// exactly where a `-p` test cannot see it.
+    #[test]
+    fn the_encoded_form_has_sorted_keys_whatever_features_are_unified_in() {
+        let v = serde_json::json!({
+            "src": "x", "kind": "manifest", "endsNewline": true,
+            "sections": [{ "name": "[p]", "lead": [], "entries": [{ "value": "1", "key": "k", "lead": [] }] }],
+            "tail": [],
+        });
+        let out = encode(&v).unwrap();
+        let top: Vec<&str> = out
+            .lines()
+            .filter(|l| l.starts_with("  \""))
+            .filter_map(|l| l.trim().split('"').nth(1))
+            .collect();
+        let mut sorted = top.clone();
+        sorted.sort();
+        assert_eq!(top, sorted, "top-level keys must be sorted; got {top:?}");
+
+        // …and nested objects too, or a nested map would still flip with the feature.
+        let nested: Vec<&str> = out
+            .lines()
+            .filter(|l| l.starts_with("          \""))
+            .filter_map(|l| l.trim().split('"').nth(1))
+            .collect();
+        let mut nsorted = nested.clone();
+        nsorted.sort();
+        assert_eq!(nested, nsorted, "nested keys must be sorted; got {nested:?}");
+        assert!(out.ends_with("}\n"), "one trailing newline");
     }
 }

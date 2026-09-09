@@ -1,0 +1,104 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-incident\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"The incident ledger — the alerting brain. Coalesces detections into incidents (a scan is one cluster, not sixty alarms), tracks severity and state, honours silences, and decides — once — whether an observation is worth a notification. Pure: no I/O, no clock, no database; persistence and delivery wrap it.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_incident\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "",
+            "# PURE. No I/O, no async runtime, no HTTP/SSH, no database, no app shell. Time is",
+            "# an argument and the store is in memory, so every rule is answerable from a",
+            "# constructed sequence. Persistence (SQLite) and delivery (the tunnel) wrap this",
+            "# crate; they never live inside it.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        }
+      ],
+      "lead": [],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-incident/Cargo.toml",
+  "tail": []
+}

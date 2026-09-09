@@ -1,0 +1,157 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-shot\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Screenshot request protocol (#3261): the file-based request/response channel `bsc shot` uses to ask the RUNNING app for a webview snapshot, plus the `bsc shot` CLI. Tauri-free — the desktop app (the watcher/capturer) and the tiny CLI both depend on it.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Tauri-free core so the lean `bsc` umbrella binary can reuse it without dragging the desktop app in",
+        "# (matches plandb/skilldb)."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_shot\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "png",
+          "lead": [
+            "# Decode a captured PNG to RGBA8 for `shot diff` — same version the app side uses (src-tauri)."
+          ],
+          "value": "\"0.18\""
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# `bsc_base_dir()` (the ~/.base-studio-code root) + `now_ms()` — the same helpers every store crate uses."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-appchan",
+          "lead": [
+            "# The ONE bsc→app request channel (#3274) — shared with `bsc navigate`, so there is no second transport."
+          ],
+          "value": "{ path = \"../bsc-appchan\" }"
+        },
+        {
+          "key": "bsc-navigate",
+          "lead": [
+            "# The baseline SWEEP lands each component before capturing it (#a-baseline-sweep-walks-the-kit-itself).",
+            "# Reusing navigate's round-trip rather than re-sending its request shape — same channel, one caller more."
+          ],
+          "value": "{ path = \"../bsc-navigate\" }"
+        },
+        {
+          "key": "bsc-json-store",
+          "lead": [
+            "# Reads the component store directly to enumerate a kit; the whole component CLI is not needed for a list."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "tempfile",
+          "lead": [],
+          "value": "\"3\""
+        },
+        {
+          "key": "filetime",
+          "lead": [
+            "# Backdates a capture's mtime so the retention sweep is tested against a CHOSEN age rather than",
+            "# by sleeping. Already in the lockfile (0.2.29, via notify), so this pulls nothing new."
+          ],
+          "value": "\"0.2\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-shot/Cargo.toml",
+  "tail": []
+}

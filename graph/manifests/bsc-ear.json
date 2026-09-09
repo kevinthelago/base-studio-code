@@ -1,0 +1,146 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-ear\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc ear` — always-on local capture: segments a live microphone into speech-only audio within a retention bound it enforces rather than documents.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_ear\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-incident",
+          "lead": [
+            "# The incident model — the ear raises Detections into the same ledger the network sensors use."
+          ],
+          "value": "{ path = \"../bsc-incident\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "cpal",
+          "lead": [
+            "# Cross-platform capture. On Linux this is the ALSA backend, which is why libasound2-dev is a build",
+            "# prerequisite for this crate and for nothing else in the workspace."
+          ],
+          "value": "\"0.15\""
+        },
+        {
+          "key": "hound",
+          "lead": [
+            "# WAV read/write. Segments are wav rather than raw so they are inspectable with any player and",
+            "# readable by whisper tooling without a decoder of our own."
+          ],
+          "value": "\"3.5\""
+        },
+        {
+          "key": "libc",
+          "lead": [
+            "# For silencing ALSA's own diagnostics at the fd level while enumerating. Already in the tree via",
+            "# cpal -> alsa, so this makes a transitive dependency direct rather than adding one."
+          ],
+          "value": "\"0.2\""
+        },
+        {
+          "key": "nnnoiseless",
+          "lead": [
+            "# Learned speech denoiser (pure-Rust RNNoise port): no model download, no C, no ort. Handles the",
+            "# non-stationary rain/handling noise that spectral subtraction cannot. RNNoise operates at 48kHz."
+          ],
+          "value": "\"0.5\""
+        },
+        {
+          "key": "ort",
+          "lead": [
+            "# DeepFilterNet3 clarity engine: ort runs the fused ONNX graph (same runtime as bsc-say/Kokoro);",
+            "# realfft does the 960-point real STFT the model requires (not a power of two, so the crate radix-2",
+            "# FFT cannot; realfft is what libDF itself uses)."
+          ],
+          "value": "{ version = \"2.0.0-rc.10\", features = [\"download-binaries\"] }"
+        },
+        {
+          "key": "realfft",
+          "lead": [],
+          "value": "\"3\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "wildcard_enum_match_arm",
+          "lead": [],
+          "value": "\"deny\""
+        },
+        {
+          "key": "match_wildcard_for_single_variants",
+          "lead": [],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.clippy]"
+    }
+  ],
+  "src": "crates/bsc-ear/Cargo.toml",
+  "tail": []
+}

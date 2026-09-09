@@ -1,0 +1,133 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-survival\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"The caveman network's offline survival corpus for base-studio-code — PROCEDURES (water, fire, shelter, signalling, navigation, bleeding control) and natural REMEDIES (antiseptics, hemostatics, analgesics) as structured rows, queryable by the materials in hand, by function, and by location, and compilable into one offline field manual. LOCAL: the corpus is packaged, the store is on this machine, and no verb here reaches the network.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri, no async runtime) so the corpus + queries stay unit-testable with no I/O",
+        "# beyond SQLite. The hyphenated package name maps to the `bsc_survival` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_survival\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the one epoch clock (`now_secs`)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite-CLI helpers: `print_json` / `read_stdin_json` for the house JSON-on-stdout style, and",
+            "# `conn` for the `:memory:`-aware open + default-path + JSON-blob row plumbing the store rides (#1863)."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch + `resolve_store_path`."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "include_dir",
+          "lead": [
+            "# Embed the packaged corpus (`corpus/**/*.json`) at compile time (#1614), so the field knowledge is",
+            "# versioned, reviewable DATA rather than Rust literals — the same pattern `crates/compliance` uses."
+          ],
+          "value": "\"0.7\""
+        },
+        {
+          "key": "rusqlite",
+          "lead": [
+            "# The user-owned store the packaged corpus seeds into, so a person can add what they learned on their",
+            "# own ground without waiting for a release. `bundled` matches plandb/compliance."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-survival/Cargo.toml",
+  "tail": []
+}

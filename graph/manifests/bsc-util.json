@@ -1,0 +1,93 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-util\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Tiny dependency-free leaf crate for base-studio-code (#1646) — the ONE definition of home-dir resolution, the `~/.base-studio-code` base dir, epoch clocks (secs/ms), and the epoch-ms↔ISO-8601 civil-date pair. Shared by the desktop app and every `bsc-*` CLI so they all resolve the same on-disk store.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Leaf crate: std only, no dependencies, so any CLI can pull it in for free."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_util\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "",
+            "# TESTS ONLY — a dev-dependency is not propagated to anything that links this crate, so the",
+            "# \"no dependencies\" property above is unchanged for every consumer. `pane_id` is proved against",
+            "# `src/app/console/paneIdentity.fixtures.json`, a fixture GENERATED from the TypeScript it was ported",
+            "# from, and hand-rolling a JSON reader to avoid this line would reintroduce exactly the kind of",
+            "# second parser the port exists to remove.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-util/Cargo.toml",
+  "tail": []
+}

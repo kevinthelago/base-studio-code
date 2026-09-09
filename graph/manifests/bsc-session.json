@@ -1,0 +1,127 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-session\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"The `bsc session` CLI (#architect-starts-and-stops-system-sessions): start · stop · list the app-owned SYSTEM SESSIONS (designer, librarian, architect, sound-designer, integrator). The id is an ENUM resolved against a closed registry and refused outside it — that closed set is what makes the verb safe to grant to the architect, which ingests raw user prose. Tauri-free; rides the shared bsc-appchan transport.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_session\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-appchan",
+          "lead": [
+            "# The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`/`bsc fleet`, so there is no",
+            "# second transport."
+          ],
+          "value": "{ path = \"../bsc-appchan\" }"
+        },
+        {
+          "key": "bsc-loop",
+          "lead": [
+            "# `bsc session ask` opens a LOOP and `bsc session reply` posts into one",
+            "# (#an-ask-is-a-loop-again-and-every-turn-is-delivered). The dependency runs THIS WAY ONLY: making",
+            "# `bsc loop say` deliver would need bsc-loop to resolve a participant to a session and reach the app,",
+            "# which is the reverse edge and a cycle. Keeping both verbs here leaves `bsc loop` a generic",
+            "# conversation store that knows nothing about system sessions."
+          ],
+          "value": "{ path = \"../bsc-loop\" }"
+        },
+        {
+          "key": "bsc-sqlite-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-sqlite-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-session/Cargo.toml",
+  "tail": []
+}

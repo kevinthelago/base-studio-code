@@ -1,0 +1,174 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-lan\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc lan` — the command surface for the emit-only LAN sensor: what this host exposes, the keys the stream needs, and a socket-free dry run over real Suricata output.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_lan\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-lan\""
+        },
+        {
+          "key": "path",
+          "lead": [],
+          "value": "\"src/main.rs\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The sensor ships as its own binary rather than as part of the unified `bsc`,",
+        "# which carries bundled DuckDB. See src/main.rs, and tests/lean.rs, which fails",
+        "# the build if that ever stops being true."
+      ],
+      "name": "[[bin]]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-appchan",
+          "lead": [
+            "# The ONE channel for asking the running app to do something (#3274)."
+          ],
+          "value": "{ path = \"../bsc-appchan\" }"
+        },
+        {
+          "key": "bsc-lan-sense",
+          "lead": [],
+          "value": "{ path = \"../bsc-lan-sense\" }"
+        },
+        {
+          "key": "bsc-lan-stream",
+          "lead": [],
+          "value": "{ path = \"../bsc-lan-stream\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "ed25519-dalek",
+          "lead": [],
+          "value": "{ version = \"2\", default-features = false, features = [\"std\"] }"
+        },
+        {
+          "key": "getrandom",
+          "lead": [
+            "# Key material must come from the OS CSPRNG. Nothing else is acceptable here and",
+            "# a test pins that two runs differ."
+          ],
+          "value": "\"0.4\""
+        },
+        {
+          "key": "libc",
+          "lead": [
+            "# The monitor-mode capture socket (src/capture.rs). AF_PACKET has no std",
+            "# equivalent; bsc-rf stays libc-free so its lean-closure test keeps holding."
+          ],
+          "value": "\"0.2\""
+        },
+        {
+          "key": "bsc-rf",
+          "lead": [
+            "# What a captured frame MEANS — parsing only; this crate owns the socket."
+          ],
+          "value": "{ path = \"../bsc-rf\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "unsafe_code",
+          "lead": [
+            "# DENY, NOT FORBID, and the difference is load-bearing. One audited module here holds a raw file",
+            "# descriptor and lifts this with `#[allow(unsafe_code)]` plus a SAFETY note per call; `forbid`",
+            "# cannot be overridden anywhere, which would mean either no capture at all or the unsafe living in",
+            "# a crate with no business holding a descriptor. Moved out of `src/lib.rs` when the crate root",
+            "# became the SHARED one (`a-crate-root-is-shared-so-a-crate-is-one-file`) — a manifest lint is",
+            "# exactly a crate-level attribute, so the inner `#[allow]` still overrides it."
+          ],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.rust]"
+    },
+    {
+      "entries": [
+        {
+          "key": "wildcard_enum_match_arm",
+          "lead": [],
+          "value": "\"deny\""
+        },
+        {
+          "key": "match_wildcard_for_single_variants",
+          "lead": [],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.clippy]"
+    }
+  ],
+  "src": "crates/bsc-lan/Cargo.toml",
+  "tail": []
+}

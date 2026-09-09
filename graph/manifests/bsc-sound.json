@@ -1,0 +1,120 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-sound\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"User sound-kit store (SQLite store at ~/.base-studio-code/sounds.db) for base-studio-code (#3080, epic #3071) — the synthesis-first audio library (primitives + voices + cues), a thin sound-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's sound bridge and the session-facing `bsc sound` CLI.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app",
+        "# in. The hyphenated package name maps to the `bsc_sound` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_sound\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-json-store",
+          "lead": [
+            "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
+            "# sound-kit nouns + lean `list` fields via a CliSpec."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog + `resolve_store_path`."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# Base-dir resolution for the default release-store root (~/.base-studio-code/sound-kits, #3371)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "sha2",
+          "lead": [
+            "# Content hashing for the release store's id@version integrity (#3371) — the same version `bsc-ui`'s",
+            "# twin store locks, so this adds no new dependency to the workspace graph."
+          ],
+          "value": "\"0.11\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-sound/Cargo.toml",
+  "tail": []
+}

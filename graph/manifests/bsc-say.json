@@ -1,0 +1,111 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-say\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc say` — speak text aloud from any session: a provider trait with the OS speech service as the always-available floor and bundled Piper (neural, ONNX) as the default when it resolves.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_say\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# Resolves ~/.base-studio-code, under which the piper voice dir lives. ONE precedence, shared with",
+            "# every other store, so the app and the CLI never disagree about where a voice was installed."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "hound",
+          "lead": [
+            "# Writing the wav kokoro synthesises; piper writes its own."
+          ],
+          "value": "\"3.5\""
+        },
+        {
+          "key": "ort",
+          "lead": [
+            "# ONNX Runtime, for the Kokoro neural voice. `download-binaries` fetches a matching runtime at",
+            "# build time rather than requiring one installed — piper ships a 1.14 copy that is too old for this."
+          ],
+          "value": "{ version = \"2.0.0-rc.10\", features = [\"download-binaries\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "wildcard_enum_match_arm",
+          "lead": [],
+          "value": "\"deny\""
+        },
+        {
+          "key": "match_wildcard_for_single_variants",
+          "lead": [],
+          "value": "\"deny\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lints.clippy]"
+    }
+  ],
+  "src": "crates/bsc-say/Cargo.toml",
+  "tail": []
+}

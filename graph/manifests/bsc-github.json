@@ -1,0 +1,136 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-github\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "reqwest",
+          "lead": [],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"json\", \"rustls-tls\"] }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "log",
+          "lead": [],
+          "value": "\"0.4\""
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# `bsc_base_dir` — so the CLI and the app share ONE on-disk response cache rather than each",
+            "# keeping its own and re-fetching what the other already validated.",
+            "# The shared CLI scaffold: `bsc github` is the surface without which this crate stays",
+            "# linked-but-unreachable from the binary it is compiled into."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-project",
+          "lead": [
+            "# BOTH project-key derivations — `project_slug` (today) and `sanitize_project_key` (the pre-#2409",
+            "# grandfathering rule). `board_state` needs both to match a persisted record against a local hub, and",
+            "# needing both is exactly why that module used to be stranded in `src-tauri`."
+          ],
+          "value": "{ path = \"../bsc-project\" }"
+        },
+        {
+          "key": "tokio",
+          "lead": [
+            "# A current-thread runtime for the BLOCKING wrappers a sync CLI calls. The async fns above are",
+            "# what the app uses directly; the wrappers exist so `bsc` does not need its own runtime story."
+          ],
+          "value": "{ version = \"1\", features = [\"rt\"] }"
+        }
+      ],
+      "lead": [
+        "",
+        "# The GitHub REST/GraphQL transport, Tauri-free (`extract-a-tauri-free-github-transport-crate`).",
+        "#",
+        "# It lived in `src-tauri/src/github/api.rs` as Tauri commands, which meant `bsc` — a separate",
+        "# binary — could not reach GitHub at all, and publish had no path that did not run through a",
+        "# React hook. This crate is that transport with the Tauri layer peeled off; the app's commands",
+        "# are now thin wrappers over it, so there is ONE implementation rather than two.",
+        "#",
+        "# DEPENDENCIES ARE DELIBERATELY MINIMAL. Per CLAUDE.md a crate that pulls DuckDB pays one to two",
+        "# minutes of C++ per worktree, so this one takes `bsc-util` for `bsc_base_dir` only and never",
+        "# `bsc-data`. `rustls-tls` (not the default native-tls) matches the other CLI-reachable crates",
+        "# (cve/research) so the workspace resolves a single TLS backend."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    }
+  ],
+  "src": "crates/bsc-github/Cargo.toml",
+  "tail": []
+}

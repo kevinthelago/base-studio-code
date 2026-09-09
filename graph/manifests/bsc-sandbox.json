@@ -1,0 +1,115 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-sandbox\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Renders an agent's isolation spec into an exec-ready argv: a systemd-run cgroup scope wrapping a bubblewrap namespace. Replaces the WSL2 subsystem in src-tauri/src/session/sandbox (phase-2-kernel-isolation-replaces-the-hook-floor). Tauri-free, and the RENDER is platform-independent so its tests run everywhere - only execution is Linux-gated. Also owns `bsc sandbox replay` (#135): a launch's rendered argv is persisted alongside the pane's other per-session state so it can be inspected or replayed outside the app.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_sandbox\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "",
+            "# The RENDER itself stays string-building over std — that half is what keeps this crate out of the",
+            "# DuckDB-shaped part of the workspace (see CLAUDE.md on which crates pay for that) and keeps",
+            "# `cargo check -p bsc-sandbox` a couple of seconds rather than a couple of minutes. `cli` pulls in",
+            "# the two leaf crates every `bsc-*` CLI already pays for. serde_json is free here — bsc-cli-util",
+            "# already carries it as a real (non-build) dependency, so this adds no new unit to the build.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "tempfile",
+          "lead": [],
+          "value": "\"3\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-sandbox/Cargo.toml",
+  "tail": []
+}

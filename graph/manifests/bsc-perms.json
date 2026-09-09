@@ -1,0 +1,142 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-perms\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# `scope::DENY_ALL` and `scope_verdict` — the write-scope vocabulary, already a crate."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "bsc-config",
+          "lead": [
+            "# The RUNTIME CONFIG OVERLAY, so `write-locks.json` is read exactly as the app reads it. Verified",
+            "# rather than assumed: `bsc-config/build.rs` stages `../../src-tauri/data` into `$OUT_DIR/config-seed`",
+            "# and `src-tauri/build.rs` stages the same tree, with each file's own comment saying they are pinned",
+            "# together — so the embedded fallback here is byte-identical to `platform::config::load_str`'s."
+          ],
+          "value": "{ path = \"../bsc-config\" }"
+        },
+        {
+          "key": "log",
+          "lead": [
+            "# One `warn!` on an unreadable write-locks.json. Kept rather than dropped in the move: losing it would",
+            "# turn a degraded permission set into a silent one, which is the opposite of failing closed loudly."
+          ],
+          "value": "{ version = \"0.4\", features = [\"std\"] }"
+        }
+      ],
+      "lead": [
+        "",
+        "# `bsc-perms` — the SESSION PERMISSION DERIVATION: role -> denied commands, tool rules, write scope,",
+        "# access env, bsc-agent permissions, and the hook chain.",
+        "#",
+        "# TAURI-FREE BY CONSTRUCTION, and the dependency list is the proof rather than a claim. These eight",
+        "# modules were measured before they moved: their complete non-std import surface was `serde`,",
+        "# `bsc_util::scope`, and each other — no `tauri`, no `AppHandle`, no `State<>`, no `crate::app`, no",
+        "# `crate::console`. Adding a dependency here that is not pure would silently re-create the problem",
+        "# this crate exists to fix, so keep this list short and argue for anything new."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "graph-materialize",
+          "lead": [
+            "# The MATERIALIZER, for its merged-store loader ONLY. `the_field_names_match_the_consumer` reads",
+            "# `bsc-agent`'s permissions record out of the committed graph store, which is one file plus",
+            "# `graph/records/<id>.json` per record (`epic-retire-json-ledgers-for-db-and-git-drivers`) — parsing",
+            "# the store file alone would report that record \"missing from the graph store\" while it sits in its",
+            "# own file. `graph_materialize` is what the BUILD reads, so going through it is what stops this test",
+            "# and the compiler disagreeing about which records exist. Dev-only: not propagated to anything that",
+            "# links this crate."
+          ],
+          "value": "{ path = \"../graph-materialize\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-perms/Cargo.toml",
+  "tail": []
+}

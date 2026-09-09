@@ -1,0 +1,113 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-notify\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Push delivery for incidents — turns a coalesced bsc-incident Incident into a phone notification. ntfy first: a self-hosted push server, so a POST from here becomes a real OS notification on a phone whose app is closed, with no Apple/Google account and nothing leaving your own infrastructure. The Incident→message mapping is pure and tested; the POST sits behind a transport trait.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_notify\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "",
+            "# The mapping (Incident -> ntfy message) is PURE and needs no network. Only the real transport",
+            "# touches the wire, behind PushTransport, so the tests build the message and assert its shape",
+            "# against a recording fake — the network is never hit in a test.",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-incident",
+          "lead": [],
+          "value": "{ path = \"../bsc-incident\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "reqwest",
+          "lead": [],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
+        }
+      ],
+      "lead": [],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-notify/Cargo.toml",
+  "tail": []
+}

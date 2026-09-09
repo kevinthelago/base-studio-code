@@ -1,0 +1,139 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-llm\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Lib name `llm` so consumers keep using `llm::...` paths (the package is `bsc-llm`)."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"llm\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "reqwest",
+          "lead": [
+            "# `blocking` is for the `bsc llm` CLI only: it is a synchronous command, and pulling tokio in as a",
+            "# real dependency (it is dev-only here) just to await two GETs would be the larger change."
+          ],
+          "value": "{ version = \"0.12\", features = [\"json\", \"stream\", \"blocking\"] }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "regex",
+          "lead": [
+            "# Tolerant recovery of tool calls a local model emits as text (toolparse.rs)."
+          ],
+          "value": "\"1\""
+        },
+        {
+          "key": "futures-util",
+          "lead": [
+            "# Streaming the Ollama native /api/chat NDJSON response token-by-token to the PTY (#1832)."
+          ],
+          "value": "{ version = \"0.3\", default-features = false, features = [\"std\"] }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# `bsc llm bench`: `now_ms()` for the per-run nonce, and the shared `emit` so --json/--pretty behave",
+            "# the way every other bsc surface does rather than growing a third convention here."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "tokio",
+          "lead": [
+            "# Async runtime for the live-socket mock-HTTP integration tests (offline; #1744)."
+          ],
+          "value": "{ version = \"1\", features = [\"rt\", \"macros\"] }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/llm/Cargo.toml",
+  "tail": []
+}

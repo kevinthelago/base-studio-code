@@ -1,0 +1,127 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-sqlite-util\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"Shared helpers for the base-studio-code SQLite CLI+lib trio (plandb/skilldb/logs and their bsc-* binaries) — JSON value-list (de)serialization, home-dir resolution, JSON printing, and object-or-array stdin reads (#1621).\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Lib only — no binaries. The hyphenated package name maps to the `bsc_sqlite_util` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_sqlite_util\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "conn",
+          "lead": [
+            "# `conn` pulls in rusqlite and the shared connection PLUMBING (open + busy_timeout, `:memory:`-aware",
+            "# string-error open, default-path resolver, JSON-blob row reads) for the SQLite STORES (plandb /",
+            "# skilldb / compliance / research). Off by default so the JSON-only consumers (e.g. the file-based",
+            "# `bsc-blueprint`) don't compile bundled SQLite they never use (#1863)."
+          ],
+          "value": "[\"dep:rusqlite\"]"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[features]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities (#1646): the single source of truth for `home_dir` (re-exported below)."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "key": "rusqlite",
+          "lead": [
+            "# Only under `conn`: `bundled` compiles SQLite from source (matches plandb/skilldb/compliance/research)",
+            "# for cross-platform reliability. Optional so default builds stay rusqlite-free."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"], optional = true }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-sqlite-util/Cargo.toml",
+  "tail": []
+}

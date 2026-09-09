@@ -1,0 +1,126 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-teams\""
+        },
+        {
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        },
+        {
+          "key": "description",
+          "lead": [],
+          "value": "\"User teams store (SQLite store at ~/.base-studio-code/orgs.db) for base-studio-code (#2193, #2700) — the persona-relationship graph: positions connected by relationship archetypes that expand into communication forms. A thin teams-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's teams bridge and the session-facing `bsc teams` CLI (with the deprecated `bsc org` alias). The on-disk store dir stays `orgs/` so existing saved data is not orphaned.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app",
+        "# in. The hyphenated package name maps to the `bsc_teams` crate name."
+      ],
+      "name": "[build-dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_teams\""
+        },
+        {
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
+            "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "key": "bsc-json-store",
+          "lead": [
+            "# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the",
+            "# org-specific nouns + lean `list` fields via a CliSpec."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog, and `resolve_store_path`",
+            "# so `model` reaches the same store every other verb does (`--dir` > env > default)."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "key": "bsc-util",
+          "lead": [
+            "# The ONE home-dir resolver (#1646) — AND the canonical model-tier registry `model` validates",
+            "# against, so a tier this CLI accepts is one the harness can launch."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "key": "bsc-llm",
+          "lead": [
+            "# `model` validates a non-tier name against what the LOCAL RUNTIME has installed — THE ONE RULE",
+            "# lives in `llm::cli::verify_model`, beside the blocking probe it needs, rather than being restated",
+            "# here. The placement is the per-NODE level of the precedence chain and was the only level not",
+            "# calling it (`a-node-cannot-carry-a-local-model`)."
+          ],
+          "value": "{ path = \"../llm\" }"
+        },
+        {
+          "key": "serde_json",
+          "lead": [
+            "# `model` patches ONE position of the stored team without re-serializing a typed model."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-teams/Cargo.toml",
+  "tail": []
+}
