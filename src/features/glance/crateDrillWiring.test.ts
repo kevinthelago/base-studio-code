@@ -21,7 +21,7 @@ describe("a crate node's click drills instead of trying to expand a session", ()
   });
 
   it("routes a crate to the second layer, BEFORE the expandNode fallback", () => {
-    const drillAt = src.indexOf("else if (isSurfaceNodeId(id)) setCrateNode(id);");
+    const drillAt = src.indexOf("else if (isSurfaceNodeId(id)) {");
     const expandAt = src.indexOf("else expandNode(id);");
     expect(drillAt).toBeGreaterThan(-1);
     expect(expandAt).toBeGreaterThan(-1);
@@ -43,7 +43,7 @@ describe("a crate node's click drills instead of trying to expand a session", ()
   // "feature:<slug>")` and the click did nothing at all.
   describe("a feature node's click drills into its streams", () => {
     it("routes BEFORE the expandNode catch-all", () => {
-      const drillAt = src.indexOf("else if (isFeatureNodeId(id)) setFeatureNode(id);");
+      const drillAt = src.indexOf("else if (isFeatureNodeId(id)) {");
       const expandAt = src.indexOf("else expandNode(id);");
       expect(drillAt, "the feature branch is missing — the click is dead again").toBeGreaterThan(-1);
       expect(drillAt).toBeLessThan(expandAt);
@@ -106,7 +106,22 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     // node ever passed to it. As a click guard it routed every node — sessions included — into the
     // crate layer and killed session expansion outright. A converter is not a test.
     expect(src).not.toContain("else if (surfaceCrateOfNode(id))");
-    expect(src).toContain("else if (isSurfaceNodeId(id)) setCrateNode(id);");
+    expect(src).toContain("else if (isSurfaceNodeId(id)) {");
+  });
+
+  // THE DEPTH IS THE MODE'S (`nodes-are-features-and-surfaces`). Both sub-layers are gated on the
+  // same pure rule, and the branch still has to SELECT when it does not drill — a mode that simply
+  // dropped the click would reintroduce the dead click this whole file exists for, one condition
+  // deeper and harder to see.
+  it("gates BOTH sub-layers on the mode, and still selects when it does not drill", () => {
+    for (const layer of ["crate", "feature"]) {
+      expect(src, `${layer} is not gated on the mode`).toContain(`opensSubLayer(sessionMode, "${layer}")`);
+    }
+    const crateAt = src.indexOf('opensSubLayer(sessionMode, "crate")');
+    const elseAt = src.indexOf("else pickNode(id);", crateAt);
+    expect(elseAt, "a claude-mode crate click must SELECT, not vanish").toBeGreaterThan(crateAt);
+    // The mode comes from the chain `bsc session mode` writes — never a second setting.
+    expect(src).toContain('["session", "mode", "--project", drill, "--json"]');
   });
 
   it("counts the sessions on THIS LAYER, not the whole project", () => {
