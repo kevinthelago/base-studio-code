@@ -1233,7 +1233,7 @@
             ("logs_costs", "re-reads every transcript named in tokens.log"),
             ("graph_dump", "reads + reconciles the whole algorithms store (#4078)"),
             ("read_log_tail", "reads an arbitrary log stream from disk"),
-            ("fault_rows_batch", "opens one error.db per project; 19.3s/4 calls measured"),
+            ("fault_summaries_batch", "opens one error.db per project; 19.3s/4 calls measured"),
             ("bsc", "spawns the sidecar — the app's hottest process spawner (#4074)"),
         ];
 
