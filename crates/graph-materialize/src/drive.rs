@@ -80,6 +80,17 @@ pub struct BuildSpec {
     /// Omitting it is not a subtle failure: the crate root resolves to nothing and rustc reports
     /// `E0601: main function not found`, which names neither the cause nor this variable.
     pub out_dir_env: PathBuf,
+    /// `--cfg` flags — in practice `feature="x"`, since a feature is just a cfg to rustc. Cargo's
+    /// feature RESOLUTION is a different thing and stays cargo's job; this is only its output.
+    pub cfgs: Vec<String>,
+    /// Link std dynamically. See [`Profile::prefer_dynamic`] for the 53x measurement.
+    pub prefer_dynamic: bool,
+    /// Where the loader finds `libstd`. Without it a `prefer_dynamic` artifact links and then fails
+    /// at load time.
+    pub rpath: Option<PathBuf>,
+    /// Extra environment for the compile — `CARGO_CRATE_NAME` for a `[[test]]` target, which the
+    /// shared test root reads to select its body.
+    pub extra_env: Vec<(String, String)>,
 }
 
 impl BuildSpec {
@@ -102,6 +113,18 @@ impl BuildSpec {
         a.push(self.out_dir.display().to_string());
         a.push("-L".into());
         a.push(format!("dependency={}", self.deps_dir.display()));
+        for c in &self.cfgs {
+            a.push("--cfg".into());
+            a.push(c.clone());
+        }
+        if self.prefer_dynamic {
+            a.push("-C".into());
+            a.push("prefer-dynamic".into());
+        }
+        if let Some(r) = &self.rpath {
+            a.push("-C".into());
+            a.push(format!("link-arg=-Wl,-rpath,{}", r.display()));
+        }
         for e in &self.externs {
             a.push("--extern".into());
             a.push(format!("{}={}", e.name, e.path.display()));
@@ -125,6 +148,7 @@ impl BuildSpec {
         let out = std::process::Command::new(rustc)
             .args(self.argv())
             .env("OUT_DIR", &self.out_dir_env)
+            .envs(self.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .output()
             .map_err(|e| format!("could not run {}: {e}", rustc.display()))?;
         if !out.status.success() {
@@ -256,6 +280,250 @@ pub fn closure_from_tree(tree_stdout: &str) -> Vec<String> {
     v
 }
 
+// ── From a record to an invocation ──────────────────────────────────────────────────────────────
+
+use crate::manifest::{CrateRecord, Dep, TargetKind};
+use std::collections::BTreeMap;
+
+/// The build profile — the workspace `[profile.dev]` equivalent, as data.
+#[derive(Debug, Clone)]
+pub struct Profile {
+    pub opt_level: String,
+    /// Share one `libstd` across every artifact instead of copying it into each.
+    ///
+    /// MEASURED 2026-09-09: an EMPTY cdylib is 4.47 MB and the same plugin with `serde_json` is
+    /// 4.57 MB — so 98% of a statically linked plugin is std, not dependencies. With this on, the
+    /// same plugin is 0.086 MB, a 53x reduction. It is the difference between 47 subcommands costing
+    /// ~212 MB and costing ~4 MB.
+    pub prefer_dynamic: bool,
+    /// Where the loader finds `libstd` at runtime. REQUIRED when `prefer_dynamic` is set: without it
+    /// the artifact links cleanly and then fails at `dlopen` with `libstd-<hash>.so: cannot open
+    /// shared object file`, which names neither this flag nor the toolchain.
+    pub rpath: Option<PathBuf>,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Profile { opt_level: "1".into(), prefer_dynamic: false, rpath: None }
+    }
+}
+
+/// Crate name to the exact artifact it binds to, CAPTURED from cargo — never computed, never globbed.
+/// See trap 1 at the top of this module.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExternMap {
+    map: BTreeMap<String, PathBuf>,
+}
+
+impl ExternMap {
+    /// Union every `--extern` cargo issued across a verbose build.
+    ///
+    /// The log must come from a build that actually compiled the closure. A WARM build mentions only
+    /// what it recompiled — see trap 2 — so a map built from one is short, and the omission surfaces
+    /// later as an `E0463` naming a crate that IS present.
+    pub fn from_cargo_log(log: &str) -> ExternMap {
+        let mut map = BTreeMap::new();
+        for inv in log.split("Running `").skip(1) {
+            let inv = inv.split("`\n").next().unwrap_or(inv);
+            let toks: Vec<&str> = inv.split_whitespace().collect();
+            for (i, t) in toks.iter().enumerate() {
+                if *t == "--extern" {
+                    if let Some((n, p)) = toks.get(i + 1).and_then(|s| s.split_once('=')) {
+                        map.insert(n.to_string(), PathBuf::from(p));
+                    }
+                }
+            }
+        }
+        ExternMap { map }
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Look a dependency up by the name the SOURCE uses.
+    ///
+    /// A manifest key is a PACKAGE name (`bsc-util`); rustc wants the LIB name (`bsc_util`). The two
+    /// differ by more than dashes when `[lib] name` overrides the default — `crates/llm` is package
+    /// `bsc-llm` — so both spellings are tried rather than assuming one rule.
+    pub fn get(&self, dep_name: &str) -> Option<&Path> {
+        self.map
+            .get(dep_name)
+            .or_else(|| self.map.get(&dep_name.replace('-', "_")))
+            .map(|p| p.as_path())
+    }
+
+    /// Resolve a dependency set, FAILING by name on anything missing.
+    ///
+    /// Silently dropping an unresolved dependency is the expensive failure: rustc then reports
+    /// `E0463` against whichever crate first referenced it, which is usually not the missing one.
+    pub fn resolve(&self, deps: &[&Dep]) -> Result<Vec<Extern>, String> {
+        let mut out = Vec::new();
+        let mut missing = Vec::new();
+        for d in deps {
+            match self.get(&d.name) {
+                Some(p) => out.push(Extern {
+                    name: d.name.replace('-', "_"),
+                    path: p.to_path_buf(),
+                }),
+                None => missing.push(d.name.clone()),
+            }
+        }
+        if !missing.is_empty() {
+            return Err(format!(
+                "no captured extern for {missing:?} — the map holds {} entries. A map built from a \
+                 WARM cargo build lists only what was recompiled; capture from a build that actually \
+                 compiled the closure, or the omission resurfaces as an E0463 naming a different crate.",
+                self.map.len()
+            ));
+        }
+        Ok(out)
+    }
+}
+
+/// Where a crate's artifacts and generated source live.
+#[derive(Debug, Clone)]
+pub struct Dirs {
+    pub out_dir: PathBuf,
+    pub deps_dir: PathBuf,
+    /// `$OUT_DIR` — where the materializer wrote `crate.rs` and `crate_doc.md`.
+    pub generated: PathBuf,
+}
+
+impl BuildSpec {
+    /// Build the invocation for one crate and one target, from its record.
+    ///
+    /// `features` are passed in rather than read off the record: a feature is enabled by whoever
+    /// DEPENDS on a crate, so the set is a property of the build being planned, not of the crate.
+    pub fn for_crate(
+        rec: &CrateRecord,
+        target: &TargetKind,
+        externs: &ExternMap,
+        profile: &Profile,
+        dirs: &Dirs,
+        features: &[String],
+        shared_root: &Path,
+    ) -> Result<BuildSpec, String> {
+        // A `--test` build sees dev-dependencies as well; every other target must NOT, or a dev-only
+        // crate is linked into a shipped artifact.
+        let is_test = matches!(target, TargetKind::Test { .. });
+        let mut deps: Vec<&Dep> = rec.normal_deps();
+        if is_test {
+            deps.extend(rec.dev_deps());
+        }
+        let externs = externs.resolve(&deps)?;
+
+        let (kind, name, path) = match target {
+            TargetKind::Lib { path } => (Target::Lib, rec.name.clone(), path.clone()),
+            TargetKind::Bin { name, path } => (Target::Bin, name.clone(), path.clone()),
+            TargetKind::Test { name, path } => (Target::Test, name.clone(), path.clone()),
+        };
+        let crate_name = name.replace('-', "_");
+
+        let mut extra_env = Vec::new();
+        if let TargetKind::Test { name, .. } = target {
+            // `test_root.rs` selects its body with `env!("CARGO_CRATE_NAME")`, which is the TARGET's
+            // name and not the package's — two `[[test]]` entries share one root file and must still
+            // resolve different bodies. So this is set per target, never once per crate.
+            extra_env.push(("CARGO_CRATE_NAME".to_string(), name.replace('-', "_")));
+        }
+
+        Ok(BuildSpec {
+            crate_name: crate_name.clone(),
+            edition: rec.edition.clone(),
+            crate_root: path.map(|p| dirs.generated.join("..").join(p)).unwrap_or_else(|| shared_root.to_path_buf()),
+            target: kind,
+            opt_level: profile.opt_level.clone(),
+            metadata: crate_name,
+            out_dir: dirs.out_dir.clone(),
+            deps_dir: dirs.deps_dir.clone(),
+            externs,
+            out_dir_env: dirs.generated.clone(),
+            cfgs: features.iter().map(|f| format!("feature=\"{f}\"")).collect(),
+            prefer_dynamic: profile.prefer_dynamic,
+            rpath: profile.rpath.clone(),
+            extra_env,
+        })
+    }
+}
+
+// ── Materialize, then compile ───────────────────────────────────────────────────────────────────
+
+/// Generate a crate's source from the graph store into `generated`, ready for a compile.
+///
+/// This CALLS the materializer rather than reimplementing it. `build.rs`, `src/lib.rs` and this
+/// function all reach the same `emit_into`, so a driver build and a cargo build cannot diverge in
+/// what they compile — the divergence would be invisible, since both produce a `crate.rs` that looks
+/// plausible. Returns the module count, which is `0` only for an optional adopter.
+pub fn materialize(
+    repo_root: &Path,
+    crate_dir: &str,
+    generated: &Path,
+    adoption: crate::Adoption,
+) -> Result<usize, String> {
+    std::fs::create_dir_all(generated)
+        .map_err(|e| format!("cannot create {}: {e}", generated.display()))?;
+    crate::emit_into(&repo_root.join("crates").join(crate_dir), generated, Some(repo_root), adoption)
+}
+
+/// The driver's environment — where the repo is, which toolchain, and the profile and directories
+/// every build under it shares.
+///
+/// A struct rather than a parameter list because those four travel together for the whole of a build
+/// and none of them varies per crate. (Passing them individually also put `build_crate` at 8
+/// arguments, which clippy refuses at 7 — the lint was right about the shape.)
+#[derive(Debug, Clone)]
+pub struct Driver {
+    pub repo_root: PathBuf,
+    /// Passed rather than found, so the caller pins the toolchain the extern map was captured
+    /// against — an rlib is specific to the exact compiler that produced it.
+    pub rustc: PathBuf,
+    pub profile: Profile,
+    pub dirs: Dirs,
+}
+
+impl Driver {
+    /// Materialize a crate and compile one of its targets — records to artifact, no cargo.
+    pub fn build(
+        &self,
+        rec: &CrateRecord,
+        target: &TargetKind,
+        externs: &ExternMap,
+        features: &[String],
+    ) -> Result<PathBuf, String> {
+        self.spec(rec, target, externs, features)?.compile(&self.rustc)
+    }
+
+    /// Materialize and compile as a test target, then run it.
+    pub fn test(
+        &self,
+        rec: &CrateRecord,
+        target: &TargetKind,
+        externs: &ExternMap,
+        features: &[String],
+    ) -> Result<TestReport, String> {
+        let spec = self.spec(rec, target, externs, features)?;
+        compile_and_test(&spec, &self.rustc)
+    }
+
+    /// Generate the crate's source, then plan its invocation.
+    fn spec(
+        &self,
+        rec: &CrateRecord,
+        target: &TargetKind,
+        externs: &ExternMap,
+        features: &[String],
+    ) -> Result<BuildSpec, String> {
+        materialize(&self.repo_root, &rec.dir, &self.dirs.generated, crate::Adoption::Required)?;
+        let shared = self.repo_root.join("crates/graph-materialize/crate_root.rs");
+        BuildSpec::for_crate(rec, target, externs, &self.profile, &self.dirs, features, &shared)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,7 +550,7 @@ mod tests {
             out_dir: "/out".into(),
             deps_dir: "/deps".into(),
             externs: vec![Extern { name: "serde_json".into(), path: "/deps/libserde_json-abc.rlib".into() }],
-            out_dir_env: "/gen".into(),
+            out_dir_env: "/gen".into(), cfgs: vec![], prefer_dynamic: false, rpath: None, extra_env: vec![],
         };
         let a = spec.argv().join(" ");
         assert!(a.contains("--crate-name bsc_hook"));
@@ -298,7 +566,7 @@ mod tests {
         let mk = |t| BuildSpec {
             crate_name: "p".into(), edition: "2021".into(), crate_root: "r.rs".into(), target: t,
             opt_level: "1".into(), metadata: "m".into(), out_dir: "/o".into(), deps_dir: "/d".into(),
-            externs: vec![], out_dir_env: "/g".into(),
+            externs: vec![], out_dir_env: "/g".into(), cfgs: vec![], prefer_dynamic: false, rpath: None, extra_env: vec![],
         };
         assert_eq!(mk(Target::Cdylib).artifact(), PathBuf::from("/o/libp-m.so"));
         assert_eq!(mk(Target::Lib).artifact(), PathBuf::from("/o/libp-m.rlib"));
@@ -401,7 +669,7 @@ Running `rustc --crate-name bsc_util --edition=2021 c.rs`
             out_dir: d.join("out"),
             deps_dir: d.join("out"),
             externs: vec![],
-            out_dir_env: gen.clone(),
+            out_dir_env: gen.clone(), cfgs: vec![], prefer_dynamic: false, rpath: None, extra_env: vec![],
         };
         std::fs::create_dir_all(&spec.out_dir).unwrap();
 
@@ -423,10 +691,253 @@ Running `rustc --crate-name bsc_util --edition=2021 c.rs`
             crate_root: root.join("crates/graph-materialize/crate_root.rs"),
             target: Target::Lib, opt_level: "0".into(), metadata: "n".into(),
             out_dir: d.clone(), deps_dir: d.clone(), externs: vec![],
-            out_dir_env: d.join("does-not-exist"),
+            out_dir_env: d.join("does-not-exist"), cfgs: vec![], prefer_dynamic: false, rpath: None, extra_env: vec![],
         };
         let err = spec.compile(Path::new("rustc")).expect_err("a missing OUT_DIR must not succeed");
         assert!(err.contains("rustc failed"), "got: {err}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+#[cfg(test)]
+mod record_to_invocation_tests {
+    use super::*;
+    use crate::manifest::{CrateRecord, Manifest, TargetKind};
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    fn record(dir: &str) -> CrateRecord {
+        let src = std::fs::read_to_string(repo().join("crates").join(dir).join("Cargo.toml")).unwrap();
+        CrateRecord::extract(&Manifest::parse(&src).unwrap(), dir)
+    }
+
+    /// An extern map that resolves everything a record asks for, so these tests exercise the MAPPING
+    /// rather than the capture (which `a_glob_would_pick_a_different_rlib_than_the_captured_map`
+    /// already covers).
+    fn map_for(rec: &CrateRecord) -> ExternMap {
+        let mut log = String::from("Running `rustc --crate-name x");
+        for d in rec.deps.iter() {
+            log.push_str(&format!(" --extern {}=/deps/lib{}-h.rlib", d.name.replace('-', "_"), d.name.replace('-', "_")));
+        }
+        log.push_str("`\n");
+        ExternMap::from_cargo_log(&log)
+    }
+
+    fn dirs() -> Dirs {
+        Dirs { out_dir: "/out".into(), deps_dir: "/deps".into(), generated: "/gen".into() }
+    }
+
+    fn spec(rec: &CrateRecord, t: &TargetKind, feats: &[String], p: &Profile) -> BuildSpec {
+        BuildSpec::for_crate(rec, t, &map_for(rec), p, &dirs(), feats, Path::new("/shared/crate_root.rs"))
+            .expect("the synthetic map resolves every dependency")
+    }
+
+    /// SHAPE 1 — dev-dependencies widen ONLY the test build. Getting this wrong links a dev-only
+    /// crate into a shipped artifact, which nothing downstream would flag.
+    #[test]
+    fn dev_dependencies_reach_the_test_build_and_nothing_else() {
+        let rec = std::fs::read_dir(repo().join("crates"))
+            .unwrap()
+            .flatten()
+            .filter_map(|e| {
+                let d = e.file_name().to_string_lossy().to_string();
+                let r = record(&d);
+                (!r.dev_deps().is_empty() && !r.normal_deps().is_empty()).then_some(r)
+            })
+            .next()
+            .expect("20 crates carry dev-dependencies; finding none means the projection broke");
+
+        let dev: Vec<String> = rec.dev_deps().iter().map(|d| d.name.replace('-', "_")).collect();
+        let lib = spec(&rec, &TargetKind::Lib { path: None }, &[], &Profile::default());
+        let tst = spec(&rec, &TargetKind::Test { name: "t".into(), path: None }, &[], &Profile::default());
+
+        let names = |s: &BuildSpec| -> Vec<String> { s.externs.iter().map(|e| e.name.clone()).collect() };
+        for d in &dev {
+            assert!(!names(&lib).contains(d), "{d} is a DEV dependency and must not reach the lib build");
+            assert!(names(&tst).contains(d), "{d} must reach the test build");
+        }
+        assert!(names(&tst).len() > names(&lib).len());
+    }
+
+    /// SHAPE 2 — a feature is a `--cfg` to rustc. Cargo's feature RESOLUTION stays cargo's job; this
+    /// is only its output, which is why the set is passed in rather than read off the record.
+    #[test]
+    fn features_become_cfg_flags() {
+        let rec = record("bsc-sqlite-util");
+        assert!(rec.features.contains(&"conn".to_string()), "bsc-sqlite-util declares the `conn` feature");
+        let s = spec(&rec, &TargetKind::Lib { path: None }, &["conn".to_string()], &Profile::default());
+        let a = s.argv().join(" ");
+        assert!(a.contains(r#"--cfg feature="conn""#), "got: {a}");
+        let none = spec(&rec, &TargetKind::Lib { path: None }, &[], &Profile::default());
+        assert!(!none.argv().join(" ").contains("--cfg"), "no features means no --cfg");
+    }
+
+    /// SHAPE 3 — a `[[test]]` target's body is selected by `CARGO_CRATE_NAME`, which is the TARGET's
+    /// name, not the package's. Two targets share one root file, so this must be set per target.
+    #[test]
+    fn a_test_target_carries_its_own_crate_name_in_the_environment() {
+        let rec = record("bsc-publish");
+        let names: Vec<String> = rec
+            .targets
+            .iter()
+            .filter_map(|t| match t {
+                TargetKind::Test { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.len() >= 2, "bsc-publish declares two [[test]] targets sharing one root: {names:?}");
+
+        for n in &names {
+            let s = spec(&rec, &TargetKind::Test { name: n.clone(), path: None }, &[], &Profile::default());
+            assert_eq!(
+                s.extra_env.iter().find(|(k, _)| k == "CARGO_CRATE_NAME").map(|(_, v)| v.as_str()),
+                Some(n.replace('-', "_").as_str()),
+                "each target must resolve its OWN body"
+            );
+        }
+        // The two targets must not collide on one artifact name.
+        let a = spec(&rec, &TargetKind::Test { name: names[0].clone(), path: None }, &[], &Profile::default());
+        let b = spec(&rec, &TargetKind::Test { name: names[1].clone(), path: None }, &[], &Profile::default());
+        assert_ne!(a.artifact(), b.artifact());
+    }
+
+    /// A missing extern must fail BY NAME. Dropping it silently produces an E0463 against whichever
+    /// crate referenced it, which is usually not the missing one.
+    #[test]
+    fn an_unresolved_dependency_is_named_rather_than_dropped() {
+        let rec = record("plandb");
+        let empty = ExternMap::default();
+        let err = BuildSpec::for_crate(
+            &rec, &TargetKind::Lib { path: None }, &empty, &Profile::default(), &dirs(), &[],
+            Path::new("/shared/crate_root.rs"),
+        )
+        .expect_err("an empty map must not silently produce a spec with no externs");
+        assert!(err.contains("bsc-sqlite-util") || err.contains("serde_json"), "must name what is missing: {err}");
+        assert!(err.contains("E0463"), "and must say why the later failure would mislead: {err}");
+    }
+
+    /// A package name is not a lib name. `crates/llm` is package `bsc-llm`; the source says `bsc_llm`.
+    #[test]
+    fn a_dependency_resolves_under_either_spelling() {
+        let m = ExternMap::from_cargo_log("Running `rustc --extern bsc_util=/deps/libbsc_util-h.rlib`\n");
+        assert!(m.get("bsc_util").is_some());
+        assert!(m.get("bsc-util").is_some(), "a manifest key uses dashes; rustc uses underscores");
+        assert!(m.get("nope").is_none());
+    }
+
+    /// The size lever, as flags. 4.57 MB -> 0.086 MB; see `Profile::prefer_dynamic`.
+    #[test]
+    fn prefer_dynamic_emits_both_the_flag_and_the_rpath_it_requires() {
+        let rec = record("bsc-hook");
+        let p = Profile {
+            opt_level: "1".into(),
+            prefer_dynamic: true,
+            rpath: Some(PathBuf::from("/tc/lib/rustlib/x86_64-unknown-linux-gnu/lib")),
+        };
+        let a = spec(&rec, &TargetKind::Bin { name: "bsc-hook".into(), path: None }, &[], &p).argv().join(" ");
+        assert!(a.contains("-C prefer-dynamic"));
+        assert!(
+            a.contains("-C link-arg=-Wl,-rpath,/tc/lib/rustlib"),
+            "without the rpath the artifact links and then fails at dlopen: {a}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod materialize_tests {
+    use super::*;
+    use crate::manifest::{CrateRecord, Manifest};
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        let d = repo().join("target").join("gm-drive-tests").join(format!("{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// THE EQUIVALENCE GUARD: what the driver generates must be byte-identical to what cargo's build
+    /// script generated for the same crate.
+    ///
+    /// Compared at the SOURCE level rather than by diffing artifacts, deliberately. Two rustc runs of
+    /// identical source can differ in bytes (`-C metadata` feeds symbol names, and the driver chooses
+    /// its own), so an artifact comparison would fail for a reason that does not matter. If the
+    /// generated source matches and the invocation matches, the compile has nothing left to disagree
+    /// about — and this needs no rlibs, so it holds on a cold tree.
+    ///
+    /// TWO MODES, and neither is a silent skip. When cargo has already built a materialized crate its
+    /// `$OUT_DIR/crate.rs` is on disk and is compared byte-for-byte. When the tree is cold there is
+    /// nothing to compare against, so the driver's own output is checked for substance instead.
+    #[test]
+    fn the_drivers_materialization_matches_what_cargo_generated() {
+        let build = repo().join("target/debug/build");
+        let mut compared = 0usize;
+        let mut checked = 0usize;
+
+        for dir in ["bsc-hook", "bsc-disk", "bsc-publish", "plandb"] {
+            let src = std::fs::read_to_string(repo().join("crates").join(dir).join("Cargo.toml")).unwrap();
+            let rec = CrateRecord::extract(&Manifest::parse(&src).unwrap(), dir);
+            assert!(rec.materialized, "{dir} is expected to compile from records");
+
+            let gen = scratch(&format!("mat-{dir}")).join("out");
+            let n = materialize(repo(), dir, &gen, crate::Adoption::Required)
+                .unwrap_or_else(|e| panic!("{dir}: {e}"));
+            assert!(n > 0, "{dir} materialized 0 modules — an empty crate is the silent-success failure");
+            let ours = std::fs::read_to_string(gen.join("crate.rs")).unwrap();
+            assert!(ours.len() > 200, "{dir}: generated body is implausibly small ({} bytes)", ours.len());
+            checked += 1;
+
+            // Cargo's copy, if this tree has been built.
+            let cargos = std::fs::read_dir(&build)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with(&format!("{dir}-")))
+                })
+                .map(|p| p.join("out/crate.rs"))
+                .find(|p| p.is_file());
+            if let Some(c) = cargos {
+                let theirs = std::fs::read_to_string(&c).unwrap();
+                assert_eq!(
+                    ours, theirs,
+                    "{dir}: the driver and cargo generated DIFFERENT source. They call the same \
+                     emit_into, so a difference means the driver resolved a different store, root or \
+                     adoption — not a rendering bug."
+                );
+                compared += 1;
+            }
+            let _ = std::fs::remove_dir_all(gen.parent().unwrap());
+        }
+
+        assert_eq!(checked, 4, "every named crate must be materialized, not skipped");
+        if build.is_dir() {
+            assert!(
+                compared >= 1,
+                "target/debug/build exists but no crate's cargo-generated crate.rs was found, so the \
+                 byte-for-byte half of this guard verified nothing. That is a broken lookup, not a \
+                 cold tree."
+            );
+        }
+    }
+
+    /// A crate that owns no records must FAIL under `Required`, never emit an empty module.
+    #[test]
+    fn a_crate_with_no_records_is_an_error_rather_than_an_empty_crate() {
+        let gen = scratch("norecords").join("out");
+        // `graph-materialize` itself owns no records — it is the materializer and cannot materialize
+        // itself, which is exactly the "opted in but owns nothing" case the hard error exists for.
+        let err = materialize(repo(), "graph-materialize", &gen, crate::Adoption::Required)
+            .expect_err("a required adopter with no records must not silently produce an empty crate");
+        assert!(!err.is_empty());
+        let _ = std::fs::remove_dir_all(gen.parent().unwrap());
     }
 }

@@ -224,6 +224,131 @@ impl Manifest {
     }
 }
 
+// ── The record form ─────────────────────────────────────────────────────────────────────────────
+//
+// The stored record is the LOSSLESS manifest, not the `CrateRecord` projection. Storing the
+// projection would be smaller and would also be a second source of truth: the projection cannot
+// reproduce the file, so the file would have to stay authoritative and the record would be a
+// description of it that drifts. Storing the manifest means the record can regenerate the file
+// byte-for-byte, and the projection is derived on read.
+//
+// Serialized by hand through `serde_json::Value` rather than with derives, because this crate is a
+// build-dependency of 74 others and its manifest says so in as many words — "LEAN ON PURPOSE:
+// serde_json and nothing else". Adding `serde` with `derive` here would put a proc-macro in front of
+// every one of those builds.
+
+impl Manifest {
+    /// The record body for this manifest.
+    pub fn to_json(&self, src: &str) -> serde_json::Value {
+        let secs: Vec<serde_json::Value> = self
+            .sections
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name,
+                    "lead": s.lead,
+                    "entries": s.entries.iter().map(|e| serde_json::json!({
+                        "key": e.key, "value": e.value, "lead": e.lead,
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "src": src,
+            "kind": "manifest",
+            "sections": secs,
+            "tail": self.tail,
+            "endsNewline": self.ends_nl,
+        })
+    }
+
+    /// Read a manifest back out of its record.
+    ///
+    /// Every field is REQUIRED. A tolerant reader that defaulted a missing `endsNewline` would render
+    /// a file one byte different from its source and pass every check that is not byte-exact.
+    pub fn from_json(v: &serde_json::Value) -> Result<Manifest, String> {
+        let strs = |v: Option<&serde_json::Value>, what: &str| -> Result<Vec<String>, String> {
+            v.and_then(|x| x.as_array())
+                .ok_or_else(|| format!("record is missing the `{what}` array"))?
+                .iter()
+                .map(|x| x.as_str().map(str::to_string).ok_or_else(|| format!("`{what}` holds a non-string")))
+                .collect()
+        };
+        let secs = v
+            .get("sections")
+            .and_then(|x| x.as_array())
+            .ok_or("record is missing the `sections` array")?;
+        let mut sections = Vec::new();
+        for s in secs {
+            let name = s.get("name").and_then(|x| x.as_str()).ok_or("a section has no `name`")?.to_string();
+            let lead = strs(s.get("lead"), "lead")?;
+            let mut entries = Vec::new();
+            for e in s.get("entries").and_then(|x| x.as_array()).ok_or("a section has no `entries`")? {
+                entries.push(Entry {
+                    key: e.get("key").and_then(|x| x.as_str()).ok_or("an entry has no `key`")?.to_string(),
+                    value: e
+                        .get("value")
+                        .and_then(|x| x.as_str())
+                        .ok_or("an entry has no `value`")?
+                        .to_string(),
+                    lead: strs(e.get("lead"), "lead")?,
+                });
+            }
+            sections.push(Section { name, entries, lead });
+        }
+        Ok(Manifest {
+            sections,
+            tail: strs(v.get("tail"), "tail")?,
+            ends_nl: v
+                .get("endsNewline")
+                .and_then(|x| x.as_bool())
+                .ok_or("record is missing `endsNewline` — defaulting it renders a file one byte off")?,
+        })
+    }
+}
+
+/// Build order for a set of crates: every crate after the first-party crates it depends on.
+///
+/// Cargo derives this from the manifests it reads; a driver that replaces cargo must derive it too.
+/// It is cheap here — MEASURED, the first-party graph is 8 deep at its worst and mostly 2 — but a
+/// CYCLE must be an error rather than an arbitrary order, because the arbitrary order compiles
+/// something and produces a link failure that names neither crate in the cycle.
+pub fn topo_order(crates: &[CrateRecord]) -> Result<Vec<String>, String> {
+    use std::collections::{HashMap, HashSet};
+    let by_name: HashMap<&str, &CrateRecord> = crates.iter().map(|c| (c.name.as_str(), c)).collect();
+    let mut order: Vec<String> = Vec::new();
+    let mut done: HashSet<String> = HashSet::new();
+    // Iterative rather than recursive: `visit` on a cycle recurses until the stack ends, and a stack
+    // overflow is a worse diagnostic than the error this returns.
+    let mut progress = true;
+    while progress && done.len() < crates.len() {
+        progress = false;
+        for c in crates {
+            if done.contains(&c.name) {
+                continue;
+            }
+            let ready = c
+                .first_party_deps()
+                .iter()
+                .all(|d| !by_name.contains_key(d.name.as_str()) || done.contains(&d.name));
+            if ready {
+                done.insert(c.name.clone());
+                order.push(c.name.clone());
+                progress = true;
+            }
+        }
+    }
+    if done.len() != crates.len() {
+        let stuck: Vec<&str> =
+            crates.iter().filter(|c| !done.contains(&c.name)).map(|c| c.name.as_str()).collect();
+        return Err(format!(
+            "dependency cycle among {} crate(s): {stuck:?} — no build order exists, and picking one              anyway produces a link failure that names neither crate in the cycle",
+            stuck.len()
+        ));
+    }
+    Ok(order)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +426,394 @@ mod tests {
     #[test]
     fn an_entry_before_any_section_is_an_error() {
         assert!(Manifest::parse("name = \"x\"\n").is_err());
+    }
+}
+
+// ── The crate record ────────────────────────────────────────────────────────────────────────────
+//
+// What a manifest MEANS, as opposed to how it is written. `Manifest` is the lossless textual model;
+// `CrateRecord` is the build-relevant projection of it — the fields a driver needs to construct a
+// rustc invocation, with the prose still attached to the dependency it explains.
+//
+// The two are kept apart on purpose. Round-tripping needs every byte; building needs a handful of
+// facts. Collapsing them would mean either a record that cannot reproduce its file or a driver that
+// has to re-derive meaning from formatting.
+
+/// Which dependency table an entry came from. Dev-deps widen ONLY the `--test` extern set; conflating
+/// them is how a dev-only crate ends up linked into a shipped artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DepKind {
+    Normal,
+    Dev,
+    Build,
+}
+
+/// One dependency, with the reasoning that justifies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dep {
+    pub name: String,
+    /// The spec exactly as written — `"1"`, `{ path = "../data", default-features = false }`.
+    pub spec: String,
+    pub kind: DepKind,
+    pub why: Option<String>,
+}
+
+impl Dep {
+    /// A path dependency is FIRST-PARTY: built by us, in topological order. Everything else is
+    /// third-party and resolved through the captured extern map.
+    pub fn is_first_party(&self) -> bool {
+        self.spec.contains("path =")
+    }
+
+    /// The features this dependency is taken with. `bsc-sqlite-util`'s `["conn"]` is the case that
+    /// matters: its own prose records that backups use `VACUUM INTO` and silently corrupt without it,
+    /// so a generator that dropped the flag would ship a working build and broken backups.
+    pub fn features(&self) -> Vec<String> {
+        let Some(rest) = self.spec.split("features").nth(1) else { return Vec::new() };
+        let Some(open) = rest.find('[') else { return Vec::new() };
+        let Some(close) = rest[open..].find(']') else { return Vec::new() };
+        rest[open + 1..open + close]
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+}
+
+/// A build target the crate declares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetKind {
+    Lib { path: Option<String> },
+    Bin { name: String, path: Option<String> },
+    /// A `[[test]]` integration target. Its body is selected by `CARGO_CRATE_NAME`, which is the
+    /// TARGET's name rather than the package's — so the driver must set that variable per target,
+    /// not once per crate.
+    Test { name: String, path: Option<String> },
+}
+
+/// The build-relevant projection of a manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrateRecord {
+    /// The directory under `crates/` — also the id prefix of every record the crate owns.
+    pub dir: String,
+    pub name: String,
+    pub edition: String,
+    /// Whether the crate's source lives in the graph (`build = "../graph-materialize/build.rs"`).
+    /// The 6 that do not keep real files and stay on cargo.
+    pub materialized: bool,
+    pub targets: Vec<TargetKind>,
+    pub deps: Vec<Dep>,
+    pub features: Vec<String>,
+    /// The package-level prose — the `#` block before `[dependencies]` or above `[package]`.
+    pub doc: Option<String>,
+}
+
+fn quoted(v: &str) -> String {
+    v.trim().trim_matches('"').to_string()
+}
+
+impl CrateRecord {
+    pub fn extract(m: &Manifest, dir: &str) -> CrateRecord {
+        let mut targets = Vec::new();
+        let mut deps = Vec::new();
+        let mut features = Vec::new();
+
+        for sec in &m.sections {
+            let get = |k: &str| sec.entries.iter().find(|e| e.key == k).map(|e| quoted(&e.value));
+            match sec.name.as_str() {
+                "[lib]" => targets.push(TargetKind::Lib { path: get("path") }),
+                "[[bin]]" => targets.push(TargetKind::Bin {
+                    name: get("name").unwrap_or_else(|| dir.to_string()),
+                    path: get("path"),
+                }),
+                "[[test]]" => targets.push(TargetKind::Test {
+                    name: get("name").unwrap_or_default(),
+                    path: get("path"),
+                }),
+                "[features]" => features.extend(sec.entries.iter().map(|e| e.key.clone())),
+                _ => {}
+            }
+            let kind = match sec.name.as_str() {
+                "[dependencies]" => Some(DepKind::Normal),
+                "[dev-dependencies]" => Some(DepKind::Dev),
+                "[build-dependencies]" => Some(DepKind::Build),
+                n if n.starts_with("[target.") && n.ends_with(".dependencies]") => Some(DepKind::Normal),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                deps.extend(sec.entries.iter().map(|e| Dep {
+                    name: e.key.clone(),
+                    spec: e.value.clone(),
+                    kind,
+                    why: e.why(),
+                }));
+            }
+        }
+
+        let materialized = m
+            .section("[package]")
+            .and_then(|s| s.entries.iter().find(|e| e.key == "build"))
+            .is_some_and(|e| e.value.contains("graph-materialize/build.rs"));
+
+        // The package prose is the lead of whichever section first carries one after `[package]` —
+        // in practice `[dependencies]` or `[build-dependencies]`. Taking the FIRST non-empty one
+        // rather than concatenating keeps a dependency's own rationale out of the crate's summary.
+        let doc = m
+            .sections
+            .iter()
+            .skip(1)
+            .find_map(|s| {
+                let t: Vec<&str> = s
+                    .lead
+                    .iter()
+                    .filter(|l| l.trim_start().starts_with('#'))
+                    .map(|l| l.trim_start().trim_start_matches('#').trim())
+                    .collect();
+                (!t.is_empty()).then(|| t.join(" "))
+            });
+
+        CrateRecord {
+            dir: dir.to_string(),
+            name: m.package("name").unwrap_or_else(|| dir.to_string()),
+            edition: m.package("edition").unwrap_or_else(|| "2021".into()),
+            materialized,
+            targets,
+            deps,
+            features,
+            doc,
+        }
+    }
+
+    /// Dependencies that widen a normal build.
+    pub fn normal_deps(&self) -> Vec<&Dep> {
+        self.deps.iter().filter(|d| d.kind == DepKind::Normal).collect()
+    }
+
+    /// Dependencies that widen ONLY the `--test` extern set.
+    pub fn dev_deps(&self) -> Vec<&Dep> {
+        self.deps.iter().filter(|d| d.kind == DepKind::Dev).collect()
+    }
+
+    /// The first-party crates this one must be built AFTER.
+    pub fn first_party_deps(&self) -> Vec<&Dep> {
+        self.deps.iter().filter(|d| d.kind != DepKind::Build && d.is_first_party()).collect()
+    }
+}
+
+#[cfg(test)]
+mod crate_record_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    /// Every crate in the workspace, projected. This is the whole population, not a sample.
+    fn all() -> Vec<CrateRecord> {
+        let mut v: Vec<CrateRecord> = std::fs::read_dir(repo().join("crates"))
+            .unwrap()
+            .flatten()
+            .filter_map(|e| {
+                let dir = e.file_name().to_string_lossy().to_string();
+                let p = e.path().join("Cargo.toml");
+                let src = std::fs::read_to_string(&p).ok()?;
+                let m = Manifest::parse(&src).unwrap_or_else(|err| panic!("{}: {err}", p.display()));
+                Some(CrateRecord::extract(&m, &dir))
+            })
+            .collect();
+        v.sort_by(|a, b| a.dir.cmp(&b.dir));
+        v
+    }
+
+    #[test]
+    fn every_crate_projects_and_the_materialized_split_is_exactly_the_six() {
+        let all = all();
+        assert!(all.len() >= 80, "expected >=80 crates, found {}", all.len());
+        let mut plain: Vec<&str> = all.iter().filter(|c| !c.materialized).map(|c| c.dir.as_str()).collect();
+        plain.sort();
+        // These 6 keep real source files: `graph-materialize` cannot materialize itself (it IS the
+        // materializer), and the rest have never been harvested. Everything else compiles from records.
+        assert_eq!(
+            plain,
+            vec!["bsc-config", "bsc-ear", "bsc-lan", "bsc-say", "data", "graph-materialize"],
+            "the set of crates that still compile from files changed — that is a migration event, \
+             not a detail, and this list is how it gets noticed"
+        );
+        for c in &all {
+            assert!(!c.name.is_empty() && !c.edition.is_empty(), "{} projected empty", c.dir);
+        }
+    }
+
+    /// The build-relevant declarations, pinned as POPULATIONS so a projection that silently stopped
+    /// finding one fails rather than reporting a smaller, greener number.
+    #[test]
+    fn the_declared_targets_and_features_match_the_workspace() {
+        let all = all();
+        let with = |f: fn(&CrateRecord) -> bool| {
+            let mut v: Vec<&str> = all.iter().filter(|c| f(c)).map(|c| c.dir.as_str()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(with(|c| !c.features.is_empty()), vec!["bsc", "bsc-sqlite-util", "data"]);
+        assert_eq!(
+            with(|c| c.targets.iter().any(|t| matches!(t, TargetKind::Test { .. }))),
+            vec!["bsc-disk", "bsc-lan-stream", "bsc-publish"],
+            "a [[test]] target needs CARGO_CRATE_NAME set PER TARGET, so this set bounds that work"
+        );
+        assert_eq!(with(|c| !c.dev_deps().is_empty()).len(), 20, "dev-deps widen only the test build");
+        // NAMES, not a count. An earlier tally said 7 because it substring-matched `[[bin]]` and hit
+        // `bsc-cad`'s comment saying it deliberately has NO bin target. A count would have been
+        // "corrected" to 7 and hidden a projection that was actually right.
+        assert_eq!(
+            with(|c| c.targets.iter().any(|t| matches!(t, TargetKind::Bin { .. }))),
+            vec!["bsc", "bsc-agent", "bsc-emit", "bsc-hook", "bsc-lan", "bsc-rf"]
+        );
+    }
+
+    /// Third-party surface, which is what still needs cargo. Small enough to anchor one build.
+    #[test]
+    fn the_third_party_surface_is_small_and_bounded() {
+        let all = all();
+        let names: std::collections::HashSet<&str> = all.iter().map(|c| c.name.as_str()).collect();
+        let mut third: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for c in &all {
+            for d in c.normal_deps() {
+                if !d.is_first_party() && !names.contains(d.name.as_str()) {
+                    third.insert(d.name.as_str());
+                }
+            }
+        }
+        assert!(
+            (30..=45).contains(&third.len()),
+            "the third-party surface is {} crates; it was 37 when the anchor design was sized, and a \
+             large move means the anchor build needs re-sizing rather than a quiet edit here",
+            third.len()
+        );
+    }
+
+    /// The `features = ["conn"]` case, end to end: parsed off the spec AND its rationale reachable.
+    #[test]
+    fn a_dependencys_features_and_its_reason_both_survive() {
+        let src = std::fs::read_to_string(repo().join("crates/plandb/Cargo.toml")).unwrap();
+        let rec = CrateRecord::extract(&Manifest::parse(&src).unwrap(), "plandb");
+        let d = rec.normal_deps().into_iter().find(|d| d.name == "bsc-sqlite-util").unwrap();
+        assert_eq!(d.features(), vec!["conn".to_string()], "dropping this flag corrupts backups silently");
+        assert!(d.is_first_party(), "it is a path dependency, so the driver builds it first");
+        assert!(d.why.as_deref().unwrap_or_default().contains("conn"));
+    }
+
+    /// A build order must exist, and it must be derived rather than assumed.
+    #[test]
+    fn the_workspace_has_a_build_order_and_it_respects_every_edge() {
+        let all = all();
+        let order = topo_order(&all).expect("the first-party graph must be acyclic");
+        assert_eq!(order.len(), all.len());
+        let pos: std::collections::HashMap<&str, usize> =
+            order.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+        let by_name: std::collections::HashMap<&str, &CrateRecord> =
+            all.iter().map(|c| (c.name.as_str(), c)).collect();
+        for c in &all {
+            for d in c.first_party_deps() {
+                if by_name.contains_key(d.name.as_str()) {
+                    assert!(
+                        pos[d.name.as_str()] < pos[c.name.as_str()],
+                        "{} must be built before {}", d.name, c.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// A cycle is an ERROR, not an arbitrary order. Proven against a synthetic pair, because the real
+    /// workspace is acyclic and a guard that has only ever seen the happy path is not evidence.
+    #[test]
+    fn a_dependency_cycle_is_refused_by_name() {
+        let mk = |name: &str, dep: &str| CrateRecord {
+            dir: name.into(), name: name.into(), edition: "2021".into(), materialized: true,
+            targets: vec![], features: vec![], doc: None,
+            deps: vec![Dep {
+                name: dep.into(), spec: format!("{{ path = \"../{dep}\" }}"),
+                kind: DepKind::Normal, why: None,
+            }],
+        };
+        let err = topo_order(&[mk("a", "b"), mk("b", "a")]).expect_err("a cycle must not order");
+        assert!(err.contains("cycle"), "got: {err}");
+        assert!(err.contains('a') && err.contains('b'), "the error must NAME the stuck crates: {err}");
+    }
+}
+
+#[cfg(test)]
+mod record_form_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn repo() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap()
+    }
+
+    fn all_manifests() -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = std::fs::read_dir(repo().join("crates"))
+            .unwrap()
+            .flatten()
+            .filter_map(|e| {
+                let p = e.path().join("Cargo.toml");
+                let rel = format!("crates/{}/Cargo.toml", e.file_name().to_string_lossy());
+                std::fs::read_to_string(&p).ok().map(|s| (rel, s))
+            })
+            .collect();
+        v.push(("Cargo.toml".into(), std::fs::read_to_string(repo().join("Cargo.toml")).unwrap()));
+        v.sort();
+        v
+    }
+
+    /// The claim the whole migration rests on: a manifest survives a trip THROUGH THE RECORD FORM and
+    /// still regenerates its file byte-for-byte. A round-trip in memory proves the parser; this proves
+    /// the stored shape.
+    #[test]
+    fn a_manifest_survives_the_record_form_byte_for_byte() {
+        let all = all_manifests();
+        assert!(all.len() >= 80, "expected >=80 manifests, found {}", all.len());
+        for (src_path, text) in &all {
+            let m = Manifest::parse(text).unwrap_or_else(|e| panic!("{src_path}: {e}"));
+            let json = m.to_json(src_path);
+            // Through a real serialize/deserialize, not just the value — a record is stored as TEXT,
+            // and escaping is exactly where a hand-rolled encoder goes wrong.
+            let encoded = serde_json::to_string(&json).unwrap();
+            let decoded: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+            let back = Manifest::from_json(&decoded).unwrap_or_else(|e| panic!("{src_path}: {e}"));
+            assert_eq!(&back, &m, "{src_path}: the record form lost structure");
+            assert_eq!(&back.render(), text, "{src_path}: the record form did not regenerate the file");
+        }
+    }
+
+    /// The record carries enough to answer questions, not just to rebuild the file.
+    #[test]
+    fn the_projection_survives_the_record_form() {
+        let text = std::fs::read_to_string(repo().join("crates/plandb/Cargo.toml")).unwrap();
+        let m = Manifest::parse(&text).unwrap();
+        let back = Manifest::from_json(&m.to_json("crates/plandb/Cargo.toml")).unwrap();
+        let rec = CrateRecord::extract(&back, "plandb");
+        assert_eq!(rec.name, "plandb");
+        assert!(rec.materialized);
+        let d = rec.normal_deps().into_iter().find(|d| d.name == "bsc-sqlite-util").unwrap();
+        assert_eq!(d.features(), vec!["conn".to_string()]);
+        assert!(d.why.as_deref().unwrap_or_default().contains("conn"), "the rationale must survive storage");
+    }
+
+    /// A tolerant reader is the failure mode here: defaulting `endsNewline` renders a file one byte
+    /// different from its source and passes everything that is not byte-exact.
+    #[test]
+    fn a_record_missing_a_field_is_refused_rather_than_defaulted() {
+        let text = std::fs::read_to_string(repo().join("crates/bsc-hook/Cargo.toml")).unwrap();
+        let m = Manifest::parse(&text).unwrap();
+        let mut json = m.to_json("crates/bsc-hook/Cargo.toml");
+        json.as_object_mut().unwrap().remove("endsNewline");
+        let err = Manifest::from_json(&json).expect_err("a missing endsNewline must not default");
+        assert!(err.contains("endsNewline"), "got: {err}");
+
+        let mut json2 = m.to_json("x");
+        json2.as_object_mut().unwrap().remove("tail");
+        assert!(Manifest::from_json(&json2).is_err(), "a missing tail must not default either");
     }
 }
