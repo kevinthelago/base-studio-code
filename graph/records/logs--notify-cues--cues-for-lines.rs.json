@@ -1,0 +1,13 @@
+{
+  "id": "logs--notify-cues--cues-for-lines.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cues_for_lines",
+  "code": "use super::*;\n\n/// The cues a batch of NEW coord-log lines should sound, in order, DEDUPED.\n///\n/// Unparseable and non-voiced lines are dropped. The de-duplication keeps first-occurrence order and\n/// is part of the contract rather than a caller's tidy-up: a burst of merges landing in one tick used\n/// to stack identical cues on top of each other, which is audibly worse than one.\npub fn cues_for_lines(lines: &[String]) -> Vec<&'static str> {\n    let mut out: Vec<&'static str> = Vec::new();\n    for line in lines {\n        let Some(ev) = parse_coord_line(line) else { continue };\n        let Some(cue) = coord_event_cue(&ev) else { continue };\n        if !out.contains(&cue) {\n            out.push(cue);\n        }\n    }\n    out\n}\n",
+  "src": "crates/logs/src/notify_cues/cues_for_lines.rs",
+  "folder": "crates/logs/src/notify_cues",
+  "moduleVis": "private",
+  "composes": [
+    "logs--notify-cues--coord-event-cue.rs"
+  ]
+}
