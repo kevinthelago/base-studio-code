@@ -1,0 +1,14 @@
+{
+  "id": "bsc-cli-util--session-mode--doc-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "doc_for",
+  "src": "crates/bsc-cli-util/src/session_mode/doc_for.rs",
+  "folder": "crates/bsc-cli-util/src/session_mode",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The document one mode writes. `None` fields are the CLEARS — see the module doc.\npub fn doc_for(mode: &str, d: &ModeDefaults) -> Result<SessionDoc, String> {\n    match mode {\n        \"local\" => Ok(SessionDoc {\n            provider: Some(\"ollama\".into()),\n            model: Some(d.local_model.clone()),\n            base_url: Some(d.local_base_url.clone()),\n            num_ctx: Some(d.local_num_ctx),\n            ..Default::default()\n        }),\n        \"claude\" => Ok(SessionDoc {\n            provider: Some(\"anthropic\".into()),\n            model: Some(d.anthropic_model.clone()),\n            // CLEARED, not carried: a Claude model pointed at a localhost base URL is the\n            // half-switched state this verb exists to prevent.\n            base_url: None,\n            num_ctx: None,\n            ..Default::default()\n        }),\n        other => Err(format!(\"'{other}' is not a mode. Valid: {}\", MODES.join(\" · \"))),\n    }\n}\n",
+  "moduleAttrs": [
+    "#[allow(unused_imports)]"
+  ]
+}
