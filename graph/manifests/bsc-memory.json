@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"bsc memory \u2014 the session-memory surface (#memory): capture the findings, decisions, lessons and parked threads a session generates but has no plan item for, so they don't evaporate when the terminal closes. A thin, tagged, TYPED-EDGE log over the shared bsc-json-store (memory.db). Entries carry a horizon (now vs future) and typed links \u2014 {ref, rel} to another memory, a graph record id, a symbol anchor, or a plan ref \u2014 so memory is a graph you traverse, told apart from a flat pile of notes.\""
+          "value": "\"bsc memory — the session-memory surface (#memory): capture the findings, decisions, lessons and parked threads a session generates but has no plan item for, so they don't evaporate when the terminal closes. A thin, tagged, TYPED-EDGE log over the shared bsc-json-store (memory.db). Entries carry a horizon (now vs future) and typed links — {ref, rel} to another memory, a graph record id, a symbol anchor, or a plan ref — so memory is a graph you traverse, told apart from a flat pile of notes.\""
         }
       ],
       "lead": [],
@@ -44,7 +44,7 @@
           "cont": [],
           "key": "serde_json",
           "lead": [
-            "# build.rs parses the committed graph store directly \u2014 see crates/graph-materialize/build.rs."
+            "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
           ],
           "value": "\"1\""
         }
@@ -66,7 +66,7 @@
           "cont": [],
           "key": "path",
           "lead": [
-            "# THE SHARED CRATE ROOT \u2014 this crate owns no source file at all. See",
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all. See",
             "# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record."
           ],
           "value": "\"../graph-materialize/crate_root.rs\""
@@ -83,7 +83,7 @@
           "cont": [],
           "key": "bsc-json-store",
           "lead": [
-            "# Shared verbatim-JSON-per-id store (memory.db) \u2014 the same one bsc-persona/bsc-blueprint ride."
+            "# Shared verbatim-JSON-per-id store (memory.db) — the same one bsc-persona/bsc-blueprint ride."
           ],
           "value": "{ path = \"../bsc-json-store\" }"
         },
