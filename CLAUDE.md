@@ -550,8 +550,30 @@ bsc graph impl get <id> --field code --raw > /tmp/x.rs
 bsc graph impl set --repo --root "$PWD" --tech rust --id <id> --role algorithm --name <n> \
   --code-file /tmp/x.rs --by <you> --note "<why>"
 
-# 3. NOTHING ELSE. There is no promote step any more: `--repo` writes the store the build reads.
+# 3. For a RUST record, nothing else: `--repo` writes the store the build compiles.
 ```
+
+**A FRONTEND record owes three more writes, and the gate is what tells you.** A `.ts`/`.tsx` record is
+read by more than the compiler, and `--repo` reaches none of those readers:
+
+```bash
+# 3b. the RUNTIME ledger. `sync-seed` reads THIS, not the committed store, so a `--repo` edit makes it
+#     report "upToDate" while the seed still holds the old body — measured, 26,248 chars against 29,961.
+bsc graph impl set --tech typescript --id <id> --role algorithm --name <n> --code-file /tmp/x.ts
+
+# 3c. the PACKAGED seed. `src/app/runtime/storesAgree.test.ts` fails when it disagrees with the
+#     committed store, so this is gate-blocking rather than optional.
+bsc graph impl sync-seed <id> --seed-dir "$PWD/src-tauri/data/knowledge" --only code,tests --apply
+
+# 3d. the KIT, if the record is in `react-ui.json`'s runtime closure. Both artifacts are git-ignored
+#     and materialized from `graph/components.db`, so the regeneration has to end IN the store.
+UPDATE_KITS=1 npx vitest run reactUiKit.gen && bsc ui store sync --apply
+```
+
+The section above used to say step 4 was no longer load-bearing for a frontend module. That is true of
+the COMPILER — `bsc-emit` reads the committed store — and false of the gate: `storesAgree` and
+`reactUiKit.gen` both fail on a committed-only edit. Two of them caught exactly that during
+`a-coordinator-is-a-peer-of-the-director`.
 
 **`--repo` OR THE RUNTIME LEDGER — that is the whole distinction, and getting it wrong is silent.**
 An `impl set` with no `--repo` writes `~/.base-studio-code/knowledge/graph.db`, the per-user authoring
@@ -567,9 +589,19 @@ Then build. `crates/graph-materialize/build.rs` reads the store `graph/store.tom
 and materializes each record into `$OUT_DIR/crate.rs`; `crates/bsc-emit` reads the same store to write
 `.bsc-records/`. One store, one write, both halves.
 
-**Verify you touched exactly what you meant.** `git diff` on the store is a binary blob unless the
-textconv driver is installed (`bsc graph driver install`), and with it a record edit renders as ordinary
-source lines. Without it, read the record back: `bsc graph impl get <id> --field code --raw`.
+**Verify you touched exactly what you meant.** `git diff` on the store is a binary blob and STAYS one:
+the record merge driver and textconv were built for the file-per-record layout and cannot read a
+database — pointing `diff=bscrecord` at `graph/*.db` makes `git diff` FAIL rather than fall back, so
+`.gitattributes` now says `graph/*.db binary`. Read the record back instead:
+`bsc graph impl get <id> --field code --raw`. Record-level merging did not go away, it MOVED: a
+record's isolation is its LANE (`bsc graph lane diff|conflicts|land`), which resolves by record with
+base/ours/theirs all three still in the ledger.
+
+**Two branches editing the ledger conflict in git, and that is mechanical, not semantic.** Both sides
+of a `UU graph/algorithms.db` routinely touch DISJOINT records — measured twice in one day. Resolve by
+taking the incoming database whole and re-applying your own records through `bsc graph impl set --repo`
+(and `bsc graph tests set --repo`), which mints revisions rather than overwriting bytes, then verify
+both sides hash as expected.
 
 **A field the flags do not cover has a door now.** `--crate-deps` sets the cross-crate edge that
 `--composes` cannot carry (composes is record-to-record; 2,476 of 2,477 edges are intra-crate). It used
@@ -819,6 +851,60 @@ Every session has a role bounding its capabilities (least privilege), applied at
 | designer | none | none | none (UI kits via `bsc ui` only) |
 
 (`tester`/`reviewer` are the pipeline-stage roles, #220; `issuer` is intake-only — shapes a request into a GitHub issue and hands off, #376; `juror` independently judges a landing against its acceptance criteria, #394; `documentor` is the post-refactor lifecycle actor that reconciles the project's PROSE docs — CLAUDE.md structure tree, architecture docs, README — after a change lands, #1555. Like the director's commons carve-out (#851) it keeps `code: none` yet writes EXACTLY its `DOC_GLOBS` (markdown + `docs/**`) and is hard-blocked on every code path; push/PR are flow-governed. `designer` (#2471) is the Design Studio's UI-kit session — `none` on every axis, launched with `restrictedAllow` so the baseline command tiers are suppressed and its whole auto-runnable surface is `bsc ui` + the deprecated `bsc component` alias.) `roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**. (**Permission postures** (#1916/#2050): the PreToolUse hooks — `bsc-deny` (dangerous floor + role/user denies), `bsc-confine` (FS confinement), `bsc-scope` (write-scope) — are the always-on floor, firing **and blocking under BOTH postures** (even bypass, where `permissions.deny` is ignored). The **default is the ALLOW-LIST** (#2050): Claude's `default` mode auto-runs the broad `base.json` allow-list (git/gh + the read-only inspection set + the mainstream build/test toolchains) and prompts for anything else — low-friction but safe. **Bypass** (sessions auto-run everything, hooks-only gating) is the opt-in power **posture toggle** (Settings → Security). On top, an opt-in **model-agnostic OS sandbox** (#1988): a session runs inside a **sealed WSL2 distro** (`bsc-agent-sandbox` — no `/mnt/c` mount, no Windows interop, baked into `/etc/wsl.conf`), so the cage is the *environment* and confines whatever LLM drives the session, not just Claude (`pty_create`'s opt-in `wsl_distro`; provision + readiness in Settings → Security; a Settings → Agents toggle launches consoles inside it). The rootfs bakes in **every** harness — Node + Claude Code (the default) and `gh` alongside `bsc-agent` (#4260) — so the cage isn't limited to the non-default harness. **Per-agent isolation via Linux users** is built (#1994/#4260): each sandboxed fleet session (worker + director) runs as its own `bsc-<slug>-<hash>` user with a `700` home holding its **own worktree**, created by that user off a group-shared clone; the hub, `plan.db`, `coord.log` and the global `bsc` stores live in one setgid `bsc-agents` dir (`/srv/bsc-shared`) that every agent home reaches via a `~/.base-studio-code` symlink — private code, shared agreement. The sandbox is **still opt-in**; making it the sole posture is #4260, gated on bundling the rootfs tarball with the installer.)
+
+### A node's PERSONA — four assignment paths, three that cannot resolve
+
+The Glance fleet drill gives every node a persona, and `buildOrgFleetData` resolves it against the
+persona library: `personaById.get(pos.personaId)`. **Three of the four ways a node gets its
+`personaId` produce an id that is not in that library**, so they miss and fall through to
+`fallbackRole` / `fallbackPersona`:
+
+| node kind | `personaId` it is given | in `personas.db`? |
+|---|---|---|
+| a fleet STREAM | its `persona` field, e.g. `persona-lexicographer` | **yes** |
+| the DIRECTOR | `"director"` — a bare role name | no |
+| the PLANNER | `"planner"` — a bare role name | no |
+| a SYSTEM SESSION | its own node id, e.g. `designer-react` | no |
+
+Every persona in the library is `persona-*` prefixed, so only the stream path resolves. That is what
+`SYSTEM_SESSION_ROLES` and `fallbackRole` exist for — `fallbackRole`'s own comment says so ("the
+fixed-id agents are known by their id — without this a planner falls through to `worker` and renders
+in the BUILD colour"). They are a compensation layer for an id-space mismatch, not a feature.
+
+**And the data they hardcode already exists.** MEASURED: a real persona is present, with exactly the
+role the map asserts, for every one of the eight fallbacks — `persona-director`, `persona-planner`,
+`persona-designer`, `persona-librarian`, `persona-architect`, `persona-sound-designer`,
+`persona-integrator`, `persona-debugger`. So `SYSTEM_SESSION_ROLES` is a hand-maintained duplicate of
+`personas.db`.
+
+The simplification, when someone takes it: assign LIBRARY ids on all four paths, and `fallbackRole`,
+`fallbackPersona` and `SYSTEM_SESSION_ROLES` mostly stop having a job. Filed rather than done here
+because it changes what the canvas renders.
+
+**Until then, the rule to remember: a node's persona field is `persona`, and it holds a library id.**
+Writing `profile` instead is silent — the stream simply has no persona, and no tier to read. That cost
+a full round-trip on `a-coordinator-is-a-peer-of-the-director`, where the coordinator column could not
+work because the lexicographer had no persona at all.
+
+### The COORDINATOR tier — a peer of the director, not a report
+
+A stream whose persona carries the **`director` role** is a coordinator: `persona-lexicographer` is
+one. Placement in the drill is derived from ARCHETYPES, never set as coordinates ("the arrangement is
+a consequence of the archetype, not a layout rule"), so the tier is expressed as three relationships:
+
+- every system session `serves` every coordinator → system sessions sit LEFT of the whole column
+- the director does NOT `manage` a coordinator → it keeps the director's own depth, same column
+- each coordinator `manages` the remaining streams → workers and noun sessions sit RIGHT, ordered
+  among themselves by dependency
+
+`coordinatorIds` is ONE exported definition used by both placers — `fleetToOrg` for the column,
+`withStreamRepos` for the repo band — because a coordinator that was a peer in one and a lane in the
+other renders as half cross-repo and half not.
+
+**A coordinator belongs to NO repository band.** studio-code spans two repos (`base-studio-code` and
+`mobile-studio-code`; its director's role is literally "async integrator across two repos"), and the
+drill bands workers by repository so the halves read apart. A cross-repo role sits ungrouped, where the
+director and the architect already sit.
 
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
