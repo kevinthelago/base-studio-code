@@ -264,6 +264,31 @@ if (!plan.full) {
   if (wrote && wrote !== "0") process.stdout.write(`gate: materialized ${wrote} manifest(s) from records\n`);
 }
 
+// And materialize `.bsc-records/` BEFORE any frontend leg, for exactly the reason above one directory
+// over. `tsc`, `vitest` and `vite build` all resolve ~1,600 modules out of that tree, it is git-ignored,
+// and a fresh `git worktree add` has none of it — so without this the frontend legs test whatever
+// happens to be on disk.
+//
+// THIS GAP WAS REAL AND IT COST A PROMOTE. `npm test` and `npm run typecheck` both run
+// `emit-records.mjs` first (see package.json); the gate called `npx vitest run` directly and did not.
+// MEASURED in `wt-integrate`: a stale emitter left 1,604 seed-derived modules where the committed store
+// holds 1,609, `npm test` passed and the gate's own vitest leg failed on the same tree — which reads as
+// "the tests disagree with themselves" rather than "the gate is testing a different tree".
+//
+// Idempotent like the manifests emit: it writes nothing when the tree is in sync.
+{
+  const emit = spawnSync(process.execPath, [join(REPO, "scripts/emit-records.mjs")], {
+    encoding: "utf8",
+    cwd: REPO,
+  });
+  if (emit.status !== 0) {
+    process.stderr.write(`\ngate: REFUSED — cannot materialize the record tree:\n${emit.stderr ?? ""}\n`);
+    process.exit(2);
+  }
+  const n = /^emit-records: (\d+) file\(s\) written/m.exec(emit.stdout ?? "")?.[1];
+  if (n && n !== "0") process.stdout.write(`gate: materialized ${n} record module(s) from the store\n`);
+}
+
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been
