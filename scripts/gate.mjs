@@ -289,6 +289,41 @@ if (!plan.full) {
   if (n && n !== "0") process.stdout.write(`gate: materialized ${n} record module(s) from the store\n`);
 }
 
+/** The path of a `bsc` on this tree that actually WORKS, or null.
+ *
+ *  Existence is not enough: a ZERO-BYTE `target/debug/bsc` — what the file IS for the seconds cargo is
+ *  linking it, and what `cargo clippy --workspace --all-targets` leaves behind — execs through bash as
+ *  an EMPTY SCRIPT and exits 0 printing nothing, which is indistinguishable from every command passing.
+ *  `pickUsable` stats the file and then demands a real handshake.
+ *
+ *  Extracted because there are now TWO callers. It was inlined at the disk-sweep below; a second copy
+ *  would be a second place for the handshake to drift out of. */
+function usableBsc() {
+  try {
+    return (
+      pickUsable(candidatePaths(REPO, homedir(), join), {
+        statSize: (p) => {
+          try {
+            return statSync(p).size;
+          } catch {
+            return null;
+          }
+        },
+        run: (p) => {
+          try {
+            return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+          } catch (err) {
+            return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+          }
+        },
+      })?.path ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been
@@ -307,24 +342,9 @@ if (!plan.full) {
 // with a usable binary collects everything this one skipped, because eligibility is a function of
 // mtime, not of having been offered before.
 try {
-  const bsc = pickUsable(candidatePaths(REPO, homedir(), join), {
-    statSize: (p) => {
-      try {
-        return statSync(p).size;
-      } catch {
-        return null;
-      }
-    },
-    run: (p) => {
-      try {
-        return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
-      } catch (err) {
-        return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
-      }
-    },
-  });
+  const bsc = usableBsc();
   if (bsc) {
-    const gc = spawnSync(bsc.path, ["disk", "gc", "--quiet"], { encoding: "utf8" });
+    const gc = spawnSync(bsc, ["disk", "gc", "--quiet"], { encoding: "utf8" });
     if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
   }
 } catch {
