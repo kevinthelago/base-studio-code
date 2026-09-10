@@ -818,7 +818,24 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
 
 ### Per-agent configuration set during planning
-- **Profiles** (#289, `src/shared/lib/security/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch. The UI that EDITED them is gone (capability is authored with `bsc persona` and read on the Teams panel); the model stays because the mobile tunnel ships it.
+- **Permissions** (`rename-the-profile-to-permissions-on-the-persona`, was "profiles" #289): ONE object on
+  the persona answers *what may this agent do*, and it lives in `personas.db` (`bsc persona`). It carries
+  the access axes + write scope it always did (`github`/`git`/`code`/`net`/`ui`/`graph`, `writeGlobs`,
+  `allow`, `surfaces`, `harvestRoots`) plus the six fields that used to sit in a **separate** store as an
+  `AgentProfile`: `mode`, `tools`, `commands`, `allowGlobs`, `denyGlobs`, `netAllow`.
+  It was two names for one thing, in two stores, both applied at every launch — and only one of them was
+  reachable from `bsc persona set`, which is why a role's capability could not actually be edited.
+  The **narrow-only clamp** (`crates/bsc-persona/src/permissions/`) now covers all of it: a write may only
+  ever NARROW what it derives from. Three scales, and conflating them is the trap — an ACCESS TIER is
+  `none < read < write`, a POSTURE (`mode`, `tools`) is `deny < ask < allow`, and `denyGlobs` is INVERTED
+  (dropping an entry un-denies a path, so a SHORTER list is the widening).
+  `src-tauri/data/roles/*.json` still holds the five packaged **profiles**, and the launch still resolves a
+  pane's settings through `paneProfiles` → `agentProfiles`. That is deliberate, not a leftover: a pane with
+  NO profile assigned is a real state — it is how a confined studio session stays confined, since a
+  profile's `allowedCommands` are prepended to the role's `restrictedAllow` surface. Every persona now
+  carries what its role's profile carried (`permissionsMatchTheProfile.test.ts` proves the two resolve
+  identically, per role), so the remaining swap is mechanical — but it must first answer what replaces
+  "unassigned".
 - **Flows** (#297, `@/features/planner/fleet/agentFlow` — a record): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
 
 ### Session roles + the CLAUDE.md model (and a known issue)

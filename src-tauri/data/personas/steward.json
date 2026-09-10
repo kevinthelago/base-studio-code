@@ -3,15 +3,32 @@
   "order": 12,
   "name": "Network steward",
   "role": "steward",
-  "floor": {
+  "permissions": {
     "github": "none",
     "git": "none",
     "code": "none",
     "net": "none",
     "ui": "none",
     "graph": "none",
+    "mode": "deny",
+    "tools": {
+      "read": "allow",
+      "grep": "allow",
+      "glob": "allow",
+      "edit": "deny",
+      "write": "deny",
+      "bash": "ask",
+      "web": "ask",
+      "task": "allow"
+    },
     "writeGlobs": [
       "scratch/**"
+    ],
+    "denyGlobs": [
+      "**/*"
+    ],
+    "netAllow": [
+      "api.github.com"
     ],
     "allow": [
       "bsc network list",

@@ -1,28 +1,40 @@
 {
-  "_comment": "FROZEN BASELINE of the role capability table, captured when its source inverted from data/permissions/role-capabilities.json onto the persona floors (epic the-persona-is-the-whole-agent). Proven equal to the deleted file on every field at capture time. CHANGING A ROW HERE IS A DELIBERATE ACT: this fixture exists so that a capability change \u2014 above all a WIDENING \u2014 shows up as an explicit diff on a reviewable file rather than as a silent consequence of editing a persona. If a test fails against this, do not update the fixture to make it pass without first deciding that the capability change is intended.",
+  "_comment": "FROZEN BASELINE of the role capability table, captured when its source inverted from data/permissions/role-capabilities.json onto the persona floors (epic the-persona-is-the-whole-agent). Proven equal to the deleted file on every field at capture time. CHANGING A ROW HERE IS A DELIBERATE ACT: this fixture exists so that a capability change — above all a WIDENING — shows up as an explicit diff on a reviewable file rather than as a silent consequence of editing a persona. If a test fails against this, do not update the fixture to make it pass without first deciding that the capability change is intended.",
   "_amendments": [
-    "the-architect-runs-discovery-and-spawns-a-director (2026-08-27): architect.allow += `bsc plan classify` and `bsc fleet directors`. DELIBERATE, and both were already the architect's documented job. `bsc plan classify` records the usesGithub DECISION \u2014 the architect is the only tier that talks to the user, so it is the only tier that can take it; its own charter instructed it twice while the floor denied it. `bsc fleet directors` is the pre-brief check the protocol already told it to run: the emitted rules are Bash(bsc fleet director) and Bash(bsc fleet director *), and the `*` sits behind a literal space, so `directors` matched NEITHER and was refused. No access axis moved \u2014 github/git/code/net/ui all stay `none` \u2014 and `bsc plan` / `bsc fleet` bare prefixes remain ungranted.",
-    "the-debug-session-is-for-the-whole-app-not-just-bsc-ui (2026-08-27): debugger.github write -> read. A NARROWING, and it closes a prose/permission split rather than changing policy: the debug session works base-studio-code, which is local-first (CLAUDE.md: reads are fine, `gh issue create/close/edit`, `gh pr create/merge` and `git push` are not), and its own charter now says so explicitly. Leaving the grant would repeat the architect defect \u2014 instructions forbidding what the floor permits. Nothing depended on it: no test asserted debugger github write, and `issuer`/`triage` (the genuinely GitHub-facing roles) keep theirs. Every other axis is unchanged; the debugger stays full-capability on git/code/ui, which is what the job needs.",
-    "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped \u2014 a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request \u2014 that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape.",
-    "an-ask-is-a-loop-again-and-every-turn-is-delivered (2026-08-28): every studio instructed to reply gains `bsc session reply` \u2014 the verb that posts a turn into its ask loop AND delivers it to the other participant. It is what lets a studio PAUSE AND ASK rather than guess or stop, which is the reason the loop came back. Per-verb as before; `bsc session` start/stop stays the architect's.",
-    "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion \u2014 the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun \u2014 it carries `new`, `link`, `github-state` and `db` \u2014 so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved \u2014 github/git/code/ui stay `none` and net stays `read` \u2014 and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust.",
-    "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added \u2014 nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves \u2014 so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers \u2014 a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role \u2014 narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier.",
-    "a-session-knows-the-binary-is-bsc (2026-09-03): operator.allow += `bsc help`. A WIDENING of a confined role, and deliberate. A surface session reached for `bsc-session` \u2014 it knew what it wanted and not what to type \u2014 and the charter now names the binary and the one command that lists every surface. Without the grant that instruction is unusable: a confined role auto-runs exactly its allow list and STOPS to ask for anything else, which an unattended local session reads as a stall rather than a refusal it can act on. `bsc help` prints the noun catalog and nothing else: it opens no store, reads no project, and takes no argument that could reach one, so the grant is strictly the ability to find out what exists. No access axis moves. The complement stays closed \u2014 every surface the role does not declare is still denied by name, so knowing a noun exists does not make it runnable, and the charter says so in the same breath it names the catalog.",
-    "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role \u2014 a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` \u2014 the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS \u2014 a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action \u2014 denying it outright would make it unreachable even when the user wants it.",
-    "every-session-can-write-memory (2026-09-10): allow += `bsc memory` on all 8 restricted roles (architect, curator, designer, integrator, librarian, operator, sound-designer, steward). DELIBERATE, and it closes a hole rather than widening one: `bsc memory` is the session-memory store and NO role's allow-list named it, so exactly the sessions scoped to a single noun could neither read what earlier sessions learned about that noun nor write what they learned themselves. The `bsc mem` entry these lists already carry is the DEPRECATED alias for `bsc cost` \u2014 renamed precisely so `bsc memory` could take the name \u2014 so the omission read as coverage rather than as a gap. No access axis moves: memory is a local user store with no verb that destroys anything (`edit` keeps the previous text on the record, `done` is a status, and there is no `remove`), and it reaches no network, no git and no code. The prefix is granted BARE rather than per-verb, unlike the studio grants above, because the loop this surface exists for is read-at-start / write-during: a session that may read what it is told and not record what it found leaves the store accumulating from one direction only. Also: `bsc mem` -> `bsc cost` on the operator (its charter is the only thing that used it, and now says `bsc cost build`), and steward.allow += `bsc cost` beside the `bsc mem` it keeps. Same code \u2014 `mem` dispatches straight to it \u2014 so no capability moves; what changes is that the LIVE name is reachable, which the operator's own charter now tells it to run. The alias stays so nothing that already worked stops. `every_allowed_surface_in_the_capability_baseline_is_live` is the gate that now pins all of it."
+    "the-architect-runs-discovery-and-spawns-a-director (2026-08-27): architect.allow += `bsc plan classify` and `bsc fleet directors`. DELIBERATE, and both were already the architect's documented job. `bsc plan classify` records the usesGithub DECISION — the architect is the only tier that talks to the user, so it is the only tier that can take it; its own charter instructed it twice while the floor denied it. `bsc fleet directors` is the pre-brief check the protocol already told it to run: the emitted rules are Bash(bsc fleet director) and Bash(bsc fleet director *), and the `*` sits behind a literal space, so `directors` matched NEITHER and was refused. No access axis moved — github/git/code/net/ui all stay `none` — and `bsc plan` / `bsc fleet` bare prefixes remain ungranted.",
+    "the-debug-session-is-for-the-whole-app-not-just-bsc-ui (2026-08-27): debugger.github write -> read. A NARROWING, and it closes a prose/permission split rather than changing policy: the debug session works base-studio-code, which is local-first (CLAUDE.md: reads are fine, `gh issue create/close/edit`, `gh pr create/merge` and `git push` are not), and its own charter now says so explicitly. Leaving the grant would repeat the architect defect — instructions forbidding what the floor permits. Nothing depended on it: no test asserted debugger github write, and `issuer`/`triage` (the genuinely GitHub-facing roles) keep theirs. Every other axis is unchanged; the debugger stays full-capability on git/code/ui, which is what the job needs.",
+    "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped — a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request — that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape.",
+    "an-ask-is-a-loop-again-and-every-turn-is-delivered (2026-08-28): every studio instructed to reply gains `bsc session reply` — the verb that posts a turn into its ask loop AND delivers it to the other participant. It is what lets a studio PAUSE AND ASK rather than guess or stop, which is the reason the loop came back. Per-verb as before; `bsc session` start/stop stays the architect's.",
+    "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion — the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun — it carries `new`, `link`, `github-state` and `db` — so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved — github/git/code/ui stay `none` and net stays `read` — and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust.",
+    "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added — nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves — so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers — a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role — narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier.",
+    "a-session-knows-the-binary-is-bsc (2026-09-03): operator.allow += `bsc help`. A WIDENING of a confined role, and deliberate. A surface session reached for `bsc-session` — it knew what it wanted and not what to type — and the charter now names the binary and the one command that lists every surface. Without the grant that instruction is unusable: a confined role auto-runs exactly its allow list and STOPS to ask for anything else, which an unattended local session reads as a stall rather than a refusal it can act on. `bsc help` prints the noun catalog and nothing else: it opens no store, reads no project, and takes no argument that could reach one, so the grant is strictly the ability to find out what exists. No access axis moves. The complement stays closed — every surface the role does not declare is still denied by name, so knowing a noun exists does not make it runnable, and the charter says so in the same breath it names the catalog.",
+    "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role — a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` — the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS — a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action — denying it outright would make it unreachable even when the user wants it.",
+    "every-session-can-write-memory (2026-09-10): allow += `bsc memory` on all 8 restricted roles (architect, curator, designer, integrator, librarian, operator, sound-designer, steward). DELIBERATE, and it closes a hole rather than widening one: `bsc memory` is the session-memory store and NO role's allow-list named it, so exactly the sessions scoped to a single noun could neither read what earlier sessions learned about that noun nor write what they learned themselves. The `bsc mem` entry these lists already carry is the DEPRECATED alias for `bsc cost` — renamed precisely so `bsc memory` could take the name — so the omission read as coverage rather than as a gap. No access axis moves: memory is a local user store with no verb that destroys anything (`edit` keeps the previous text on the record, `done` is a status, and there is no `remove`), and it reaches no network, no git and no code. The prefix is granted BARE rather than per-verb, unlike the studio grants above, because the loop this surface exists for is read-at-start / write-during: a session that may read what it is told and not record what it found leaves the store accumulating from one direction only. Also: `bsc mem` -> `bsc cost` on the operator (its charter is the only thing that used it, and now says `bsc cost build`), and steward.allow += `bsc cost` beside the `bsc mem` it keeps. Same code — `mem` dispatches straight to it — so no capability moves; what changes is that the LIVE name is reachable, which the operator's own charter now tells it to run. The alias stays so nothing that already worked stops. `every_allowed_surface_in_the_capability_baseline_is_live` is the gate that now pins all of it.",
+    "rename-the-profile-to-permissions-on-the-persona (2026-09-10): the persona's `floor` is now `permissions`, and the retired `AgentProfile` (src-tauri/data/roles/*.json) is folded into it — so one object on one record answers \"what may this agent do\" instead of two stores with two vocabularies. NO ACCESS AXIS MOVED and no role was added or removed; every github/git/code/net/ui/graph value, every writeGlobs, allow, surfaces and harvestRoots list is byte-identical to the row above it. What is NEW is the six fields each row gained from the profile its ROLE already resolved to at launch (roleProfileId: worker/documentor/marketer/debugger -> pf_auto, planner -> sys_planner, every other role -> pf_review): `mode`, `tools`, `commands`, `allowGlobs` and `denyGlobs` (the profile's paths.allow / paths.deny) and `netAllow` (its net.allow). These were ALREADY being applied to these sessions — they were simply applied from a file the persona could not see, which is why `bsc persona set` could never change them, and why they sat outside the narrow-only clamp entirely. VERIFIED FIELD FOR FIELD: for all 20 packaged personas, each of the six now equals what `resolveProfileSettings(roleProfileId(role))` was reading, so the fold moves the SOURCE and not the VALUE. THE CLAMP NOW COVERS ALL SIX — `mode` and `tools` on the posture scale (deny<ask<allow, which is NOT the access-tier scale), `commands` and `netAllow` as subsets, `allowGlobs` by glob containment exactly as `writeGlobs`, and `denyGlobs` INVERTED, since dropping an ancestor's deny is the widening. `allowGlobs` is deliberately kept SEPARATE from `writeGlobs` rather than merged: they reach the launch through different rules (the role gate's write scope vs the verbatim Edit(<glob>) tool rules) and a session can hold one without the other."
   ],
   "roles": {
     "architect": {
       "role": "architect",
-      "writeGlobs": [
-        "scratch/**"
-      ],
       "github": "none",
       "git": "none",
       "code": "none",
       "net": "none",
       "ui": "none",
       "graph": "none",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [
+        "scratch/**"
+      ],
       "allow": [
         "bsc teams",
         "bsc persona",
@@ -40,48 +52,110 @@
         "bsc request list",
         "bsc request get",
         "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "curator": {
       "role": "curator",
-      "writeGlobs": [],
       "github": "none",
       "git": "read",
       "code": "none",
       "net": "none",
       "ui": "write",
       "graph": "write",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
       "allow": [
         "bsc ui",
         "bsc graph",
         "bsc persona whatami",
         "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "debugger": {
       "role": "debugger",
-      "writeGlobs": [],
       "github": "read",
       "git": "write",
       "code": "write",
       "net": "read",
       "ui": "write",
-      "graph": "write"
+      "graph": "write",
+      "mode": "allow",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "allow",
+        "web": "allow",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "commands": [
+        "cargo",
+        "npm",
+        "pnpm",
+        "pytest",
+        "make",
+        "node",
+        "docker",
+        "gh",
+        "aws"
+      ],
+      "allowGlobs": [
+        "**/*"
+      ],
+      "denyGlobs": [
+        "**/.env",
+        "**/secrets/**"
+      ],
+      "netAllow": [
+        "*"
+      ]
     },
     "designer": {
       "role": "designer",
-      "writeGlobs": [
-        "scratch/**"
-      ],
       "github": "none",
       "git": "none",
       "code": "none",
       "net": "none",
       "ui": "write",
       "graph": "read",
-      "harvestRoots": [
-        "app-repo",
-        "projects"
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [
+        "scratch/**"
       ],
       "allow": [
         "bsc ui",
@@ -99,10 +173,37 @@
         "bsc request get",
         "bsc persona whatami",
         "bsc memory"
+      ],
+      "harvestRoots": [
+        "app-repo",
+        "projects"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "director": {
       "role": "director",
+      "github": "read",
+      "git": "read",
+      "code": "write",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
       "writeGlobs": [
         "*.md",
         "*.json",
@@ -111,12 +212,6 @@
         "discovery/*.md",
         "discovery/*"
       ],
-      "github": "read",
-      "git": "read",
-      "code": "write",
-      "net": "read",
-      "ui": "read",
-      "graph": "read",
       "surfaces": [
         "plan",
         "fleet",
@@ -126,10 +221,33 @@
         "persona",
         "logs",
         "request"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "documentor": {
       "role": "documentor",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "allow",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "allow",
+        "web": "allow",
+        "task": "allow"
+      },
       "writeGlobs": [
         "*.md",
         "**/*.md",
@@ -137,24 +255,50 @@
         "**/README*",
         "CHANGELOG*"
       ],
-      "github": "read",
-      "git": "read",
-      "code": "none",
-      "net": "read",
-      "ui": "read",
-      "graph": "read"
+      "commands": [
+        "cargo",
+        "npm",
+        "pnpm",
+        "pytest",
+        "make",
+        "node",
+        "docker",
+        "gh",
+        "aws"
+      ],
+      "allowGlobs": [
+        "**/*"
+      ],
+      "denyGlobs": [
+        "**/.env",
+        "**/secrets/**"
+      ],
+      "netAllow": [
+        "*"
+      ]
     },
     "integrator": {
       "role": "integrator",
-      "writeGlobs": [
-        "scratch/**"
-      ],
       "github": "none",
       "git": "none",
       "code": "none",
       "net": "read",
       "ui": "none",
       "graph": "none",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [
+        "scratch/**"
+      ],
       "allow": [
         "bsc data connector",
         "bsc project integrations",
@@ -165,42 +309,89 @@
         "bsc request get",
         "bsc persona whatami",
         "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "issuer": {
       "role": "issuer",
-      "writeGlobs": [],
       "github": "write",
       "git": "read",
       "code": "none",
       "net": "read",
       "ui": "read",
-      "graph": "read"
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
     },
     "juror": {
       "role": "juror",
-      "writeGlobs": [],
       "github": "read",
       "git": "read",
       "code": "none",
       "net": "read",
       "ui": "read",
-      "graph": "read"
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
     },
     "librarian": {
       "role": "librarian",
-      "writeGlobs": [
-        "scratch/**"
-      ],
       "github": "none",
       "git": "none",
       "code": "none",
       "net": "none",
       "ui": "read",
       "graph": "write",
-      "harvestRoots": [
-        "app-repo",
-        "projects"
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [
+        "scratch/**"
       ],
       "allow": [
         "bsc graph",
@@ -213,10 +404,37 @@
         "bsc request get",
         "bsc persona whatami",
         "bsc memory"
+      ],
+      "harvestRoots": [
+        "app-repo",
+        "projects"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "marketer": {
       "role": "marketer",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "allow",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "allow",
+        "web": "allow",
+        "task": "allow"
+      },
       "writeGlobs": [
         "marketing/**/*.md",
         "marketing/**/*.mdx",
@@ -227,22 +445,48 @@
         "CHANGELOG*",
         "**/CHANGELOG*"
       ],
-      "github": "read",
-      "git": "read",
-      "code": "none",
-      "net": "read",
-      "ui": "read",
-      "graph": "read"
+      "commands": [
+        "cargo",
+        "npm",
+        "pnpm",
+        "pytest",
+        "make",
+        "node",
+        "docker",
+        "gh",
+        "aws"
+      ],
+      "allowGlobs": [
+        "**/*"
+      ],
+      "denyGlobs": [
+        "**/.env",
+        "**/secrets/**"
+      ],
+      "netAllow": [
+        "*"
+      ]
     },
     "operator": {
       "role": "operator",
-      "writeGlobs": [],
       "github": "read",
       "git": "read",
       "code": "none",
       "net": "read",
       "ui": "read",
       "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
       "allow": [
         "bsc help",
         "bsc surface",
@@ -258,10 +502,33 @@
         "bsc session reply",
         "bsc persona whatami",
         "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "planner": {
       "role": "planner",
+      "github": "read",
+      "git": "read",
+      "code": "write",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "ask",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
       "writeGlobs": [
         "*.md",
         "*.json",
@@ -270,34 +537,69 @@
         "discovery/*.md",
         "discovery/*"
       ],
-      "github": "read",
-      "git": "read",
-      "code": "write",
-      "net": "read",
-      "ui": "read",
-      "graph": "read"
+      "commands": [
+        "gh"
+      ],
+      "allowGlobs": [
+        ".studio/plan/**",
+        "docs/plan/**"
+      ],
+      "denyGlobs": [
+        "src/**"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
     },
     "reviewer": {
       "role": "reviewer",
-      "writeGlobs": [],
       "github": "read",
       "git": "read",
       "code": "none",
       "net": "read",
       "ui": "read",
-      "graph": "read"
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
     },
     "sound-designer": {
       "role": "sound-designer",
-      "writeGlobs": [
-        "scratch/**"
-      ],
       "github": "none",
       "git": "none",
       "code": "none",
       "net": "none",
       "ui": "none",
       "graph": "none",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [
+        "scratch/**"
+      ],
       "allow": [
         "bsc sound",
         "bsc request new",
@@ -307,43 +609,12 @@
         "bsc request get",
         "bsc persona whatami",
         "bsc memory"
-      ]
-    },
-    "tester": {
-      "role": "tester",
-      "writeGlobs": [],
-      "github": "read",
-      "git": "read",
-      "code": "none",
-      "net": "read",
-      "ui": "read",
-      "graph": "read"
-    },
-    "triage": {
-      "role": "triage",
-      "writeGlobs": [],
-      "github": "write",
-      "git": "none",
-      "code": "none",
-      "net": "read",
-      "ui": "read",
-      "graph": "read"
-    },
-    "worker": {
-      "role": "worker",
-      "writeGlobs": [],
-      "github": "read",
-      "git": "write",
-      "code": "write",
-      "net": "read",
-      "ui": "read",
-      "graph": "write",
-      "surfaces": [
-        "plan",
-        "graph",
-        "ui",
-        "files",
-        "errors"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
       ]
     },
     "steward": {
@@ -354,6 +625,17 @@
       "net": "none",
       "ui": "none",
       "graph": "none",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
       "writeGlobs": [
         "scratch/**"
       ],
@@ -380,6 +662,115 @@
         "bsc request list",
         "bsc request get",
         "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
+    },
+    "tester": {
+      "role": "tester",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
+    },
+    "triage": {
+      "role": "triage",
+      "github": "write",
+      "git": "none",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "graph": "read",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
+    },
+    "worker": {
+      "role": "worker",
+      "github": "read",
+      "git": "write",
+      "code": "write",
+      "net": "read",
+      "ui": "read",
+      "graph": "write",
+      "mode": "allow",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "allow",
+        "web": "allow",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "surfaces": [
+        "plan",
+        "graph",
+        "ui",
+        "files",
+        "errors"
+      ],
+      "commands": [
+        "cargo",
+        "npm",
+        "pnpm",
+        "pytest",
+        "make",
+        "node",
+        "docker",
+        "gh",
+        "aws"
+      ],
+      "allowGlobs": [
+        "**/*"
+      ],
+      "denyGlobs": [
+        "**/.env",
+        "**/secrets/**"
+      ],
+      "netAllow": [
+        "*"
       ]
     }
   }

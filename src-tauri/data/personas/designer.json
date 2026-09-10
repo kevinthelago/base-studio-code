@@ -3,19 +3,32 @@
   "order": 10,
   "name": "Designer",
   "role": "designer",
-  "floor": {
+  "permissions": {
     "github": "none",
     "git": "none",
     "code": "none",
     "net": "none",
     "ui": "write",
     "graph": "read",
+    "mode": "deny",
+    "tools": {
+      "read": "allow",
+      "grep": "allow",
+      "glob": "allow",
+      "edit": "deny",
+      "write": "deny",
+      "bash": "ask",
+      "web": "ask",
+      "task": "allow"
+    },
     "writeGlobs": [
       "scratch/**"
     ],
-    "harvestRoots": [
-      "app-repo",
-      "projects"
+    "denyGlobs": [
+      "**/*"
+    ],
+    "netAllow": [
+      "api.github.com"
     ],
     "allow": [
       "bsc ui",
@@ -33,6 +46,10 @@
       "bsc request get",
       "bsc persona whatami",
       "bsc memory"
+    ],
+    "harvestRoots": [
+      "app-repo",
+      "projects"
     ]
   },
   "blurb": "Curates the UI-kit library from the Design Studio — kits only, via bsc ui.",
