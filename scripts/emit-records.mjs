@@ -27,6 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
+import { resolveStorePath } from "./lib/recordStore.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXE = process.platform === "win32" ? "bsc-emit.exe" : "bsc-emit";
@@ -45,11 +46,35 @@ let cached = null;
  * iterating on. The one-time `cargo build` keeps the zero-install nested-worktree flow working: a
  * fresh worktree still needs no `npm install`, and pays 6s of cargo once instead.
  */
+/** Is `p` older than the committed store it compiles FROM?
+ *
+ *  `bsc-emit` is itself a graph-materialized crate: its own source is records, and it reads the store at
+ *  run time. So a binary built before the store last moved can be BOTH present and wrong — and its
+ *  wrongness is silent, because it emits a smaller, older tree rather than failing.
+ *
+ *  MEASURED, and it cost most of a day: the dedicated `.promote-gate` worktree held a `bsc-emit` from
+ *  two days earlier. Every promote materialized 1,604 seed-derived modules where the store holds 1,609,
+ *  so the frontend suite ran 874 files instead of 876 and the kit drift guard failed on three runtime
+ *  modules — while the identical commit passed in every tree a human had touched. The gate was not
+ *  flaky; it was compiling a different tree. */
+function staleAgainstStore(p) {
+  try {
+    const store = resolveStorePath(REPO);
+    if (!existsSync(store)) return false;
+    return statSync(store).mtimeMs > statSync(p).mtimeMs;
+  } catch {
+    return false; // never let a staleness CHECK be the thing that breaks the emit
+  }
+}
+
 export function emitBinary() {
   if (cached) return cached;
   for (const profile of ["debug", "release"]) {
     const p = join(REPO, "target", profile, EXE);
-    if (existsSync(p)) return (cached = p);
+    // PRESENT IS NOT ENOUGH. Fall through to the build when the store has moved since this binary was
+    // made; cargo then decides whether anything actually needs recompiling, which on a current tree is
+    // a no-op and on a stale one is the difference between the right tree and a quietly older one.
+    if (existsSync(p) && !staleAgainstStore(p)) return (cached = p);
   }
   // `--quiet` so a routine `npm run typecheck` does not open with cargo's progress bar; failures still
   // reach stderr, and a build that cannot happen must be LOUD — unlike the gc, a missing emit leaves
