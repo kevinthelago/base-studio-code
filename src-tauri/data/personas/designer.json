@@ -31,7 +31,8 @@
       "bsc session ask",
       "bsc session reply",
       "bsc request get",
-      "bsc persona whatami"
+      "bsc persona whatami",
+      "bsc memory"
     ]
   },
   "blurb": "Curates the UI-kit library from the Design Studio — kits only, via bsc ui.",

@@ -356,7 +356,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -373,7 +374,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",
@@ -425,7 +427,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -443,7 +446,8 @@
         "bsc project list",
         "bsc request new",
         "bsc request list",
-        "bsc request get"
+        "bsc request get",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",
@@ -493,7 +497,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -505,7 +510,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",
@@ -687,7 +693,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -704,7 +711,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",
@@ -1280,7 +1288,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -1297,7 +1306,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",
@@ -1352,7 +1362,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "allowedCommands": [
@@ -1369,7 +1380,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "allowToolRules": [
         "Edit(scratch/**)",

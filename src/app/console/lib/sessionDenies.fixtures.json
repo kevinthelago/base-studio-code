@@ -654,7 +654,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "denied": [
