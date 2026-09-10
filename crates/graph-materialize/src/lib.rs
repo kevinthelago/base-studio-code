@@ -92,6 +92,10 @@
 // implementation, two entry points. They use `//` and never `//!` for exactly the E0753 reason above.
 include!("../plan.rs");
 include!("../emit.rs");
+// The page-level SQLite reader, from the std-only leaf crate that also exposes it as a library.
+// Included TEXTUALLY rather than depended on, to match `build.rs` — which cannot take the crate,
+// because it is what materializes every graph-hosted crate and so cannot wait for one to be built.
+include!("../../bsc-sqlite-read/src/pages.rs");
 include!("../sqlite_read.rs");
 
 // The manifest as a RECORD, and the driver that builds and tests a crate from records with cargo out

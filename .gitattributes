@@ -52,9 +52,19 @@ src-tauri/data/ui/node-validation.fixtures.json text eol=lf
 src-tauri/data/sounds/signal.json          text eol=lf
 src-tauri/data/sound/signal-kit.meta.json  text eol=lf
 
-# Record store — git speaks record through `bsc graph driver` (retire-the-committed-json-record-store).
-# `merge=bscrecord` merges FIELD BY FIELD and runs `code` through a real three-way line merge,
-# so two sessions editing different functions of one module no longer collide on its single
-# JSON line. `diff=bscrecord` renders the body as source, so diff/show/blame see real lines.
-graph/records/*.json merge=bscrecord diff=bscrecord
-graph/algorithms.json diff=bscrecord
+# Record store — NO record attributes, and that is a deliberate retreat rather than an oversight.
+#
+# `bsc graph driver` (merge + textconv) was built for the FILE-PER-RECORD layout: it parses one
+# record's JSON, merges it field by field, and runs `code` through a real three-way line merge. The
+# committed store is a DATABASE now, and the driver cannot read one — pointing `diff=bscrecord` at
+# `graph/*.db` makes `git diff` FAIL ("stream did not contain valid UTF-8") rather than fall back to
+# "Binary files differ", which is strictly worse than saying nothing.
+#
+# Record-level merging did not go away with it; it MOVED. Two sessions editing different records now
+# collide in neither place, because a record's isolation is its LANE — `bsc graph lane diff`,
+# `lane conflicts` and `lane land`, which resolve by RECORD with base/ours/theirs all three still in
+# the ledger. Git's job is the 124 files; the lane's job is the 2,900 records. Teaching the driver to
+# read a database would be re-solving in git what the ledger already answers.
+#
+# So git sees the stores as what they are to it: one binary artifact each.
+graph/*.db binary

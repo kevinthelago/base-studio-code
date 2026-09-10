@@ -1,9 +1,0 @@
-{
-  "composes": [],
-  "id": "typescript.boolean",
-  "name": "boolean",
-  "ref": "boolean",
-  "role": "primitive",
-  "tech": "typescript",
-  "feature": "core"
-}

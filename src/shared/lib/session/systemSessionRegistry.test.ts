@@ -22,7 +22,7 @@ import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
 // The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`) — the store is a file
 // PLUS `graph/records/<id>.json` per record, and `bsc-session--lib.rs` may be in either.
-import { loadStore } from "../../../../scripts/lib/recordStore.mjs";
+import { loadStore, resolveStorePath } from "../../../../scripts/lib/recordStore.mjs";
 import { STUDIO_KINDS, studioIds, studioSessionsFor, studioSessionDef, studioAxis } from "@/features/studio-sessions";
 
 /** The committed graph store, resolved from this file rather than the cwd so it works from a worktree
@@ -34,7 +34,10 @@ import { STUDIO_KINDS, studioIds, studioSessionsFor, studioSessionDef, studioAxi
  *  build time. So this still reads THE OTHER SIDE'S OWN SOURCE — the point of the test — it just
  *  reads it from where that source now lives. A `.rs` file materialized under `target/` would be a
  *  third copy and would be absent until something built the crate. */
-const GRAPH_STORE = resolve(__dirname, "../../../../graph/algorithms.json");
+// THROUGH THE MARKER. `graph/store.toml` decides what the committed store is, and it is a
+// DATABASE now (`retire-the-committed-json-record-store`) — a hard-coded JSON path reads a
+// file that no longer exists and the guard fails for a reason that is not its subject.
+const GRAPH_STORE = resolveStorePath(resolve(__dirname, "../../../.."));
 
 /** The Rust crate root's source, out of the record that holds it. Keyed on `src` rather than on the
  *  record id, because `src` is the path this test used to open and is what says "the same file". */

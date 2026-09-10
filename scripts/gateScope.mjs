@@ -194,7 +194,7 @@ export function isFrontendPath(file) {
  * The RECORD STORES — frontend source that does not live under `src/` (#3604, "the graph IS the app").
  *
  * ~1,050 modules ship as records rather than files: the components under `data/components/app/**`, and
- * the ~900 implementations in the COMMITTED store (`graph/algorithms.json` + `graph/records/*.json`).
+ * the implementations in the COMMITTED store, the ledger database `graph/store.toml` names.
  * `npm run emit:records` materializes them into `.bsc-records/` for tsc, vite and vitest, so editing one
  * edits frontend source — it just does not look like it from the path.
  *
@@ -211,14 +211,14 @@ export function isFrontendPath(file) {
  * the record holding a frontend module would have run neither tsc nor vitest. The same bug, one
  * directory over.
  *
- * BY RECORD, NOT BY DIRECTORY, and the distinction is worth ~128s and an 11 GB gate slot per edit.
- * `graph/records/` is 2,661 files of which only 658 carry an `@/` provides; the other 1,944 are Rust
- * crate source that no frontend arm can see. Claiming the whole directory would put every record of the
- * decomposition fleet's Rust work through the full unscoped vitest suite. A record's id ENDS in the
- * extension of the module it is (`a11y.ts`, `use-tabs.tsx`, `bsc-emit--plan.rs`), so the file name
- * answers the question — and `gate-scope.test.ts` asserts, over the store itself, that EVERY record
- * carrying an `@/` provides lands on a path claimed here. A record that broke the convention would fail
- * that, loudly, rather than quietly dropping out of the frontend gate.
+ * THE PER-RECORD NARROWING IS GONE, and it is worth being explicit about rather than discovering.
+ * While records were one file each, this claimed only the ~658 carrying an `@/` provides and left the
+ * ~1,944 Rust ones to the graph arms — worth ~128s and an 11 GB gate slot on every Rust record edit.
+ * A database is ONE PATH holding both populations, and a path predicate cannot see inside it, so every
+ * record edit now runs the unscoped frontend suite. That is a real cost the ledger imposes and it is
+ * tracked as such (`the-committed-store-is-a-database`); the alternative — not claiming the store —
+ * is the far worse one, because editing the record that HOLDS a frontend module would run no frontend
+ * arm at all and report PASS.
  *
  * These paths stay RUST/graph too, which is correct rather than a compromise: `graph-materialize`
  * compiles 25 crates from the committed store, `algorithms.json` is a bundle resource, and
@@ -227,8 +227,13 @@ export function isFrontendPath(file) {
 export function isRecordStorePath(file) {
   return file.startsWith("src-tauri/data/components/")
     || file.startsWith("src-tauri/data/knowledge/")
-    // The document half can hold `implementations` outright (the pre-`store split` layout), so it is
-    // claimed whatever it currently contains.
+    // THE COMMITTED STORE, in either layout. `graph/store.toml` names it and decides its format, so the
+    // database is matched by EXTENSION rather than by filename — a store renamed through the marker
+    // must not silently drop out of the frontend arms, which is the whole failure this claim exists for.
+    // The marker itself counts: it is what decides which file the build reads at all.
+    || /^graph\/[^/]+\.db$/.test(file)
+    || file === "graph/store.toml"
+    // The pre-database layouts, kept so a checkout on an older store is still classified correctly.
     || file === "graph/algorithms.json"
     || (file.startsWith("graph/records/") && /\.tsx?\.json$/.test(file));
 }

@@ -1051,6 +1051,7 @@ name = "bsc-emit"
 version = "0.1.0"
 dependencies = [
  "bsc-record",
+ "graph-materialize",
  "serde_json",
 ]
 
@@ -1555,6 +1556,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-sqlite-read"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-sqlite-util"
 version = "0.1.0"
 dependencies = [
@@ -1626,6 +1634,7 @@ dependencies = [
  "bsc-component",
  "bsc-emit",
  "bsc-graph",
+ "bsc-graph-store",
  "bsc-json-store",
  "bsc-record",
  "bsc-util",
@@ -1640,6 +1649,7 @@ dependencies = [
 name = "bsc-util"
 version = "0.1.0"
 dependencies = [
+ "bsc-sqlite-read",
  "serde_json",
 ]
 

@@ -314,7 +314,7 @@ base-studio-code/
 │   ├── tauri.conf.json
 │   └── src/                 # ONE FOLDER PER SUBSYSTEM — but the FOLDERS ARE RECORDS, NOT DIRECTORIES
 │                            #   (`src-tauri-compiles-from-the-graph`). 138 modules moved into
-│                            #   `graph/algorithms.json`; `src-tauri/src/` holds FOUR files — lib.rs,
+│                            #   the committed store `graph/records.db`; `src-tauri/src/` holds FOUR files — lib.rs,
 │                            #   main.rs, tests.rs and one undeclared orphan. A record's module path
 │                            #   IS its old file path, so every path below still names where a module
 │                            #   BELONGS and `crate::console::pty` still resolves — you just open it
@@ -470,28 +470,64 @@ the graph** (they carry `build = "../graph-materialize/build.rs"`; count them wi
 `graph-promote-check` goes red for every session on the box, or worse, the change is silently inert.
 
     ~/.base-studio-code/knowledge/graph.db          RUNTIME store — the LEDGER. What `bsc graph impl
-                                                    get|set` actually reads and writes.
+                                                    get|set` reads and writes with no `--repo`.
     ~/.base-studio-code/knowledge/algorithms.json   LEGACY runtime FILE — superseded by the ledger and no
                                                     longer written. Reading it to check a write "fails"
                                                     whatever you did; go through the store.
-    <repo>/graph/{algorithms.json,records/*.json}   REPO store — what the BUILD compiles, BOTH halves.
-                                                    BEING RETIRED, and still authoritative until it is.
-    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS; NOT a build input any more
-    .bsc-records/                                   EMITTED — rebuilt from the REPO store; never hand-edited
+    <repo>/graph/records.db                         COMMITTED store — what the BUILD compiles. A DATABASE
+                                                    (`retire-the-committed-json-record-store`), named by
+                                                    `graph/store.toml`, written by `impl set --repo`.
+    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS. NOT what the build reads:
+                                                    `bsc-emit` reads the COMMITTED store (it silently fell
+                                                    back to this file once the old paths went, and 3
+                                                    records stopped emitting). It IS still a build input
+                                                    for the ~36 frontend modules importing `@data/*`,
+                                                    which is a REAL vite + tsconfig alias.
+    .bsc-records/                                   EMITTED — rebuilt from the COMMITTED store; never
+                                                    hand-edited
 
-> **THE COMMITTED JSON STORE IS ON ITS WAY OUT — and it is STILL THE BUILD AUTHORITY.** Both halves
-> above are being retired for the ledger under `retire-the-committed-json-record-store`
-> (`epic-retire-json-ledgers-for-db-and-git-drivers`). Until that lands, keep writing them: nothing in
-> the build path knows what a `.db` is — `graph-materialize` and `bsc-emit` read the JSON pair, and
-> `graph/algorithms.json` is also the marker `repo_root()` walks ancestors to find, so it is load-bearing
-> twice over.
+> **`graph/algorithms.json` AND `graph/records/*.json` ARE GONE.** The committed store is one SQLite
+> file in the ledger's own schema, so a record has one shape wherever it lives. Two things follow that
+> a reader coming from the old layout will trip on:
 >
-> **Do NOT read "being retired" as "the ledger is the store now".** MEASURED 2026-09-09, the two have
-> diverged in BOTH directions: **436 records are committed-only** (229 of them decomposition CHILDREN
-> whose flat parent is all the ledger still has — `bsc-fin--cli.rs` alone has 35) and **304 are
-> ledger-only** (205 flat predecessors). Pointing the build at the ledger today would revert the
-> decomposition wave. Reconciling those two sets is phase 0 of the retirement and nothing else starts
-> until it is done.
+> **You cannot edit a record with a text editor any more.** There is no file to open. Read it with
+> `bsc graph impl get <id>` and write it with `bsc graph impl set --repo --root "$PWD" … --code-file`.
+> An `impl set` with NO `--repo` writes the RUNTIME ledger, which the build does not read — that
+> distinction is the whole of "my edit did not compile and nothing said so".
+>
+> **`graph/store.toml` names the store and marks the repo root**, and those are two jobs it holds
+> deliberately (`the-repo-root-is-its-own-marker`). Root discovery used to key on `algorithms.json`, so
+> retiring the store broke root resolution for all 75 materialized crates INDEPENDENTLY of the records.
+>
+> **THE ORDERING CONSTRAINT, learned by breaking it.** When the store's format changes, every WRITER
+> must learn the new format BEFORE the marker points at it. Flip first and the change that would teach
+> the writer is itself written to the file the compiler has stopped reading — an edit that lands
+> nowhere and says nothing, which is exactly what `path_under`'s own doc comment warns about.
+
+### Git speaks record — the merge driver and the textconv
+
+A record's module body is ONE line of JSON, so every line-oriented thing git offers degrades on it:
+`diff` prints 23 KB as a single line, `blame` resolves every line of a module to whichever commit last
+touched `code`, and two sessions editing DIFFERENT functions of one module collide on that one line.
+
+```bash
+bsc graph driver install     # registers merge=bscrecord + the textconv in THIS clone
+```
+
+`.gitattributes` names the drivers and is committed; the DEFINITION is local config, so each clone
+installs once. A clone that has not is not broken — git falls back to its own line merge, which is what
+you had before. `install` HANDSHAKES first and refuses a `target/` path: that binary is swept by
+`bsc disk gc`, removed by `bsc worktree cap` and ZEROED by `clippy --all-targets`, and a zero-byte
+binary exits 0 printing nothing — git would render every record as an empty diff and call it success.
+
+### Reading the store from a script
+
+`scripts/lib/recordStore.mjs` reads the committed store, resolving it through `graph/store.toml`
+(`resolveStorePath`). It reads the database natively with `node:sqlite` and NOT by shelling to `bsc`:
+routing it through the binary made every gate leg depend on one that the gate's own clippy step zeroes
+partway through. That means the rule deciding what a store CONTAINS — newest revision per id per lane, a
+NULL body meaning RETIRED, `impl` vs `edge` tiers — exists twice, in JS and in Rust.
+`scripts/recordStore.parity.test.ts` proves they agree rather than assuming it.
 
 **STEP 4 IS NO LONGER LOAD-BEARING FOR A FRONTEND MODULE** (`retire-the-packaged-seed-directories`).
 `bsc-emit` used to materialize `.bsc-records/` from the packaged seed, so a TypeScript record needed the
@@ -508,28 +544,37 @@ The sequence, which is the same for a Rust CLI or a frontend module:
 #    (a backtick or ${…} is substituted away silently, and large modules exceed the argv limit)
 bsc graph impl get <id> --field code --raw > /tmp/x.rs
 
-# 2. edit /tmp/x.rs, then write it back. --if-version is OPTIMISTIC CONCURRENCY against the
-#    SHARED runtime store: it refuses unless the record's rev is exactly n, so you cannot clobber
-#    another session's edit that landed while you were working. Read the rev with `impl history`.
-bsc graph impl set --tech rust --id <id> --role algorithm --name <n> \
-  --code-file /tmp/x.rs --if-version <n> --by <you> --note "<why>"
+# 2. edit /tmp/x.rs, then write it back INTO THE COMMITTED STORE — `--repo` is what makes the build
+#    see it. `--root` is REQUIRED from a worktree; without it the write resolves the nearest store at
+#    or above the cwd, which is rarely the one you are compiling.
+bsc graph impl set --repo --root "$PWD" --tech rust --id <id> --role algorithm --name <n> \
+  --code-file /tmp/x.rs --by <you> --note "<why>"
 
-# 3. into the REPO store so the build sees it. --root is REQUIRED from a worktree.
-bsc graph promote --id <id> --root "$PWD"
-
-# 4. into the PACKAGED seed. BSC_DATA_DIR is REQUIRED from a worktree — without it the seed write
-#    lands in the repo ROOT, which is checked out on `main` and running the app.
-BSC_DATA_DIR="$PWD/src-tauri/data" bsc graph promote --id <id> --seed --root "$PWD"
+# 3. NOTHING ELSE. There is no promote step any more: `--repo` writes the store the build reads.
 ```
 
-Then build. `crates/graph-materialize/build.rs` reads `<repo_root>/graph/algorithms.json` merged with
-`graph/records/*.json` and materializes each record into `$OUT_DIR/crate.rs`; `crates/bsc-emit` reads the
-same pair to write `.bsc-records/`. So **step 3 is what makes your edit compile**, whichever half it is in
-— after step 2 alone, `cargo check` and `tsc` both still see the old code and nothing says so.
+**`--repo` OR THE RUNTIME LEDGER — that is the whole distinction, and getting it wrong is silent.**
+An `impl set` with no `--repo` writes `~/.base-studio-code/knowledge/graph.db`, the per-user authoring
+copy the APP reads. The build does not read it. The edit is real, `impl get` shows it back, and
+`cargo check` compiles the old code without a word — which is the failure this repo has paid for more
+than any other.
 
-**Verify you touched exactly what you meant.** A line count cannot tell you: these files are one long
-JSON line, so any edit shows as `1 +/- 1`. Diff the PARSED store instead —
-`git show HEAD:graph/algorithms.json` against the working copy, keyed by record id.
+`--if-version <n>` is optimistic concurrency against the SHARED runtime store: it refuses unless the
+record's rev is exactly `n`, so a bulk pass cannot clobber an edit that landed while you were reading.
+Read the rev with `bsc graph impl history <id>`.
+
+Then build. `crates/graph-materialize/build.rs` reads the store `graph/store.toml` names — a database —
+and materializes each record into `$OUT_DIR/crate.rs`; `crates/bsc-emit` reads the same store to write
+`.bsc-records/`. One store, one write, both halves.
+
+**Verify you touched exactly what you meant.** `git diff` on the store is a binary blob unless the
+textconv driver is installed (`bsc graph driver install`), and with it a record edit renders as ordinary
+source lines. Without it, read the record back: `bsc graph impl get <id> --field code --raw`.
+
+**A field the flags do not cover has a door now.** `--crate-deps` sets the cross-crate edge that
+`--composes` cannot carry (composes is record-to-record; 2,476 of 2,477 edges are intra-crate). It used
+to be settable only by hand-editing `graph/records/<id>.json` or by `graph-relationships --apply`, and
+the first of those no longer exists.
 
 ### The crate manifests are records too — `Cargo.toml` is GENERATED
 

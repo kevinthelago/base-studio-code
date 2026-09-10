@@ -41,6 +41,10 @@
 
 include!("plan.rs");
 include!("emit.rs");
+// The page-level SQLite reader, from the std-only leaf crate that also exposes it as a library.
+// Included TEXTUALLY rather than depended on, because this script is what materializes every
+// graph-hosted crate: it cannot read the store through a crate that has not been built yet.
+include!("../bsc-sqlite-read/src/pages.rs");
 include!("sqlite_read.rs");
 
 fn main() {

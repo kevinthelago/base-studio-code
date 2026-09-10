@@ -15,8 +15,11 @@
 
 use super::*;
 
+/// The fixtures live with the READER, in `bsc-sqlite-read`, because that is what they are evidence
+/// about — these tests exercise the JSON layer on top of it and share the same corpus rather than
+/// keeping a second copy that could drift.
 fn fixture(name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/testdata")).join(name)
+    std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../bsc-sqlite-read/testdata")).join(name)
 }
 
 #[test]

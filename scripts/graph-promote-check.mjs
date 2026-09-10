@@ -26,7 +26,7 @@ import { statSync } from "node:fs";
 import { join, sep } from "node:path";
 import { homedir } from "node:os";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
-import { loadStore } from "./lib/recordStore.mjs";
+import { loadStore, resolveStorePath, isSqliteStore } from "./lib/recordStore.mjs";
 
 const ROOT = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
 
@@ -316,7 +316,7 @@ function impl(bsc, id) {
 /** One record out of the COMMITTED store on disk — the store file MERGED with `graph/records/*.json`. */
 function repoRecord(root, id) {
   try {
-    return pick(loadStore(join(root, "graph", "algorithms.json")), id);
+    return pick(loadStore(resolveStorePath(root)), id);
   } catch {
     return null;
   }
@@ -422,6 +422,10 @@ function monolithAtCommit(root, sha, show) {
   if (MONOLITH_AT.has(sha)) return MONOLITH_AT.get(sha);
   let doc;
   try {
+    // The MONOLITH, by its historical name. This is a look BACKWARDS through git at a file that may no
+    // longer exist in the working tree — under `retire-the-committed-json-record-store` the store is a
+    // database — so an absent file here is ordinary history, not an error. It is cached as `null` and
+    // the caller falls back to the per-record view.
     doc = JSON.parse(show("graph/algorithms.json", 64 * 1024 * 1024));
   } catch {
     doc = null;
@@ -528,7 +532,7 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
     };
     const storeRecords = () => {
       try {
-        return (loadStore(join(ROOT, "graph", "algorithms.json")).implementations ?? []).length;
+        return (loadStore(resolveStorePath(ROOT)).implementations ?? []).length;
       } catch {
         return 0;
       }

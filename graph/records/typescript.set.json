@@ -1,9 +1,0 @@
-{
-  "composes": [],
-  "id": "typescript.set",
-  "name": "Set",
-  "ref": "Set<T>",
-  "role": "primitive",
-  "tech": "typescript",
-  "feature": "core"
-}

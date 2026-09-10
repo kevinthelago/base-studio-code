@@ -47,7 +47,7 @@ import { homedir } from "node:os";
 // module exports a `loadStore` of its own with different semantics — that one takes a store path or
 // falls back to the per-user RUNTIME store; this one merges a store file with the per-record files
 // beside it.
-import { loadStore as loadMergedStore } from "./lib/recordStore.mjs";
+import { loadStore as loadMergedStore, resolveStorePath } from "./lib/recordStore.mjs";
 
 /**
  * The store is read ONLY by the CLI block below, never at import time: these helpers are pure so a test
@@ -104,7 +104,10 @@ export function loadGateSources(root) {
   // `implementations` array the day the records split out — and this function SWALLOWS errors and
   // returns `[]`, so the sweep would have reported "0 nodes, 0 failures" and exited green.
   const seedPath = join(root, "src-tauri", "data", "knowledge", "algorithms.json");
-  const storePath = join(root, "graph", "algorithms.json");
+  // Through the MARKER, not a hard-coded name: `graph/store.toml` decides what the committed store
+  // is, and this reader swallows its errors into `[]` — so a wrong path here degrades to "0 nodes,
+  // 0 failures" and exits green rather than saying it read nothing.
+  const storePath = resolveStorePath(root);
   const seed = read(seedPath);
   const store = readMerged(storePath);
   // A POPULATION FLOOR PER SOURCE, because both readers above swallow their errors and return `[]` —

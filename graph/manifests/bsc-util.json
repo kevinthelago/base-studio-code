@@ -51,7 +51,9 @@
       ],
       "lead": [
         "",
-        "# Leaf crate: std only, no dependencies, so any CLI can pull it in for free."
+        "# Leaf crate: its whole dependency CLOSURE is `std`, so any CLI can pull it in for free. That is",
+        "# not the same as \"no dependencies\" any more — see [dependencies] below, which takes one std-only",
+        "# crate — but it is the property that ever mattered: a consumer compiles no third-party code for it."
       ],
       "name": "[build-dependencies]"
     },
@@ -83,6 +85,26 @@
         ""
       ],
       "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-sqlite-read",
+          "lead": [],
+          "value": "{ path = \"../bsc-sqlite-read\" }"
+        }
+      ],
+      "lead": [
+        "# ONE dependency, and its closure is exactly `std` — which is what preserves the claim above.",
+        "# `packaged::read` is the ONE funnel every Rust reader of a packaged seed goes through, so serving",
+        "# those reads from the committed component store is one function here and zero call-site changes",
+        "# everywhere else. Reaching a SQLite file needs a reader, and `rusqlite` cannot come into this crate",
+        "# at any price: it would put the SQLite C amalgamation in front of ~36 of 40 crates. `bsc-sqlite-read`",
+        "# is the std-only leaf that exists for exactly this pair of constraints (`graph-materialize` is held",
+        "# to the same rule for the same reason), so a consumer still compiles no third-party code for it."
+      ],
+      "name": "[dependencies]"
     },
     {
       "entries": [
