@@ -1300,6 +1300,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-sqlite-read",
  "bsc-util",
  "serde",
  "serde_json",
