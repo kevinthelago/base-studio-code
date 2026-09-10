@@ -16,6 +16,9 @@
 #
 # NAMED FOR THE PILLAR, not for "records": the runtime side is `~/.base-studio-code/knowledge/graph.db`
 # for algorithms and `~/.base-studio-code/components.db` for components, and the committed side should
-# say the same word for the same thing. `components.db` lands beside this one when the component
-# records get a committed home of their own — today that job is still done by the packaged seed.
+# say the same word for the same thing. `components.db` HAS landed beside this one (2e29a1095, "the
+# committed store is a database, for both pillars"): it is committed, and it holds every one of the
+# 311 ids the packaged seed carries, plus 9 more. So the component records DO have a committed home
+# now, and the packaged seed is no longer the thing standing in for one — a reader consulting this
+# file before touching `src-tauri/data/components/` should know that before deciding anything.
 store = "algorithms.db"
