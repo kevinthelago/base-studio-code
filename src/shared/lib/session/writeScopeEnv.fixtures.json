@@ -436,7 +436,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "harvestRoots": [
           "app-repo",
@@ -493,7 +494,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ]
       },
       "scopeGlobs": "scratch/**",
@@ -540,7 +542,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "harvestRoots": [
           "app-repo",
@@ -589,7 +592,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ]
       },
       "scopeGlobs": "scratch/**",
@@ -823,7 +827,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "harvestRoots": [
           "app-repo",

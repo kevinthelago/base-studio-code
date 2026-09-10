@@ -9,6 +9,7 @@
     "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added — nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves — so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers — a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role — narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier.",
     "a-session-knows-the-binary-is-bsc (2026-09-03): operator.allow += `bsc help`. A WIDENING of a confined role, and deliberate. A surface session reached for `bsc-session` — it knew what it wanted and not what to type — and the charter now names the binary and the one command that lists every surface. Without the grant that instruction is unusable: a confined role auto-runs exactly its allow list and STOPS to ask for anything else, which an unattended local session reads as a stall rather than a refusal it can act on. `bsc help` prints the noun catalog and nothing else: it opens no store, reads no project, and takes no argument that could reach one, so the grant is strictly the ability to find out what exists. No access axis moves. The complement stays closed — every surface the role does not declare is still denied by name, so knowing a noun exists does not make it runnable, and the charter says so in the same breath it names the catalog.",
     "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role — a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` — the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS — a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action — denying it outright would make it unreachable even when the user wants it.",
+    "every-session-can-write-memory (2026-09-10): allow += `bsc memory` on all 8 restricted roles (architect, curator, designer, integrator, librarian, operator, sound-designer, steward). DELIBERATE, and it closes a hole rather than widening one: `bsc memory` is the session-memory store and NO role's allow-list named it, so exactly the sessions scoped to a single noun could neither read what earlier sessions learned about that noun nor write what they learned themselves. The `bsc mem` entry these lists already carry is the DEPRECATED alias for `bsc cost` — renamed precisely so `bsc memory` could take the name — so the omission read as coverage rather than as a gap. No access axis moves: memory is a local user store with no verb that destroys anything (`edit` keeps the previous text on the record, `done` is a status, and there is no `remove`), and it reaches no network, no git and no code. The prefix is granted BARE rather than per-verb, unlike the studio grants above, because the loop this surface exists for is read-at-start / write-during: a session that may read what it is told and not record what it found leaves the store accumulating from one direction only. Also: `bsc mem` -> `bsc cost` on the operator (its charter is the only thing that used it, and now says `bsc cost build`), and steward.allow += `bsc cost` beside the `bsc mem` it keeps. Same code — `mem` dispatches straight to it — so no capability moves; what changes is that the LIVE name is reachable, which the operator's own charter now tells it to run. The alias stays so nothing that already worked stops. `every_allowed_surface_in_the_capability_baseline_is_live` is the gate that now pins all of it.",
     "rename-the-profile-to-permissions-on-the-persona (2026-09-10): the persona's `floor` is now `permissions`, and the retired `AgentProfile` (src-tauri/data/roles/*.json) is folded into it — so one object on one record answers \"what may this agent do\" instead of two stores with two vocabularies. NO ACCESS AXIS MOVED and no role was added or removed; every github/git/code/net/ui/graph value, every writeGlobs, allow, surfaces and harvestRoots list is byte-identical to the row above it. What is NEW is the six fields each row gained from the profile its ROLE already resolved to at launch (roleProfileId: worker/documentor/marketer/debugger -> pf_auto, planner -> sys_planner, every other role -> pf_review): `mode`, `tools`, `commands`, `allowGlobs` and `denyGlobs` (the profile's paths.allow / paths.deny) and `netAllow` (its net.allow). These were ALREADY being applied to these sessions — they were simply applied from a file the persona could not see, which is why `bsc persona set` could never change them, and why they sat outside the narrow-only clamp entirely. VERIFIED FIELD FOR FIELD: for all 20 packaged personas, each of the six now equals what `resolveProfileSettings(roleProfileId(role))` was reading, so the fold moves the SOURCE and not the VALUE. THE CLAMP NOW COVERS ALL SIX — `mode` and `tools` on the posture scale (deny<ask<allow, which is NOT the access-tier scale), `commands` and `netAllow` as subsets, `allowGlobs` by glob containment exactly as `writeGlobs`, and `denyGlobs` INVERTED, since dropping an ancestor's deny is the widening. `allowGlobs` is deliberately kept SEPARATE from `writeGlobs` rather than merged: they reach the launch through different rules (the role gate's write scope vs the verbatim Edit(<glob>) tool rules) and a session can hold one without the other."
   ],
   "roles": {
@@ -49,7 +50,8 @@
         "bsc project list",
         "bsc request new",
         "bsc request list",
-        "bsc request get"
+        "bsc request get",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"
@@ -81,7 +83,8 @@
       "allow": [
         "bsc ui",
         "bsc graph",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"
@@ -168,7 +171,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "harvestRoots": [
         "app-repo",
@@ -303,7 +307,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"
@@ -397,7 +402,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "harvestRoots": [
         "app-repo",
@@ -489,12 +495,13 @@
         "bsc request get",
         "bsc request note",
         "bsc errors run",
-        "bsc mem",
+        "bsc cost",
         "bsc perf",
         "bsc logs",
         "bsc session ask",
         "bsc session reply",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"
@@ -600,7 +607,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"
@@ -649,9 +657,11 @@
         "bsc plan requirement",
         "bsc logs",
         "bsc mem",
+        "bsc cost",
         "bsc request new",
         "bsc request list",
-        "bsc request get"
+        "bsc request get",
+        "bsc memory"
       ],
       "denyGlobs": [
         "**/*"

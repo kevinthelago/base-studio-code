@@ -48,9 +48,11 @@
       "bsc plan requirement",
       "bsc logs",
       "bsc mem",
+      "bsc cost",
       "bsc request new",
       "bsc request list",
-      "bsc request get"
+      "bsc request get",
+      "bsc memory"
     ]
   },
   "blurb": "The network's root session — it USES what the network has already built. Read-only by default: it observes and reports, and every change asks you first.",
