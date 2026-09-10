@@ -8,7 +8,8 @@
     "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion \u2014 the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun \u2014 it carries `new`, `link`, `github-state` and `db` \u2014 so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved \u2014 github/git/code/ui stay `none` and net stays `read` \u2014 and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust.",
     "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added \u2014 nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves \u2014 so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers \u2014 a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role \u2014 narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier.",
     "a-session-knows-the-binary-is-bsc (2026-09-03): operator.allow += `bsc help`. A WIDENING of a confined role, and deliberate. A surface session reached for `bsc-session` \u2014 it knew what it wanted and not what to type \u2014 and the charter now names the binary and the one command that lists every surface. Without the grant that instruction is unusable: a confined role auto-runs exactly its allow list and STOPS to ask for anything else, which an unattended local session reads as a stall rather than a refusal it can act on. `bsc help` prints the noun catalog and nothing else: it opens no store, reads no project, and takes no argument that could reach one, so the grant is strictly the ability to find out what exists. No access axis moves. The complement stays closed \u2014 every surface the role does not declare is still denied by name, so knowing a noun exists does not make it runnable, and the charter says so in the same breath it names the catalog.",
-    "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role \u2014 a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` \u2014 the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS \u2014 a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action \u2014 denying it outright would make it unreachable even when the user wants it."
+    "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role \u2014 a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` \u2014 the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS \u2014 a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action \u2014 denying it outright would make it unreachable even when the user wants it.",
+    "every-session-can-write-memory (2026-09-10): allow += `bsc memory` on all 8 restricted roles (architect, curator, designer, integrator, librarian, operator, sound-designer, steward). DELIBERATE, and it closes a hole rather than widening one: `bsc memory` is the session-memory store and NO role's allow-list named it, so exactly the sessions scoped to a single noun could neither read what earlier sessions learned about that noun nor write what they learned themselves. The `bsc mem` entry these lists already carry is the DEPRECATED alias for `bsc cost` \u2014 renamed precisely so `bsc memory` could take the name \u2014 so the omission read as coverage rather than as a gap. No access axis moves: memory is a local user store with no verb that destroys anything (`edit` keeps the previous text on the record, `done` is a status, and there is no `remove`), and it reaches no network, no git and no code. The prefix is granted BARE rather than per-verb, unlike the studio grants above, because the loop this surface exists for is read-at-start / write-during: a session that may read what it is told and not record what it found leaves the store accumulating from one direction only. Also: `bsc mem` -> `bsc cost` on the operator (its charter is the only thing that used it, and now says `bsc cost build`), and steward.allow += `bsc cost` beside the `bsc mem` it keeps. Same code \u2014 `mem` dispatches straight to it \u2014 so no capability moves; what changes is that the LIVE name is reachable, which the operator's own charter now tells it to run. The alias stays so nothing that already worked stops. `every_allowed_surface_in_the_capability_baseline_is_live` is the gate that now pins all of it."
   ],
   "roles": {
     "architect": {
@@ -37,7 +38,8 @@
         "bsc project list",
         "bsc request new",
         "bsc request list",
-        "bsc request get"
+        "bsc request get",
+        "bsc memory"
       ]
     },
     "curator": {
@@ -52,7 +54,8 @@
       "allow": [
         "bsc ui",
         "bsc graph",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "debugger": {
@@ -94,7 +97,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "director": {
@@ -159,7 +163,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "issuer": {
@@ -206,7 +211,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "marketer": {
@@ -245,12 +251,13 @@
         "bsc request get",
         "bsc request note",
         "bsc errors run",
-        "bsc mem",
+        "bsc cost",
         "bsc perf",
         "bsc logs",
         "bsc session ask",
         "bsc session reply",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "planner": {
@@ -298,7 +305,8 @@
         "bsc session ask",
         "bsc session reply",
         "bsc request get",
-        "bsc persona whatami"
+        "bsc persona whatami",
+        "bsc memory"
       ]
     },
     "tester": {
@@ -367,9 +375,11 @@
         "bsc plan requirement",
         "bsc logs",
         "bsc mem",
+        "bsc cost",
         "bsc request new",
         "bsc request list",
-        "bsc request get"
+        "bsc request get",
+        "bsc memory"
       ]
     }
   }

@@ -65,7 +65,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -146,7 +147,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -227,7 +229,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -309,7 +312,8 @@
           "bsc project list",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -377,7 +381,8 @@
         "allow": [
           "bsc ui",
           "bsc graph",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -458,7 +463,8 @@
         "allow": [
           "bsc ui",
           "bsc graph",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -536,7 +542,8 @@
         "allow": [
           "bsc ui",
           "bsc graph",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -621,7 +628,8 @@
         "allow": [
           "bsc ui",
           "bsc graph",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -984,7 +992,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -1064,7 +1073,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -1144,7 +1154,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -1229,7 +1240,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -2116,7 +2128,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -2192,7 +2205,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -2267,7 +2281,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -2347,7 +2362,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3147,7 +3163,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3230,7 +3247,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3313,7 +3331,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3400,7 +3419,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3864,12 +3884,13 @@
           "bsc request get",
           "bsc request note",
           "bsc errors run",
-          "bsc mem",
+          "bsc cost",
           "bsc perf",
           "bsc logs",
           "bsc session ask",
           "bsc session reply",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -3991,12 +4012,13 @@
           "bsc request get",
           "bsc request note",
           "bsc errors run",
-          "bsc mem",
+          "bsc cost",
           "bsc perf",
           "bsc logs",
           "bsc session ask",
           "bsc session reply",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -4115,12 +4137,13 @@
           "bsc request get",
           "bsc request note",
           "bsc errors run",
-          "bsc mem",
+          "bsc cost",
           "bsc perf",
           "bsc logs",
           "bsc session ask",
           "bsc session reply",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -4247,12 +4270,13 @@
           "bsc request get",
           "bsc request note",
           "bsc errors run",
-          "bsc mem",
+          "bsc cost",
           "bsc perf",
           "bsc logs",
           "bsc session ask",
           "bsc session reply",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5207,7 +5231,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5283,7 +5308,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5359,7 +5385,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5439,7 +5466,8 @@
           "bsc session ask",
           "bsc session reply",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5530,9 +5558,11 @@
           "bsc plan requirement",
           "bsc logs",
           "bsc mem",
+          "bsc cost",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5621,9 +5651,11 @@
           "bsc plan requirement",
           "bsc logs",
           "bsc mem",
+          "bsc cost",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5711,9 +5743,11 @@
           "bsc plan requirement",
           "bsc logs",
           "bsc mem",
+          "bsc cost",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
@@ -5804,9 +5838,11 @@
           "bsc plan requirement",
           "bsc logs",
           "bsc mem",
+          "bsc cost",
           "bsc request new",
           "bsc request list",
-          "bsc request get"
+          "bsc request get",
+          "bsc memory"
         ],
         "surfaces": null
       },
