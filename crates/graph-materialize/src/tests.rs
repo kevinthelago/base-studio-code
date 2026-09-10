@@ -33,6 +33,10 @@ fn repo_with(root: &Path, records: &[(&str, &str, &str)]) {
         .map(|(id, src, code)| serde_json::json!({ "id": id, "src": src, "code": code }))
         .collect();
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    // The MARKER is what makes this a repo root, and it names the store. A JSON store is still a
+    // legal one — the loader sniffs the magic bytes — so a fixture does not need a database to be a
+    // faithful fixture, and keeping it as JSON is what lets these tests state their records inline.
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     std::fs::write(
         root.join("graph").join("algorithms.json"),
         serde_json::to_string(&serde_json::json!({ "implementations": impls })).expect("json"),
@@ -40,11 +44,26 @@ fn repo_with(root: &Path, records: &[(&str, &str, &str)]) {
     .expect("store");
 }
 
+/// This checkout's COMMITTED STORE. Read the crude way, for the same reason [`repo`] is: calling
+/// [`store_name`] here would make every assertion below agree with the thing under test by
+/// construction, and the store's NAME is exactly what the marker exists to decide.
+fn committed_store(root: &Path) -> PathBuf {
+    let marker = std::fs::read_to_string(root.join("graph").join("store.toml")).expect("graph/store.toml");
+    let name = marker
+        .lines()
+        .find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == "store").map(|(_, v)| v.trim().trim_matches('"').to_string()))
+        .expect("graph/store.toml names a store");
+    root.join("graph").join(name)
+}
+
 /// This checkout's root. Derived the crude way ON PURPOSE — using [`repo_root_by_walk`] here would
 /// make the fixture agree with the thing under test by construction.
 fn repo() -> PathBuf {
     let r = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().to_path_buf();
-    assert!(r.join("graph").join("algorithms.json").is_file(), "{} is not the checkout root", r.display());
+    // The MARKER, not the store: the committed store is a database now
+    // (`retire-the-committed-json-record-store`) and may be renamed again. Still a literal path rather
+    // than `repo_root_by_walk`, so the fixture does not agree with the thing under test by construction.
+    assert!(r.join("graph").join("store.toml").is_file(), "{} is not the checkout root", r.display());
     r
 }
 
@@ -257,7 +276,8 @@ fn the_rerun_list_names_the_store_and_this_materializers_own_sources() {
     let plan = plan_for(&repo().join("src-tauri"), None).expect("resolves");
     let names: Vec<String> =
         plan.rerun.iter().map(|p| p.display().to_string().replace('\\', "/")).collect();
-    assert!(names.iter().any(|n| n.ends_with("graph/algorithms.json")), "{names:?}");
+    let store_rel = format!("graph/{}", committed_store(&repo()).file_name().unwrap().to_string_lossy());
+    assert!(names.iter().any(|n| n.ends_with(&store_rel)), "the store {store_rel} is not watched: {names:?}");
     for f in ["crates/graph-materialize/build.rs", "crates/graph-materialize/plan.rs", "crates/graph-materialize/emit.rs"] {
         assert!(names.iter().any(|n| n.ends_with(f)), "{f} is not watched: {names:?}");
     }
@@ -290,7 +310,7 @@ fn every_opted_in_crate_resolves_to_exactly_the_prefix_the_old_derivation_hardco
         assert_eq!(plan.repo_root, root, "crates/{krate}");
         assert_eq!(plan.crate_dir, krate);
         assert_eq!(plan.src_prefix, format!("crates/{krate}/src/"), "the old literal, now derived");
-        assert_eq!(plan.store_path, root.join("graph").join("algorithms.json"));
+        assert_eq!(plan.store_path, committed_store(&root));
         checked += 1;
     }
     // POPULATION, so a walk that silently stopped matching fails loudly rather than passing over
@@ -709,6 +729,7 @@ fn derive_uses_covers_every_shape_and_is_deterministic() {
 fn imports_reach_the_generated_file_and_the_offset_header_stays_exact() {
     let root = scratch("imports-rt");
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     let store = serde_json::json!({
         "implementations": [{
             "id": "mine--thing.rs",
@@ -870,6 +891,7 @@ fn only_a_declaration_matches() {
 fn the_handler_list_is_generated_from_the_facet() {
     let root = scratch("cmd-rt");
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     let store = serde_json::json!({
         "implementations": [
             {
@@ -927,6 +949,7 @@ fn no_command_means_no_macro() {
 fn two_records_cannot_declare_the_same_command_name() {
     let root = scratch("cmd-dup");
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     let store = serde_json::json!({
         "implementations": [
             { "id": "mine--a.rs", "src": "crates/mine/src/a.rs", "code": "pub fn go() {}",
@@ -957,7 +980,7 @@ fn the_app_command_surface_materializes_out_of_the_committed_store() {
     /// leave the app with a silently smaller command surface.
     const FLOOR: usize = 195;
 
-    let raw = load_merged_store(&repo().join("graph").join("algorithms.json")).expect("store");
+    let raw = load_merged_store(&committed_store(&repo())).expect("store");
     let store: serde_json::Value = serde_json::from_str(&raw).expect("json");
     let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
     let plan = plan_for(&repo().join("src-tauri"), None).expect("plan");
@@ -994,118 +1017,128 @@ fn the_app_command_surface_materializes_out_of_the_committed_store() {
     }
 }
 
-/// THE WATCH NARROWING, pinned against the real store.
+/// A CRATE SELECTS EXACTLY THE RECORDS WHOSE `src` IS ITS OWN, pinned against the real store.
 ///
-/// `owned_record_files` selects by FILENAME PREFIX rather than by parsing 2,936 JSON files in every
-/// build script. That is only sound because a record's id is `<crate_dir>--<module path>` and
-/// [`Plan::select`] refuses any record whose id is not exactly `expected_id` for its `src` — so the
-/// filename already identifies the owner. This asserts the correspondence rather than trusting it.
+/// # What this replaced, and why the replacement is narrower
+///
+/// It used to assert the WATCH set: that the record FILES a build script named for `rerun-if-changed`
+/// (matched by the filename prefix `<crate>--`) were exactly the records whose `src` began with that
+/// crate's `src/`. That question died with the file-per-record layout — a ledger is one path, so there
+/// are no per-record filenames to match and nothing to narrow (see `emit_into`, which records the cost).
+///
+/// What did NOT die is the half that decides what actually COMPILES. [`Plan::select`] refuses any
+/// record whose id is not exactly `expected_id` for its `src`, so "this crate's modules" is an
+/// enforced statement rather than a convention — and a crate that selected a neighbour's record would
+/// materialize another crate's module into its own `crate.rs`. That is asserted here, over the store.
+///
+/// # WHICH ASSERTION HERE ACTUALLY BITES, stated rather than implied
+///
+/// The FLOORS are the teeth. BITTEN by removing the path boundary from `src_prefix` — the exact
+/// mutation the retired `a_crate_does_not_claim_the_records_of_a_crate_whose_name_extends_its_own`
+/// existed for — this fails with "only 0 records selected by any crate".
+///
+/// The `stray` assertion is a belt: with `src_prefix` ending in a SLASH it is structurally
+/// unreachable, because `crates/bsc-graph/src/` cannot prefix `crates/bsc-graph-store/src/...`, and
+/// `select`'s id check rejects anything the prefix let through. It is kept because it is what makes
+/// the failure READABLE if either of those two ever changes — a floor says "something broke", this
+/// says which record went where.
 #[test]
-fn owned_record_files_are_exactly_the_records_whose_src_is_the_crates() {
+fn a_crate_selects_exactly_the_records_whose_src_is_its_own() {
     let root = repo();
-    let records_dir = root.join("graph").join("records");
-    assert!(records_dir.is_dir(), "the file-per-record store must exist for this guard to mean anything");
-
-    let raw = load_merged_store(&root.join("graph").join("algorithms.json")).expect("store loads");
+    let raw = load_merged_store(&committed_store(&root)).expect("store loads");
     let store: serde_json::Value = serde_json::from_str(&raw).expect("store parses");
     let impls = store.get("implementations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     assert!(impls.len() >= 2000, "only {} records — discovery is broken", impls.len());
 
     let mut checked = 0usize;
-    let mut owned_total = 0usize;
+    let mut selected_total = 0usize;
     for e in std::fs::read_dir(root.join("crates")).expect("crates/ reads").flatten() {
         let dir = e.file_name().to_string_lossy().to_string();
-        let manifest = e.path();
-        let Ok(plan) = plan_for(&manifest, Some(root.as_path())) else { continue };
+        let Ok(plan) = plan_for(&e.path(), Some(root.as_path())) else { continue };
 
-        // By filename prefix — what the build script actually watches.
-        let by_name: std::collections::BTreeSet<String> = plan
-            .owned_record_files(&records_dir)
-            .into_iter()
-            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-            .collect();
+        // What the crate COMPILES.
+        let selected: std::collections::BTreeSet<String> =
+            plan.select(&impls).into_iter().map(|u| u.id).collect();
 
-        // By the record's OWN `src` — the authoritative answer.
+        // Every record whose `src` says it belongs to this crate — the authoritative answer, derived
+        // the crude way so it cannot agree with `select` by construction.
         let by_src: std::collections::BTreeSet<String> = impls
             .iter()
-            .filter(|i| {
-                i.get("src").and_then(|v| v.as_str()).is_some_and(|s| s.starts_with(&plan.src_prefix))
-            })
+            .filter(|i| i.get("src").and_then(|v| v.as_str()).is_some_and(|x| x.starts_with(&plan.src_prefix)))
             .filter_map(|i| i.get("id").and_then(|v| v.as_str()).map(str::to_string))
             .collect();
 
-        assert_eq!(
-            by_name, by_src,
-            "crates/{dir}: the files watched by filename prefix are not the records whose `src` is \
-             this crate's. A build script that watches the wrong set either rebuilds for nothing or, \
-             worse, does NOT rebuild when its own record changes."
+        // `select` is a SUBSET of `by_src`, never a superset: it deliberately drops a function lifted
+        // out of a file that another record IS (`unquote.rs` shares a `src` with `cve--install.rs`).
+        // A record selected whose `src` is NOT this crate's is the failure that matters.
+        let stray: Vec<&String> = selected.difference(&by_src).collect();
+        assert!(
+            stray.is_empty(),
+            "crates/{dir} selects {stray:?}, whose `src` is not under {}. That record would be \
+             materialized into this crate's `crate.rs` — another crate's module, compiled here.",
+            plan.src_prefix
         );
-        owned_total += by_name.len();
+        selected_total += selected.len();
         checked += 1;
     }
     assert!(checked >= 70, "only {checked} crates resolved a plan");
-    assert!(owned_total >= 1000, "only {owned_total} records attributed to a crate");
-    // The narrowing is the point: no crate watches anything like the whole store.
-    assert!(
-        owned_total < impls.len(),
-        "every record is attributed to some crate, so nothing was narrowed"
-    );
+    assert!(selected_total >= 1000, "only {selected_total} records selected by any crate");
+    // Non-vacuity on the other side: selection must not sweep in the whole store.
+    assert!(selected_total < impls.len(), "every record is selected by some crate — nothing narrowed");
 }
 
-/// The `--` separator is load-bearing: `bsc-graph` must not claim `bsc-graph-store`'s records.
-#[test]
-fn a_crate_does_not_claim_the_records_of_a_crate_whose_name_extends_its_own() {
-    let root = repo();
-    let records_dir = root.join("graph").join("records");
-    let graph = plan_for(&root.join("crates").join("bsc-graph"), Some(root.as_path())).expect("resolves");
-    let store = plan_for(&root.join("crates").join("bsc-graph-store"), Some(root.as_path())).expect("resolves");
+// `a_crate_does_not_claim_the_records_of_a_crate_whose_name_extends_its_own` was RETIRED here rather
+// than rewritten, and the reason is worth keeping so it is not re-added out of caution.
+//
+// It asserted that `bsc-graph` does not pick up `bsc-graph-store--*.rs`. That hazard was specific to
+// the filename prefix `<crate>--`, which has no path boundary in it: a bare `bsc-graph` prefix matches
+// `bsc-graph-store--x.rs`, and the `--` was what stopped it. With the records in a ledger there are no
+// filenames to match. Selection is by `Plan::src_prefix`, which is `crates/<name>/src/` — it ends in a
+// SLASH, so `crates/bsc-graph/src/` cannot match `crates/bsc-graph-store/src/...` by construction, and
+// there is no longer a case to test. `a_crate_selects_exactly_the_records_whose_src_is_its_own` above
+// would catch it anyway, for every crate rather than for this one pair.
 
-    let g: Vec<String> = graph
-        .owned_record_files(&records_dir)
-        .iter()
-        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-        .collect();
-    assert!(!g.is_empty(), "bsc-graph owns records");
-    for id in &g {
-        assert!(
-            !id.starts_with("bsc-graph-store--"),
-            "bsc-graph claimed `{id}`, which belongs to bsc-graph-store — a bare name prefix would \
-             do exactly this, which is why the separator is part of the match"
-        );
-    }
-    let s: Vec<String> = store
-        .owned_record_files(&records_dir)
-        .iter()
-        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-        .collect();
-    for id in &s {
-        assert!(id.starts_with("bsc-graph-store--"), "bsc-graph-store picked up `{id}`");
-    }
-}
-
-/// A FRONTEND record belongs to no Rust crate, so no Rust crate may watch it. This is the 682-record
-/// population whose edits used to rebuild the entire backend.
+/// A FRONTEND record belongs to no Rust crate, so no Rust crate may COMPILE one. This is the
+/// 682-record population whose edits used to rebuild the entire backend.
+///
+/// Asserted over SELECTION rather than over the watch list, for the reason above: the watch narrowing
+/// is gone and a frontend record edit now does rebuild every materialized crate. What must never
+/// happen is a frontend record being materialized INTO one — that is a `.ts` module rendered as Rust,
+/// which fails to compile in a place with nothing to do with the edit.
+///
+/// # What holds this up, honestly
+///
+/// The NON-VACUITY floor is this test's own teeth: without `frontend.len() >= 100` it would pass over
+/// an empty population and prove nothing. The property itself is enforced upstream by `select`'s id
+/// check — a frontend record's id is not `expected_id` for any crate path — which
+/// `expected_id_agrees_with_extract_module_id` pins separately. So this is the guard that says the
+/// enforcement is REACHING the real store, not the guard that implements it.
 #[test]
-fn no_rust_crate_watches_a_frontend_record() {
+fn no_rust_crate_selects_a_frontend_record() {
     let root = repo();
-    let records_dir = root.join("graph").join("records");
-    let frontend: Vec<String> = std::fs::read_dir(&records_dir)
-        .expect("records read")
-        .flatten()
-        .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .filter(|n| n.ends_with(".ts.json") || n.ends_with(".tsx.json"))
+    let raw = load_merged_store(&committed_store(&root)).expect("store loads");
+    let store: serde_json::Value = serde_json::from_str(&raw).expect("store parses");
+    let impls = store.get("implementations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let frontend: std::collections::BTreeSet<String> = impls
+        .iter()
+        .filter(|i| {
+            i.get("src").and_then(|v| v.as_str()).is_some_and(|s| s.ends_with(".ts") || s.ends_with(".tsx"))
+        })
+        .filter_map(|i| i.get("id").and_then(|v| v.as_str()).map(str::to_string))
         .collect();
+    // NON-VACUITY: an empty population would satisfy the assertion below over any selection at all.
     assert!(frontend.len() >= 100, "only {} frontend records found", frontend.len());
 
     for e in std::fs::read_dir(root.join("crates")).expect("crates/ reads").flatten() {
         let Ok(plan) = plan_for(&e.path(), Some(root.as_path())) else { continue };
-        for p in plan.owned_record_files(&records_dir) {
-            let n = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+        for u in plan.select(&impls) {
             assert!(
-                !(n.ends_with(".ts.json") || n.ends_with(".tsx.json")),
-                "{} watches the frontend record {n} — editing it would rebuild this crate and relink \
-                 the app for nothing",
-                plan.crate_dir
+                !frontend.contains(&u.id),
+                "{} would materialize the frontend record `{}` into its `crate.rs` — a TypeScript \
+                 module rendered as Rust",
+                plan.crate_dir,
+                u.id
             );
         }
     }

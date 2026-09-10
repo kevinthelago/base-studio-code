@@ -1,0 +1,94 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-sqlite-read\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"Read-only SQLite, in pure Rust, with a dependency closure of exactly `std` — shared by `graph-materialize` (a build-dependency of 75 crates held to \\\"serde_json and nothing else\\\") and `bsc-util` (\\\"std only, no dependencies\\\"), both of which must read the record store and neither of which may link rusqlite.\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [
+            "",
+            "# NO build script and REAL source files, which is deliberate and structural rather than an oversight.",
+            "# `graph-materialize/build.rs` `include!`s `src/pages.rs` textually to BOOTSTRAP: it is the script that",
+            "# materializes every graph-hosted crate, so it cannot read the store through a crate that has not been",
+            "# built yet — and it cannot read the store at all without this reader. A record has no file to include."
+          ],
+          "value": "false"
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_sqlite_read\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [],
+      "lead": [
+        "",
+        "# EMPTY, AND THAT IS THE WHOLE POINT. `bsc-util` takes this crate and must still be able to say its",
+        "# consumers pay for no third-party compilation; that claim survives only while this line stays empty."
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        "",
+        "# TESTS ONLY — a dev-dependency is not propagated to anything that links this crate.",
+        "#",
+        "# `serde_json` is here to PROVE `json_string_field` against the real library rather than against its",
+        "# own output. `rusqlite` is deliberately NOT here even as a dev-dependency: a dev edge still lands in",
+        "# the Cargo.lock closure of every dependent, and the sensor binaries' `the_sensor_binary_pulls_in_",
+        "# nothing_heavy` guard reads it as a real one. The differential property comes from `testdata/`",
+        "# instead — fixtures WRITTEN by the real SQLite engine and committed as bytes."
+      ],
+      "name": "[dev-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-sqlite-read/Cargo.toml",
+  "tail": []
+}

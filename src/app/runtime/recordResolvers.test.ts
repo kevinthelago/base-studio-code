@@ -33,7 +33,7 @@ import { resolve } from "node:path";
 // The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`). A relative reach into
 // `scripts/` rather than an `@/…` alias, deliberately: this is build tooling shared with the gate
 // scripts, not frontend source, and the file it loads is already resolved relative to REPO below.
-import { loadStore } from "../../../scripts/lib/recordStore.mjs";
+import { loadStore, resolveStorePath } from "../../../scripts/lib/recordStore.mjs";
 
 const REPO = resolve(__dirname, "../../..");
 const read = (p: string) => readFileSync(resolve(REPO, p), "utf8");
@@ -78,7 +78,7 @@ describe("record resolvers (#3604)", () => {
     // Through the MERGED loader: `bsc-ui--emit--mod.rs` may live in `graph/records/` rather than in
     // the store file, and `JSON.parse(read(...))` would then find no record and report the guard
     // dropped when it is right there.
-    const store = loadStore(resolve(REPO, "graph/algorithms.json")) as {
+    const store = loadStore(resolveStorePath(REPO)) as {
       implementations?: { id?: string; code?: string }[];
     };
     const impls = store.implementations ?? [];

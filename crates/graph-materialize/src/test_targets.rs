@@ -30,6 +30,7 @@ fn repo_with_edges(root: &Path, impls: &[(&str, &str, &str)], edges: serde_json:
         .map(|(id, src, code)| serde_json::json!({ "id": id, "src": src, "code": code }))
         .collect();
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     std::fs::write(
         root.join("graph").join("algorithms.json"),
         serde_json::to_string(&serde_json::json!({ "implementations": list, "edges": edges }))
@@ -216,6 +217,7 @@ fn a_crate_with_no_test_edge_writes_no_tests_directory() {
 fn a_store_with_no_edges_key_emits_normally() {
     let root = scratch("noedges");
     std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n").expect("marker");
     std::fs::write(
         root.join("graph").join("algorithms.json"),
         r#"{"implementations":[{"id":"mine--m.rs","src":"crates/mine/src/m.rs","code":"pub fn m() {}"}]}"#,
@@ -236,9 +238,11 @@ fn the_committed_store_still_names_the_test_target_bsc_lan_stream_declares() {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = repo_root_by_walk(&here).expect("this crate is in the repo");
     // Through THIS CRATE'S OWN merged loader, which is what `emit_into` reads the store with: records
-    // live one-per-file under `graph/records/` and edges may follow, so a `read_to_string` of the store
-    // file alone would eventually assert over an edge list the build does not have.
-    let store = load_merged_value(&root.join("graph").join("algorithms.json"))
+    // the store is a DATABASE holding both tiers, so a `read_to_string` of it would assert over
+    // bytes rather than over the records and edges the build actually receives.
+    // Named by the MARKER, not hardcoded: the store's format and filename are exactly what
+    // `graph/store.toml` exists to decide, so a test that spells one cannot survive the next move.
+    let store = load_merged_value(&root.join("graph").join(store_name(&root)))
         .expect("the store")
         .expect("the store exists");
     let empty = Vec::new();

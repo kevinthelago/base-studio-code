@@ -141,14 +141,16 @@
         // MATERIALIZER ITSELF, never through `bsc_graph`, which reconciles the packaged seed and would
         // pull in records the build never compiles.
         //
-        // `load_merged_value` is what makes this the same population the compiler sees: records live
-        // one-per-file under `graph/records/` (`epic-retire-json-ledgers-for-db-and-git-drivers`), and
-        // a `read_to_string` of the store file alone would return an `implementations` array missing
-        // every split-out record. That does not FAIL here — it shrinks the population every source
+        // `load_merged_value` is what makes this the same population the compiler sees: the store is a
+        // DATABASE (`epic-retire-json-ledgers-for-db-and-git-drivers`), so a `read_to_string` of it
+        // cannot even be parsed, and a reader that spelled a `.json` path would find nothing. That does not FAIL here — it shrinks the population every source
         // guard below walks, and they keep passing over whatever is left. Which is the exact failure
         // the `min` floor argument two doc paragraphs up exists to catch, and it would catch it only
         // after the collapse was total.
-        let store_path = root.join("graph").join("algorithms.json");
+        // NAMED BY THE MARKER (`graph/store.toml`), never spelled: the store's filename and format are
+        // exactly what that marker exists to decide, so a guard that hardcodes one reads as "the store
+        // is missing" the moment it moves rather than as "this guard is stale".
+        let store_path = root.join("graph").join(graph_materialize::store_name(&root));
         let store = graph_materialize::load_merged_value(&store_path)
             .unwrap_or_else(|e| {
                 panic!(
@@ -561,6 +563,10 @@
                 record("console/pty/launch.rs", "pub const LAUNCH_BODY: &str = \"launch\";"),
             ]
         });
+        // The MARKER is what makes this a repo root, and it names the store. A JSON store is still a
+        // legal one — the loader sniffs the magic bytes — so a fixture needs no database to be faithful.
+        std::fs::write(root.join("graph").join("store.toml"), "store = \"algorithms.json\"\n")
+            .expect("marker");
         std::fs::write(
             root.join("graph").join("algorithms.json"),
             serde_json::to_string(&store).expect("serializes"),
@@ -903,13 +909,14 @@
         // each look empty from the others, which is precisely the failure nothing else can see.
         //
         // THE COMMITTED STORE, not the packaged seed (`retire-the-packaged-seed-directories`): the
-        // frontend's `.bsc-records/` tree is materialized by `bsc-emit` from `graph/algorithms.json` +
-        // `graph/records/*.json` now, so the seed copy is no longer the one the app compiles.
+        // frontend's `.bsc-records/` tree is materialized by `bsc-emit` from the COMMITTED STORE now,
+        // so the seed copy is no longer the one the app compiles.
         //
         // Through `load_merged_value`, never by parsing the store file — a direct parse sees an
-        // `implementations` array missing every record under `graph/records/`, does not fail on it, and
+        // `implementations` array missing every record the database holds, does not fail on it, and
         // simply covers less (`scripts/graph-store-readers.test.ts` is the gate that says so).
-        let store = manifest.parent().expect("src-tauri has a parent").join("graph").join("algorithms.json");
+        let repo = manifest.parent().expect("src-tauri has a parent");
+        let store = repo.join("graph").join(graph_materialize::store_name(repo));
         let doc = graph_materialize::load_merged_value(&store)
             .expect("the committed store parses")
             .expect("the committed store exists");

@@ -8,8 +8,8 @@
 // Record→record refs resolve by the rules above. External-CRATE refs are the OTHER half, and they
 // resolve into `crateDeps` rather than `composes` — see `crateDepsOf`.
 import fs from 'node:fs';
-import { loadStore, writeStore } from './lib/recordStore.mjs';
-const STORE = process.env.GRAPH_STORE || 'graph/algorithms.json';
+import { loadStore, writeStore, resolveStorePath } from './lib/recordStore.mjs';
+const STORE = process.env.GRAPH_STORE || resolveStorePath();
 const BASELINE = 'scripts/graph-relationships.baseline.json';
 import path from 'node:path';
 const store = loadStore(STORE); // merges graph/records/*.json (retire-json migration)

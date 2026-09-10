@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { planGate, withDependents, crateForPath, isFrontendPath, parsePorcelain, gateCommands, graphCommands, isGraphSourcePath, needsGateSlot, FORCE_FULL } from "./gateScope.mjs";
 import { readFileSync, readdirSync } from "node:fs";
+import { loadStore, resolveStorePath } from "./lib/recordStore.mjs";
 import { join } from "node:path";
 
 // A miniature of the real workspace shape: one shared util everything sits on, one mid-tier crate, two
@@ -500,37 +501,40 @@ describe("gate legs carry a stable measurement key", () => {
 // ── the emitter's INPUTS are frontend source, wherever they live ──────────────────────────────────
 //
 // `retire-the-packaged-seed-directories` moved the algorithm half of the record tree off the packaged
-// seed and onto the COMMITTED store (`graph/algorithms.json` + `graph/records/*.json`) — the same pair
-// `graph-materialize` compiles the Rust crates from. That instantly recreated the bug the block above
-// exists for, one directory over: `graph/**` was claimed by `isGraphSourcePath` (a Rust question) and
-// by nothing on the frontend side, so editing the record that HOLDS a frontend module would have run
-// neither tsc nor vitest and reported PASS.
+// seed and onto the COMMITTED store — the same one `graph-materialize` compiles the Rust crates from.
+// That instantly recreated the bug the block above exists for, one directory over: `graph/**` was
+// claimed by `isGraphSourcePath` (a Rust question) and by nothing on the frontend side, so editing the
+// record that HOLDS a frontend module would have run neither tsc nor vitest and reported PASS.
 //
-// TWO GUARDS, because the claim is per-RECORD rather than per-directory (`graph/records/` is 2,661
-// files and only 658 of them are frontend modules; claiming the lot would put the decomposition
-// fleet's Rust edits through the full unscoped vitest suite). One asks whether the emitter's inputs
-// are claimed AT ALL — the question that catches the NEXT store move. The other asks whether every
-// record that is a frontend module lands on a claimed path — the question that catches a record
-// breaking the naming convention the claim reads.
+// THE STORE IS A DATABASE NOW, and that changed what these guards can ask. While records were one file
+// each the claim was per-RECORD — only the ~658 with an `@/` provides ran the frontend arms. One file
+// holds both populations, so the claim is now per-STORE and every record edit runs the unscoped suite.
+// That cost is recorded where it belongs rather than hidden here; what these guards still hold is the
+// part that must never regress: whatever the emitter reads is claimed, and it is claimed by BOTH arms.
 describe("every store the record emitter reads is frontend source", () => {
   const REPO = process.cwd();
 
   /** `crates/bsc-emit/src/plan.rs`, out of the committed store — it has no file on disk. */
   const planRs = (() => {
-    const doc = JSON.parse(readFileSync(join(REPO, "graph/records/bsc-emit--plan.rs.json"), "utf8"));
-    return (doc as { code?: string }).code ?? "";
+    const store = loadStore(resolveStorePath(REPO)) as { implementations: { id?: string; code?: string }[] };
+    return store.implementations.find((i) => i.id === "bsc-emit--plan.rs")?.code ?? "";
   })();
 
   /** Every store the emitter LOADS, as a repo-relative path.
    *
-   *  Matched at the two functions that load one — `read_json` (a document) and `walk_json` (a tree of
-   *  per-record files) — rather than at every `repo.join(..)`. The emitter also joins `repo` with `src`,
-   *  to ask whether a specifier still has a live FILE, and `src/` is not a store: taking every join
-   *  swept that in and demanded `--changed` be disabled for an ordinary source edit. */
+   *  Two shapes, because the emitter now reads two KINDS of store: a directory it walks
+   *  (`walk_json(&repo.join(..))`, the packaged component seeds) and the committed store, which it
+   *  resolves through the marker rather than spelling — so the second is matched at the `store_name`
+   *  call, and resolved here the same way the emitter resolves it. A guard that still looked for a
+   *  spelled `graph/algorithms.json` would match nothing and report no offenders, which is why the
+   *  floor below is an assertion rather than a comment. */
   const roots = (() => {
     const out = new Set<string>();
     for (const m of planRs.matchAll(/(?:read_json|walk_json)\(&repo((?:\.join\("[^"]+"\))+)/g)) {
       out.add([...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]).join("/"));
+    }
+    if (/graph_materialize::store_name\(repo\)/.test(planRs)) {
+      out.add(resolveStorePath(REPO).slice(REPO.length + 1).replace(/\\/g, "/"));
     }
     return [...out].sort();
   })();
@@ -539,7 +543,7 @@ describe("every store the record emitter reads is frontend source", () => {
    *  names one file. Probing a made-up `<root>/probe.json` cannot work: the claim reads the record's
    *  own extension, so an invented name is correctly not claimed and the guard would fire on nothing. */
   const probeFor = (root: string): string | null => {
-    if (root.endsWith(".json")) return root;
+    if (/\.(json|db)$/.test(root)) return root;
     const walk = (dir: string): string | null => {
       let entries;
       try { entries = readdirSync(join(REPO, dir), { withFileTypes: true }); } catch { return null; }
@@ -558,14 +562,16 @@ describe("every store the record emitter reads is frontend source", () => {
   };
 
   it("finds the emitter's roots at all — a scan that matches nothing reports no offenders", () => {
-    // Two stores, three roots today: the packaged component seeds, and the committed store's two homes.
+    // Two stores today: the packaged component seeds, and the committed store the marker names.
     // The floor is what makes a silently-broken regex fail instead of passing.
     expect(roots.length, `matched no store load in the record source: ${roots.join(", ")}`)
-      .toBeGreaterThanOrEqual(3);
+      .toBeGreaterThanOrEqual(2);
     expect(planRs.length, "the emitter record carries no code").toBeGreaterThan(1000);
-    expect(roots).toContain("graph/records");
-    expect(roots).toContain("graph/algorithms.json");
     expect(roots).toContain("src-tauri/data/components");
+    expect(
+      roots.some((r) => r.startsWith("graph/")),
+      `the emitter must read the committed store, and this guard must be able to SEE that it does: ${roots.join(", ")}`,
+    ).toBe(true);
   });
 
   it("claims a real module from each of them for the frontend arms", () => {
@@ -577,48 +583,29 @@ describe("every store the record emitter reads is frontend source", () => {
       const p = planGate({ files: [probe!], graph, dirToCrate, exists: () => true });
       expect(p.runTsc, `${probe} must run typecheck`).toBe(true);
       expect(p.runVitest, `${probe} must run vitest`).toBe(true);
-      expect(p.vitestUnscoped, `${probe}: --changed cannot see from a JSON blob to what it materializes`)
+      expect(p.vitestUnscoped, `${probe}: --changed cannot see from a store into what it materializes`)
         .toBe(true);
     }
   });
 
-  it("claims EVERY frontend record in the committed store, and no Rust one", () => {
-    // The invariant the per-record claim actually rests on. `isRecordStorePath` reads the record's
-    // extension out of its FILE NAME, which is only sound while every record that answers an `@/`
-    // specifier is named for the module it is. Asserted over the store rather than assumed.
-    const dir = join(REPO, "graph/records");
-    const missed: string[] = [];
-    let frontend = 0;
-    let rust = 0;
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".json")) continue;
-      const rec = JSON.parse(readFileSync(join(dir, f), "utf8")) as { provides?: string; tech?: string };
-      if (rec.provides?.startsWith("@/")) {
-        frontend += 1;
-        if (!isFrontendPath(`graph/records/${f}`)) missed.push(f);
-      } else if (rec.tech === "rust") {
-        rust += 1;
-      }
-    }
-    expect(
-      missed,
-      "these records answer an `@/` specifier, so `bsc-emit` materializes them into `.bsc-records/` and " +
-        "tsc/vitest compile them — but `isRecordStorePath` does not claim their path, so editing one " +
-        "runs no frontend arm. Name a record for the module it is (`<name>.ts`, `<name>.tsx`).",
-    ).toEqual([]);
-    // Non-vacuity on BOTH sides: an empty store would satisfy the assertion above, and a rule that
-    // claimed everything would make the narrowing pointless.
-    expect(frontend, "frontend records in the committed store").toBeGreaterThan(500);
-    expect(rust, "Rust records in the committed store").toBeGreaterThan(1000);
-    expect(isFrontendPath("graph/records/bsc-emit--plan.rs.json"), "a Rust record is not frontend source")
+  it("claims the committed store however the marker renames it", () => {
+    // The claim is by EXTENSION, not by filename, because `graph/store.toml` can rename the store and a
+    // store that quietly stopped being frontend source is the exact bug this block exists for. The
+    // marker itself is claimed too — it decides which file the build reads at all.
+    expect(isFrontendPath("graph/algorithms.db"), "the store today").toBe(true);
+    expect(isFrontendPath("graph/anything-else.db"), "a store the marker renames tomorrow").toBe(true);
+    expect(isFrontendPath("graph/store.toml"), "the marker decides which store is read").toBe(true);
+    // Non-vacuity: the rule must not simply claim all of `graph/`.
+    expect(isFrontendPath("graph/method-leaf-baseline.json"), "a graph FILE that is not a store")
       .toBe(false);
   });
 
   it("still leaves the committed store claimed by the GRAPH step as well", () => {
-    // Both halves genuinely depend on it: `graph-materialize` compiles 25 Rust crates from the same
-    // pair of files. Claiming it for the frontend must not release it from the Rust arms.
-    expect(isGraphSourcePath("graph/records/a11y.ts.json")).toBe(true);
-    expect(isGraphSourcePath("graph/records/bsc-emit--plan.rs.json")).toBe(true);
-    expect(planGate({ files: ["graph/records/a11y.ts.json"], graph, dirToCrate }).runGraph).toBe(true);
+    // Both halves genuinely depend on it: `graph-materialize` compiles the Rust crates from the same
+    // store `bsc-emit` materializes the frontend from. Claiming it for the frontend must not release
+    // it from the Rust arms.
+    const store = resolveStorePath(REPO).slice(REPO.length + 1).replace(/\\/g, "/");
+    expect(isGraphSourcePath(store)).toBe(true);
+    expect(planGate({ files: [store], graph, dirToCrate }).runGraph).toBe(true);
   });
 });

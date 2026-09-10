@@ -26,9 +26,8 @@ React/TypeScript WebView frontend. The Rust side is the focus of this document.
 > **THE FOLDERS BELOW ARE NOT ON DISK — they are RECORDS.**
 > `src-tauri-compiles-from-the-graph` moved all 138 of this crate's modules into the algorithms
 > graph, so `src-tauri/src/` holds four files: the two crate roots, `tests.rs`, and one orphan.
-> Everything else lives in the committed record store (`graph/algorithms.json` + `graph/records/*.json`,
-> BEING RETIRED for the ledger under `retire-the-committed-json-record-store`, and still what the
-> build compiles until that lands) and reaches the compiler through
+> Everything else lives in the committed record store — `graph/records.db`, a DATABASE named by
+> `graph/store.toml` (`retire-the-committed-json-record-store`) — and reaches the compiler through
 > `$OUT_DIR/crate.rs`, materialized by `graph_materialize::emit_when_adopted()` — called from
 > `src-tauri/build.rs` as a fifth job, because a package gets exactly ONE build script and this one
 > was already taken.
@@ -224,7 +223,7 @@ to the compiler and derives the whole `tauri::generate_handler![…]` list from 
 registering a command is no longer a second place to remember:
 
 ```json
-"tauriCommands": [{ "name": "pick_directory" }]   // in graph/records/<id>.json, beside `moduleVis`
+"tauriCommands": [{ "name": "pick_directory" }]   // on the record, beside `moduleVis`
 ```
 
 Three rules the materializer enforces rather than trusts: the name must match exactly one `fn` in the

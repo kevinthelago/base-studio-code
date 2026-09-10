@@ -118,6 +118,18 @@
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "graph-materialize",
+          "lead": [
+            "# The COMMITTED STORE's reader. `bsc-emit` materializes `.bsc-records/` for tsc, vitest and vite,",
+            "# so the store it reads decides what the FRONTEND compiles — and when the store became a database",
+            "# the old path-spelling read simply found nothing and fell back to the packaged seed, silently.",
+            "# `load_merged_value` resolves whichever format the marker names, so there is one answer to",
+            "# \"what does the app compile from\" rather than one per reader."
+          ],
+          "value": "{ path = \"../graph-materialize\" }"
         }
       ],
       "lead": [

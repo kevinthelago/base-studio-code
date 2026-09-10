@@ -185,6 +185,16 @@
             "# measured — see bsc-graph's own Cargo.toml for why that dependency is pinned off)."
           ],
           "value": "{ path = \"../bsc-graph\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-graph-store",
+          "lead": [
+            "# `bsc ui store export` writes the COMMITTED component store (graph/components.db) in the SAME",
+            "# ledger schema the algorithms pillar uses, so one reader, one merge driver and one textconv serve",
+            "# both pillars. Already in this crate's tree via bsc-graph, so it adds no new compile."
+          ],
+          "value": "{ path = \"../bsc-graph-store\" }"
         }
       ],
       "lead": [

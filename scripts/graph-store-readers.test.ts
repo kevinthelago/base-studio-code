@@ -1,11 +1,11 @@
 // EVERY READER OF THE COMMITTED GRAPH STORE GOES THROUGH THE MERGED LOADER — the invariant, asserted
 // over the source rather than trusted.
 //
-// The store is being taken apart into one file per record: `graph/algorithms.json` for the document's
-// own keys, `graph/records/<id>.json` for each implementation
-// (`epic-retire-json-ledgers-for-db-and-git-drivers`, mirroring `src-tauri/data/components/**` where a
-// record has always been one file). A 27 MB single file means every branch touching ANY record
-// conflicts with every other, which is what makes a decomposition wave cost a night of hand-merging.
+// The store is a DATABASE now (`epic-retire-json-ledgers-for-db-and-git-drivers`), named by
+// `graph/store.toml` and reached only through a loader. It went there via one-file-per-record, and both
+// moves had the same driver: a 27 MB single JSON file means every branch touching ANY record conflicts
+// with every other, which is what makes a decomposition wave cost a night of hand-merging. The ledger
+// answers that with per-record revisions and a real merge driver instead of 2,946 files.
 //
 // # Why this needs a gate and not a convention
 //
@@ -28,7 +28,7 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { loadStore } from "./lib/recordStore.mjs";
+import { loadStore, resolveStorePath, isSqliteStore } from "./lib/recordStore.mjs";
 
 const REPO = resolve(__dirname, "..");
 
@@ -110,7 +110,7 @@ function sourceUnits(): { name: string; text: string }[] {
   walk(join(REPO, "src"), [".ts", ".tsx"]);
   walk(join(REPO, "crates"), [".rs"]);
   walk(join(REPO, "src-tauri"), [".rs"]);
-  recordStrings(loadStore(join(REPO, "graph/algorithms.json")), "record", out);
+  recordStrings(loadStore(resolveStorePath(REPO)), "record", out);
   recordStrings(
     JSON.parse(readFileSync(join(REPO, "src-tauri/data/knowledge/algorithms.json"), "utf8")),
     "seed",
@@ -202,35 +202,31 @@ describe("the committed graph store has exactly one reader: the merged loader", 
     const offenders = directReads(units).filter((o) => !LOADERS.some((l) => o.startsWith(l)));
     expect(
       offenders,
-      "these parse the committed store file directly, so they see an `implementations` array missing " +
-        "every record under `graph/records/` — and they do not fail on it, they just cover less. Read " +
-        "the store through `graph_materialize::load_merged_value` / `repo_store::read_at` (Rust) or " +
-        "`scripts/lib/recordStore.mjs`'s `loadStore` (JS/TS).",
+      "these parse the committed store file directly. The store is the ledger DATABASE, named by " +
+        "`graph/store.toml`, so a spelled path is stale the moment it moves and a direct parse cannot " +
+        "read it at all. Read it through `graph_materialize::load_merged_value` / `repo_store::read_at` " +
+        "(Rust) or `scripts/lib/recordStore.mjs`'s `loadStore` (JS/TS).",
     ).toEqual([]);
   });
 
-  it("the store FILE alone carries no records, which is what makes an unmigrated reader LOUD", () => {
+  it("the store is not JSON, which is what makes an unmigrated reader LOUD rather than short", () => {
     // THE STRUCTURAL HALF of this invariant, and the more reliable half.
     //
-    // The scanner above catches the shapes it knows. What catches the rest is that after the split
-    // there is nothing left in the store file to see: a reader that parses it alone gets ZERO records,
-    // not a plausible-looking subset. Every such reader in this repo carries a population floor, so
-    // zero fails loudly — and the two that were still missed when the split ran both failed exactly
-    // that way within minutes ("src-tauri owns only 0 records", cross-kit falling 39 cases to 5).
+    // The scanner above catches the shapes it knows. What catches the rest is that a reader which does
+    // not go through the loader cannot get a PLAUSIBLE answer out of the store: `JSON.parse` on a
+    // SQLite file throws on the first byte. That is a strict improvement on what this asserted before
+    // the ledger — with one file per record, parsing the store file alone yielded an empty
+    // `implementations` array, which was loud only because every reader here carries a population
+    // floor. A throw needs no floor to be noticed.
     //
-    // The mixed state — some records in the file, some in `graph/records/` — is the ONLY silent one,
-    // and this assertion is what says the repo is not in it.
-    const raw = JSON.parse(readFileSync(join(REPO, "graph/algorithms.json"), "utf8")) as {
-      implementations?: unknown[];
-    };
-    const merged = loadStore(join(REPO, "graph/algorithms.json")) as { implementations: unknown[] };
+    // The state this rules out is the MIXED one: a store still spelled `.json` while records live
+    // elsewhere is the only shape where an unmigrated reader sees a subset instead of an error.
+    const at = resolveStorePath(REPO);
+    expect(isSqliteStore(at), `the committed store at ${at} must be the ledger database`).toBe(true);
+    expect(() => JSON.parse(readFileSync(at, "utf8")), "a direct JSON read of the store must THROW")
+      .toThrow();
+    const merged = loadStore(at) as { implementations: unknown[] };
     expect(merged.implementations.length, "the merged store").toBeGreaterThan(1000);
-    expect(
-      raw.implementations ?? [],
-      "records live one-per-file under `graph/records/`; the store file keeps `version`, `note` and " +
-        "`edges`. A record left in the file is the one state where an unmigrated reader sees a " +
-        "plausible subset instead of nothing — `bsc graph store split --apply` finishes the move.",
-    ).toEqual([]);
   });
 
   it("still recognises a direct read when it sees one", () => {

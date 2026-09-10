@@ -26,14 +26,14 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { loadStore } from "../../../scripts/lib/recordStore.mjs";
+import { loadStore, resolveStorePath } from "../../../scripts/lib/recordStore.mjs";
 
 const REPO = resolve(__dirname, "../../..");
 
 interface Rec { id: string; code?: string; tests?: unknown }
 
 function committed(): Map<string, Rec> {
-  const store = loadStore(resolve(REPO, "graph/algorithms.json")) as { implementations: Rec[] };
+  const store = loadStore(resolveStorePath(REPO)) as { implementations: Rec[] };
   return new Map(store.implementations.map((r) => [r.id, r]));
 }
 
@@ -49,10 +49,15 @@ function packagedSeed(): Rec[] {
  *  guard stayed green, which is the worst possible combination. Both tiers are compared now, and the
  *  edge count is asserted for the same reason the record count is. */
 function edges(which: "seed" | "committed"): Map<string, Rec> {
-  const path = which === "seed"
-    ? "src-tauri/data/knowledge/algorithms.json"
-    : "graph/algorithms.json";
-  const doc = JSON.parse(readFileSync(resolve(REPO, path), "utf8")) as { edges?: Rec[] };
+  // The seed is one JSON file; the COMMITTED store is whatever `graph/store.toml` names — a database
+  // now — so it goes through the same loader the build uses rather than a hard-coded path. Reading
+  // the old name here failed with ENOENT while the record half had already been migrated, which is
+  // the shape of a guard that half-follows a migration.
+  const doc = which === "seed"
+    ? (JSON.parse(
+        readFileSync(resolve(REPO, "src-tauri/data/knowledge/algorithms.json"), "utf8"),
+      ) as { edges?: Rec[] })
+    : (loadStore(resolveStorePath(REPO)) as { edges?: Rec[] });
   return new Map((doc.edges ?? []).map((e) => [e.id, e]));
 }
 

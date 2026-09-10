@@ -1025,16 +1025,24 @@ mod crate_record_tests {
     }
 
     #[test]
-    fn every_crate_projects_and_the_materialized_split_is_exactly_the_six() {
+    fn every_crate_projects_and_the_materialized_split_is_exactly_the_seven() {
         let all = all();
         assert!(all.len() >= 80, "expected >=80 crates, found {}", all.len());
         let mut plain: Vec<&str> = all.iter().filter(|c| !c.materialized).map(|c| c.dir.as_str()).collect();
         plain.sort();
-        // These 6 keep real source files: `graph-materialize` cannot materialize itself (it IS the
-        // materializer), and the rest have never been harvested. Everything else compiles from records.
+        // These 7 keep real source files. TWO of them for a STRUCTURAL reason and the rest because
+        // they have never been harvested:
+        //
+        //   `graph-materialize` cannot materialize itself — it IS the materializer.
+        //   `bsc-sqlite-read` cannot either, one step further out: `build.rs` `include!`s its
+        //     `src/pages.rs` TEXTUALLY to bootstrap, because reading the store is what the script does
+        //     and a record has no file to include. Making it a record would mean the materializer
+        //     needing the store to learn how to read the store.
+        //
+        // Everything else compiles from records.
         assert_eq!(
             plain,
-            vec!["bsc-config", "bsc-ear", "bsc-lan", "bsc-say", "data", "graph-materialize"],
+            vec!["bsc-config", "bsc-ear", "bsc-lan", "bsc-say", "bsc-sqlite-read", "data", "graph-materialize"],
             "the set of crates that still compile from files changed — that is a migration event, \
              not a detail, and this list is how it gets noticed"
         );
@@ -1059,7 +1067,7 @@ mod crate_record_tests {
             vec!["bsc-disk", "bsc-lan-stream", "bsc-publish"],
             "a [[test]] target needs CARGO_CRATE_NAME set PER TARGET, so this set bounds that work"
         );
-        assert_eq!(with(|c| !c.dev_deps().is_empty()).len(), 20, "dev-deps widen only the test build");
+        assert_eq!(with(|c| !c.dev_deps().is_empty()).len(), 21, "dev-deps widen only the test build");
         // NAMES, not a count. An earlier tally said 7 because it substring-matched `[[bin]]` and hit
         // `bsc-cad`'s comment saying it deliberately has NO bin target. A count would have been
         // "corrected" to 7 and hidden a projection that was actually right.
@@ -1263,25 +1271,40 @@ mod store_tests {
         assert!(r.unchanged.len() >= 81, "only {} unchanged (80 crates + the workspace)", r.unchanged.len());
     }
 
-    /// Manifest records must NOT live beside the implementations. `repo_store::write_at` removes any
-    /// file under `graph/records/` whose id is absent from the document it is writing, and a manifest
-    /// record is never in that document — so storing them there means the next `bsc graph` write by
-    /// ANY session silently deletes all of them.
+    /// Manifest records must NOT live where a `bsc graph` write would sweep them.
+    ///
+    /// The hazard survived the store becoming a database, it only changed shape. It used to be
+    /// `repo_store::write_at` deleting any file under `graph/records/` whose id was absent from the
+    /// document; it is now `write_db`, which RETIRES any id in the store that the document no longer
+    /// carries. A manifest record is never in that document, so if one were ever written into the
+    /// committed store the next `bsc graph` write by any session would tombstone it — and the crate
+    /// would stop building with no file to notice missing.
+    ///
+    /// So the invariant is asserted where it now lives: no id in the committed store looks like a
+    /// manifest, and the manifests keep their own directory.
     #[test]
     fn no_manifest_record_sits_where_a_graph_write_would_sweep_it() {
-        let swept = repo().join("graph").join("records");
-        assert!(swept.is_dir(), "graph/records must exist for this guard to mean anything");
-        let strays: Vec<String> = std::fs::read_dir(&swept)
-            .unwrap()
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|n| n.contains("Cargo.toml"))
-            .collect();
+        let store = repo().join("graph").join(crate::store_name(repo()));
+        assert!(store.is_file(), "no committed store at {} — this guard needs one", store.display());
+        let doc = crate::load_merged_value(&store)
+            .expect("the committed store reads")
+            .expect("the committed store is present");
+        let strays: Vec<String> = doc
+            .get("implementations")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
+                    .filter(|id| id.contains("Cargo.toml") || id.ends_with("--manifest"))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
         assert!(
             strays.is_empty(),
-            "manifest records found under graph/records/, which `bsc graph` sweeps: {strays:?}"
+            "manifest records found in the committed store, which a `bsc graph` write sweeps: {strays:?}"
         );
-        assert_ne!(manifests_dir(repo()), swept, "the two directories must be distinct");
+        assert_ne!(manifests_dir(repo()), store, "the manifests are not the record store");
     }
 
     /// A stored record must round-trip through the store the same way it does in memory.

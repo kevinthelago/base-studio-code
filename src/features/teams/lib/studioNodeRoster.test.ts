@@ -26,7 +26,7 @@
 // is asserted for SHAPE instead, which still catches a malformed or empty entry.
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
-import { loadStore } from "../../../../scripts/lib/recordStore.mjs";
+import { loadStore, resolveStorePath } from "../../../../scripts/lib/recordStore.mjs";
 import { readFileSync } from "node:fs";
 import { PER_TECH_STUDIO_NODES } from "@/features/teams/lib/team";
 import { studioAxis, studioSessionsFor } from "@/features/studio-sessions";
@@ -41,7 +41,7 @@ const REPO = resolve(__dirname, "../../../..");
  *  technology the running app's graph holds, and taking only one would let a real language kit look
  *  absent — which would fail this gate for a curator that genuinely exists. */
 function librarianTechsInTheGraph(): string[] {
-  const committed = loadStore(resolve(REPO, "graph/algorithms.json")) as {
+  const committed = loadStore(resolveStorePath(REPO)) as {
     implementations: { tech?: string }[];
   };
   const seed = JSON.parse(
