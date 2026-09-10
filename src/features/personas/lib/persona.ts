@@ -1,13 +1,13 @@
 // Personas (#2094) — the CRUD-able BEHAVIORAL identity of an agent, split from the ROLE (its
-// permission floor, `sessionRoles.ts`). A persona is the named composition the user authors: a start
+// permission set, `sessionRoles.ts`). A persona is the named composition the user authors: a start
 // prompt + attached skills + a default model, running under a referenced role. Many personas → one
-// role (e.g. Reviewer, Juror, Documentor all sit on a read-only floor with very different prompts +
+// role (e.g. Reviewer, Juror, Documentor all sit on a read-only permission set with very different prompts +
 // skills). Pure model (no React/Tauri) so it's unit-testable and the store seeds from it directly.
 //
 // This is view/CRUD-first (#2094 Part B, relocated to the Planner workspace): the persona is the
 // user-facing agent template. Wiring personas into fleet-stream launch + console launch (so picking a
 // persona resolves role + prompt + skills + model in one step) is the follow-up phase.
-import type { AccessTier, SessionRole } from "@/shared/lib/session/sessionRoles";
+import type { AccessTier, PermissionPosture, SessionRole, ToolKey } from "@/shared/lib/session/sessionRoles";
 import { overlayGlob, overlayRaw } from "@/shared/lib/core/configOverrides";
 import { slugify } from "@/shared/lib/core/format";
 import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
@@ -15,7 +15,14 @@ import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 
 /**
- * A persona's PERMISSION FLOOR — the capability it launches under (epic `the-persona-is-the-whole-agent`).
+ * A persona's PERMISSIONS — the capability it launches under (epic `the-persona-is-the-whole-agent`).
+ *
+ * ONE OBJECT ANSWERS "WHAT MAY THIS AGENT DO" (`rename-the-profile-to-permissions-on-the-persona`).
+ * It was two: this set (then called the `floor`) carried the access AXES and the write scope, while a
+ * separate `AgentProfile` in `src-tauri/data/roles/*.json` carried the base posture, the eight per-tool
+ * postures, the shell-command allowlist and the path/network scope. Both were applied at every launch,
+ * neither was named "permissions", and which one a new capability belonged in was a coin flip. The
+ * profile's fields are folded in below.
  *
  * This is the role capability row, folded onto the record that actually gets written. It used to live
  * in two other places: the five access tiers plus the write scope in
@@ -24,17 +31,17 @@ import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
  * a generic verbatim JSON passthrough, on the always-allowed `bsc` tier — could rewrite a persona's
  * capability with nothing to stop it.
  *
- * The clamp lives in the STORE (`crates/bsc-persona/src/floor.rs`), not here: a floor write may only
- * ever NARROW the floor it derives from. This type is the shape both ends agree on.
+ * The clamp lives in the STORE (`crates/bsc-persona/src/permissions/`), not here: a write may only ever
+ * NARROW the permissions it derives from. This type is the shape both ends agree on.
  */
-export interface PersonaFloor {
+export interface PersonaPermissions {
   github: AccessTier;
   git: AccessTier;
   code: AccessTier;
   net: AccessTier;
   ui: AccessTier;
   /**
-   * The `bsc graph` ALGORITHMS store — the twin of {@link PersonaFloor.ui} one store over
+   * The `bsc graph` ALGORITHMS store — the twin of {@link PersonaPermissions.ui} one store over
    * (`the-algorithms-graph-has-no-write-gate`).
    *
    * OPTIONAL, unlike the five above, because every persona authored before the axis existed carries
@@ -56,6 +63,31 @@ export interface PersonaFloor {
    * takes. That inversion is why the store's clamp treats dropping this list as a widening.
    */
   allow?: string[];
+  /**
+   * The BASE POSTURE anything not otherwise listed falls to. `deny` < `ask` < `allow` — a different
+   * SCALE from {@link AccessTier}'s `none` < `read` < `write`, and conflating the two scores every
+   * value at the bottom and waves every widening through.
+   */
+  mode?: PermissionPosture;
+  /** Per-tool posture, same scale as {@link PersonaPermissions.mode}. */
+  tools?: Partial<Record<ToolKey, PermissionPosture>>;
+  /** Shell commands that auto-run BEYOND the baseline tiers. Absent ⇒ the baseline only. */
+  commands?: string[];
+  /** Path globs this persona may EDIT, rendered as verbatim `Edit(<glob>)` rules at launch. Kept
+   *  apart from {@link PersonaPermissions.writeGlobs}, which reaches the launch through the role
+   *  gate's write scope instead — a persona can carry one without the other. */
+  allowGlobs?: string[];
+  /**
+   * Path globs this persona may NEVER write, whatever {@link PersonaPermissions.writeGlobs} says.
+   *
+   * The one list here that widens by getting SHORTER — dropping an entry un-denies a path — so the
+   * store's clamp treats a missing entry as a widening, the same inversion {@link PersonaPermissions.allow}
+   * carries for the opposite reason.
+   */
+  denyGlobs?: string[];
+  /** Network hosts reachable at all, `*` meaning any. One level finer than the {@link PersonaPermissions.net}
+   *  tier: `net` says whether it may fetch, this says from where. */
+  netAllow?: string[];
 }
 
 /** One hook a persona carries. The wire shape `toSessionPayloads` already emits, minus the store
@@ -102,17 +134,16 @@ export interface Persona {
   name: string;
   /** One-line description of the job this persona does. */
   blurb: string;
-  /** The permission floor this persona runs under — the ONLY link to the role gate (#219). Many
+  /** The role this persona runs under — the ONLY link to the role gate (#219). Many
    *  personas may reference the same role; the role bounds capabilities, the persona shapes behavior.
    *
-   *  BEING RETIRED: `floor` below now carries the capability directly. This field stays until
+   *  BEING RETIRED: `permissions` below now carries the capability directly. This field stays until
    *  `personas-are-the-launch-primitive` rewires every launch site off `SessionRole`. */
   role: SessionRole;
-  /** This persona's own permission floor. Packaged personas ship one generated from their role row
-   *  (`scripts/gen-persona-floors.mjs`), kept honest by `personaFloorParity.test.ts`. */
-  floor?: PersonaFloor;
-  /** The persona this one's floor NARROWS from. Read by the store's clamp: a persona with no
-   *  ancestor may only be created with an all-`none` floor, so a new persona fails closed. */
+  /** This persona's own permissions — the whole answer to "what may this agent do". */
+  permissions?: PersonaPermissions;
+  /** The persona this one's permissions NARROW from. Read by the store's clamp: a persona with no
+   *  ancestor may only be created with all-`none` permissions, so a new persona fails closed. */
   derivesFrom?: string;
   /** The start prompt / protocol injected at launch (prose). Empty is allowed (falls back to the
    *  role's own kickoff assembly downstream). */

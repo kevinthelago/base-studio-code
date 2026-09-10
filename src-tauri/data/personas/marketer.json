@@ -3,13 +3,35 @@
   "order": 9.5,
   "name": "Marketer",
   "role": "marketer",
-  "floor": {
+  "permissions": {
     "github": "read",
     "git": "read",
     "code": "none",
     "net": "read",
     "ui": "read",
     "graph": "read",
+    "mode": "allow",
+    "tools": {
+      "read": "allow",
+      "grep": "allow",
+      "glob": "allow",
+      "edit": "allow",
+      "write": "allow",
+      "bash": "allow",
+      "web": "allow",
+      "task": "allow"
+    },
+    "commands": [
+      "cargo",
+      "npm",
+      "pnpm",
+      "pytest",
+      "make",
+      "node",
+      "docker",
+      "gh",
+      "aws"
+    ],
     "writeGlobs": [
       "marketing/**/*.md",
       "marketing/**/*.mdx",
@@ -19,6 +41,16 @@
       "**/README*",
       "CHANGELOG*",
       "**/CHANGELOG*"
+    ],
+    "allowGlobs": [
+      "**/*"
+    ],
+    "denyGlobs": [
+      "**/.env",
+      "**/secrets/**"
+    ],
+    "netAllow": [
+      "*"
     ]
   },
   "blurb": "Opt-in marketing (#2431) — turns the market-research findings into in-repo collateral: landing/README copy, launch posts, SEO, release announcements. Attach to a blueprint's team.",

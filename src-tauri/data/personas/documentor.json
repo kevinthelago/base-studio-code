@@ -3,19 +3,51 @@
   "order": 9,
   "name": "Documentor",
   "role": "documentor",
-  "floor": {
+  "permissions": {
     "github": "read",
     "git": "read",
     "code": "none",
     "net": "read",
     "ui": "read",
     "graph": "read",
+    "mode": "allow",
+    "tools": {
+      "read": "allow",
+      "grep": "allow",
+      "glob": "allow",
+      "edit": "allow",
+      "write": "allow",
+      "bash": "allow",
+      "web": "allow",
+      "task": "allow"
+    },
+    "commands": [
+      "cargo",
+      "npm",
+      "pnpm",
+      "pytest",
+      "make",
+      "node",
+      "docker",
+      "gh",
+      "aws"
+    ],
     "writeGlobs": [
       "*.md",
       "**/*.md",
       "README*",
       "**/README*",
       "CHANGELOG*"
+    ],
+    "allowGlobs": [
+      "**/*"
+    ],
+    "denyGlobs": [
+      "**/.env",
+      "**/secrets/**"
+    ],
+    "netAllow": [
+      "*"
     ]
   },
   "blurb": "Reconciles the project's prose docs after a change lands — docs only, no code.",

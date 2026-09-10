@@ -29,7 +29,31 @@
         "code": "write",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "ask",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "commands": [
+          "gh"
+        ],
+        "allowGlobs": [
+          ".studio/plan/**",
+          "docs/plan/**"
+        ],
+        "denyGlobs": [
+          "src/**"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "*.md *.json prompts/*.md prompts/* discovery/*.md discovery/*",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -47,6 +71,38 @@
         "net": "read",
         "ui": "read",
         "graph": "write",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ],
         "surfaces": [
           "plan",
           "graph",
@@ -78,6 +134,23 @@
         "net": "read",
         "ui": "read",
         "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ],
         "surfaces": [
           "plan",
           "fleet",
@@ -104,7 +177,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -121,7 +211,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -138,7 +245,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -155,7 +279,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -172,7 +313,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -195,7 +353,39 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ]
       },
       "scopeGlobs": "*.md **/*.md README* **/README* CHANGELOG*",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -215,9 +405,22 @@
         "net": "none",
         "ui": "write",
         "graph": "read",
-        "harvestRoots": [
-          "app-repo",
-          "projects"
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
         ],
         "allow": [
           "bsc ui",
@@ -234,6 +437,10 @@
           "bsc session reply",
           "bsc request get",
           "bsc persona whatami"
+        ],
+        "harvestRoots": [
+          "app-repo",
+          "projects"
         ]
       },
       "scopeGlobs": "scratch/**",
@@ -254,6 +461,23 @@
         "net": "none",
         "ui": "none",
         "graph": "none",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ],
         "allow": [
           "bsc teams",
           "bsc persona",
@@ -290,9 +514,22 @@
         "net": "none",
         "ui": "read",
         "graph": "write",
-        "harvestRoots": [
-          "app-repo",
-          "projects"
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
         ],
         "allow": [
           "bsc graph",
@@ -304,6 +541,10 @@
           "bsc session reply",
           "bsc request get",
           "bsc persona whatami"
+        ],
+        "harvestRoots": [
+          "app-repo",
+          "projects"
         ]
       },
       "scopeGlobs": "scratch/**",
@@ -324,6 +565,23 @@
         "net": "none",
         "ui": "none",
         "graph": "none",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ],
         "allow": [
           "bsc sound",
           "bsc request new",
@@ -358,7 +616,39 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ]
       },
       "scopeGlobs": "marketing/**/*.md marketing/**/*.mdx content/**/*.md content/**/*.mdx README* **/README* CHANGELOG* **/CHANGELOG*",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -382,6 +672,38 @@
         "net": "read",
         "ui": "read",
         "graph": "write",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ],
         "surfaces": [
           "plan",
           "graph",
@@ -410,6 +732,38 @@
         "net": "read",
         "ui": "read",
         "graph": "write",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ],
         "surfaces": [
           "plan",
           "graph",
@@ -438,9 +792,22 @@
         "net": "none",
         "ui": "write",
         "graph": "read",
-        "harvestRoots": [
-          "app-repo",
-          "projects"
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
         ],
         "allow": [
           "bsc ui",
@@ -457,6 +824,10 @@
           "bsc session reply",
           "bsc request get",
           "bsc persona whatami"
+        ],
+        "harvestRoots": [
+          "app-repo",
+          "projects"
         ]
       },
       "scopeGlobs": "scratch/**",
@@ -478,7 +849,24 @@
         "code": "none",
         "net": "read",
         "ui": "read",
-        "graph": "read"
+        "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ]
       },
       "scopeGlobs": "__bsc_deny_all__",
       "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
@@ -500,6 +888,23 @@
         "net": "read",
         "ui": "read",
         "graph": "read",
+        "mode": "deny",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "denyGlobs": [
+          "**/*"
+        ],
+        "netAllow": [
+          "api.github.com"
+        ],
         "surfaces": [
           "plan",
           "fleet",
@@ -535,6 +940,38 @@
         "net": "read",
         "ui": "read",
         "graph": "write",
+        "mode": "allow",
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "allowGlobs": [
+          "**/*"
+        ],
+        "denyGlobs": [
+          "**/.env",
+          "**/secrets/**"
+        ],
+        "netAllow": [
+          "*"
+        ],
         "surfaces": [
           "plan",
           "graph",
