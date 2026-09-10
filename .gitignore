@@ -48,6 +48,20 @@ Thumbs.db
 # Generated record cache — materialized from src-tauri/data seeds by scripts/emit-records.mjs
 .bsc-records/
 
+# THE KIT ARTIFACT IS DERIVED, not committed (`the-kit-artifact-is-derived-not-committed`).
+#
+# `react-ui.json` is 5.4 MB of GENERATED data whose home is now `graph/components.db`, and 619 of its
+# 660 entries were verbatim copies of `.bsc-records/` — carrying, inside a committed file, the banner
+# that says "do not commit". Its bytes were therefore a function of when a git-ignored cache was last
+# materialized rather than of the commit: measured on ONE commit, the drift guard said "in sync" in one
+# worktree and "3 runtime modules drifted" in another, minutes apart.
+#
+# Both files are materialized from the store by `bsc ui store import --apply`, which the gate runs, so
+# every tree and every bundle still has them. The sidecar goes with the artifact: it is that artifact's
+# hash, and committing a hash of something uncommitted is a promise nothing can keep.
+src-tauri/data/components/react-ui.json
+src-tauri/data/ui/react-ui-kit.meta.json
+
 # Nested worktrees. The convention is `wt-<short>/` at the repo root (CLAUDE.md, "Parallel worktree
 # agents"), which keeps them zero-install — and leaves every OTHER agent's worktree sitting in this one's
 # `git status` as untracked. A `git add -A` in the main tree then stages them as EMBEDDED GIT REPOSITORIES,

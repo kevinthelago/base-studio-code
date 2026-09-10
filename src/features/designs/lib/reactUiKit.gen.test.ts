@@ -4,11 +4,25 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS, REACT_UI_KIT_STORE_ID, REACT_UI_KIT_VERSION } from "@/features/designs/lib/reactUiKit";
 
-// The `react-ui` kit is GENERATED from the shared-UI manifest (slice 1), then COMMITTED as data
-// (#2305 slice 1b) — a self-contained, gist-distributable JSON file under src-tauri/data/components/
-// that the frontend seed + the `bsc ui` store read. This test is the generator + the drift
-// guard: `UPDATE_KITS=1 npx vitest run reactUiKit.gen` (re)writes the file; CI asserts it stays in
-// sync with the manifest, so the JSON can't silently drift from the registry.
+// The `react-ui` kit is GENERATED from the shared-UI manifest (slice 1) — a self-contained,
+// gist-distributable artifact the frontend seed and the `bsc ui` store read. This test is the
+// generator + the drift guard: `UPDATE_KITS=1 npx vitest run reactUiKit.gen` (re)writes it; CI asserts
+// it stays in sync with the manifest, so it can't silently drift from the registry.
+//
+// IT IS NO LONGER COMMITTED (`the-kit-artifact-is-derived-not-committed`). Its home is
+// `graph/components.db`, and the file under `src-tauri/data/components/` is a git-ignored CACHE that
+// `scripts/emit-records.mjs` materializes from the store — the same shape `.bsc-records/` has, for the
+// same reason. Two facts forced it: 619 of the artifact's 660 entries were verbatim copies of
+// `.bsc-records/`, carrying inside a committed file the banner that says "do not commit"; and its bytes
+// were therefore a function of when that git-ignored cache was last materialized rather than of the
+// commit — measured on ONE commit, this guard said "in sync" in one worktree and "3 runtime modules
+// drifted" in another, minutes apart.
+//
+// SO A REGENERATION HAS TWO STEPS, and the second is the one that persists:
+//     UPDATE_KITS=1 npx vitest run reactUiKit.gen    # rewrite the cache from the manifest
+//     bsc ui store sync --apply                      # push it into the store, which is its home
+// Without the second, the next `emit:records` materializes the OLD artifact back over the new one and
+// the regeneration undoes itself.
 //
 // #2465 stamps the packaged kit's GLOBAL-store identity (`bsc/react-ui@1.0.0`) into the artifact and
 // additionally generates a hash SIDECAR (`src-tauri/data/ui/react-ui-kit.meta.json` — under data/ui/,
@@ -195,21 +209,21 @@ function describeDrift(onDisk: typeof kitFile, fresh: typeof kitFile): string[] 
 describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
   it("stays in sync with the manifest-generated kit (UPDATE_KITS=1 to regenerate)", () => {
     if (process.env.UPDATE_KITS) writeFileSync(FILE, serialised);
-    expect(existsSync(FILE), "react-ui.json missing — run `UPDATE_KITS=1 npx vitest run reactUiKit.gen`").toBe(true);
+    expect(existsSync(FILE), "react-ui.json missing — it is materialized from graph/components.db by `npm run emit:records`").toBe(true);
     // Round-trip the expected value so the comparison ignores `undefined` fields JSON drops.
     const onDisk = JSON.parse(readFileSync(FILE, "utf8"));
     const fresh = JSON.parse(JSON.stringify(kitFile));
     const drift = describeDrift(onDisk, fresh);
     expect(
       drift,
-      `kit drifted from the manifest — run \`UPDATE_KITS=1 npx vitest run reactUiKit.gen\` to regenerate:\n${drift.join("\n")}`,
+      `kit drifted from the manifest — regenerate with \`UPDATE_KITS=1 npx vitest run reactUiKit.gen\`, then \`bsc ui store sync --apply\`:\n${drift.join("\n")}`,
     ).toEqual([]);
     expect(onDisk).toEqual(fresh);
   });
 
   it("keeps the packaged-kit hash sidecar in sync (#2465; UPDATE_KITS=1 to regenerate)", () => {
     if (process.env.UPDATE_KITS) writeFileSync(META_FILE, metaSerialised);
-    expect(existsSync(META_FILE), "react-ui-kit.meta.json missing — run `UPDATE_KITS=1 npx vitest run reactUiKit.gen`").toBe(true);
+    expect(existsSync(META_FILE), "react-ui-kit.meta.json missing — it is materialized from graph/components.db by `npm run emit:records`").toBe(true);
     expect(JSON.parse(readFileSync(META_FILE, "utf8"))).toEqual(meta);
     // The sidecar's hash must be the hash of the artifact's exact bytes (CRLF-normalized: a
     // pre-.gitattributes checkout may still hold the artifact CRLF; LF is the canonical byte form).

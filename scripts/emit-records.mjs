@@ -22,9 +22,11 @@
 // byte-for-byte identical, plus a whole-value comparison of all seven plan buckets (845 modules,
 // 551 tests, 1 shadowed, 4 unresolvable, 13 edge tests).
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXE = process.platform === "win32" ? "bsc-emit.exe" : "bsc-emit";
@@ -98,9 +100,49 @@ export function planRecords() {
   return JSON.parse(r.stdout);
 }
 
+/** Materialize the COMPONENT pillar's derived seed files from `graph/components.db`.
+ *
+ *  `react-ui.json` and its hash sidecar are GENERATED — 5.4 MB whose home is the store — and they are
+ *  git-ignored (`the-kit-artifact-is-derived-not-committed`), so a fresh clone or `git worktree add`
+ *  has neither. `tsc`, `vitest`, `vite build` and the tauri bundle all read them off disk, which is why
+ *  this belongs HERE rather than in the gate alone: `npm run typecheck` and `npm test` both call this
+ *  script and neither goes through the gate.
+ *
+ *  Writes only what differs, so confirming the tree is already correct moves no mtimes — the thing
+ *  cargo and vite decide to rebuild on.
+ *
+ *  A MISSING OR UNUSABLE `bsc` SKIPS IT rather than failing. This script's own job is the record tree;
+ *  a checkout that cannot build `bsc` yet still has whatever the last materialization left, and taking
+ *  `npm run typecheck` down over a cache would be the worse trade. */
+function materializeComponentSeeds() {
+  const bsc = pickUsable(candidatePaths(REPO, homedir(), join), {
+    statSize: (p) => {
+      try {
+        return statSync(p).size;
+      } catch {
+        return null;
+      }
+    },
+    run: (p) => {
+      try {
+        return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+      } catch (err) {
+        return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+      }
+    },
+  });
+  if (!bsc) return 0;
+  const r = spawnSync(bsc.path, ["ui", "store", "import", "--apply", "--root", REPO], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`bsc ui store import failed: ${(r.stderr || r.stdout || "").trim()}`);
+  return Number(/"seeds":\s*(\d+)/.exec(r.stdout ?? "")?.[1] ?? 0);
+}
+
 // Still a CLI: `tsc` does not run through vite, so `npm run typecheck` needs a way to materialize the
 // tree before type resolution.
 if (process.argv[1] && process.argv[1].endsWith("emit-records.mjs")) {
   const r = spawnSync(emitBinary(), ["--repo", REPO], { encoding: "utf8", stdio: "inherit" });
-  process.exit(r.status ?? 1);
+  if ((r.status ?? 1) !== 0) process.exit(r.status ?? 1);
+  const n = materializeComponentSeeds();
+  if (n) process.stdout.write(`emit-records: materialized ${n} component seed file(s) from the store\n`);
+  process.exit(0);
 }
