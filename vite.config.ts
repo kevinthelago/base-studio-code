@@ -33,6 +33,16 @@ export default defineConfig(async ({ command }) => ({
   // re-bundle / full-reload — the cold-start stalls) to `.vite-dev.log`. Off for `vite build`.
   ...(command === "serve" ? { customLogger: teeLogger() } : {}),
   clearScreen: false,
+  build: {
+    // Build output goes under `target/`, with the Rust build output, and NOT to a `dist/` at the repo
+    // root (`epic-built-items-live-only-in-target`). `tauri.conf.json`'s `frontendDist` names the same
+    // path; the two must move together or `tauri build` bundles a stale or missing frontend.
+    //
+    // Vite only empties the directory it is given, so this cannot reach the rest of `target/`. It is
+    // also inside the config root, so there is no out-of-root warning to suppress.
+    outDir: "target/dist",
+    emptyOutDir: true,
+  },
   // Pre-bundle the heavy dependencies once at dev-server start, rather than letting Vite
   // discover them during the cold module crawl and re-optimize mid-load (each re-optimization
   // reloads the page — a big part of the ~40s dev cold start, #perf). `lucide-react` is the worst:

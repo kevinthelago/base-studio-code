@@ -8,12 +8,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Every sidecar name (no `binaries/` prefix, no `.exe`), from the canonical bundle list. */
+/** Every sidecar name — the BASENAME of each `externalBin` entry, no `.exe`.
+ *
+ *  Taken as the basename rather than by stripping a known prefix, so the staged directory can move
+ *  without three copies of a regex needing to hear about it. It moved once already, from
+ *  `src-tauri/binaries/` to `target/sidecars/` (`epic-built-items-live-only-in-target`). */
 export function expectedBins(repoRoot) {
   const conf = JSON.parse(readFileSync(join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8"));
   const ext = conf?.bundle?.externalBin;
   if (!Array.isArray(ext) || ext.length === 0) {
     throw new Error("no bundle.externalBin array in tauri.conf.json — cannot know what to verify");
   }
-  return ext.map((p) => p.replace(/^binaries\//, ""));
+  return ext.map((p) => p.replace(/^.*\//, ""));
 }

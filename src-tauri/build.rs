@@ -1,5 +1,26 @@
 use std::{env, fs, path::Path};
 
+/// Where the build's own outputs go: under `target/`, never inside `src-tauri/`.
+///
+/// Both paths are relative to `src-tauri/` — that is the build script's cwd AND `CARGO_MANIFEST_DIR`,
+/// so one spelling serves [`ensure_sidecar_placeholder`] (which uses the cwd) and
+/// [`ensure_bundled_seeds`] (which joins onto the manifest dir).
+///
+/// ## Why `../target` and not something derived
+///
+/// Cargo does not hand a build script the target directory. `OUT_DIR` contains it, but the number of
+/// components to strip differs between a host build and a `--target <triple>` one, so walking up is a
+/// guess that breaks on exactly the builds nobody runs locally. `.cargo/config.toml` settles the
+/// question instead: it explicitly REJECTS a shared `CARGO_TARGET_DIR` ("it broke tauri builds before,
+/// and it puts every concurrent cargo behind ONE target-dir lock"), so a per-worktree `<root>/target/`
+/// is the layout this repo has chosen and pinned.
+///
+/// `tauri.conf.json` has to spell the same relative path in `externalBin` and every `bundle.resources`
+/// key, so both sides already depend on that layout. Deriving it here would make them disagree without
+/// making either correct.
+const SIDECAR_DIR: &str = "../target/sidecars";
+const BUNDLE_RESOURCE_DIR: &str = "../target/bundle-resources";
+
 fn main() {
     ensure_sidecar_placeholder();
     stage_config_seed();
@@ -88,8 +109,13 @@ const BUNDLED_SEEDS: &[&str] = &[
     "fleet/defer-stuck-directive.md",
 ];
 
-/// Stage the runtime-loaded seeds into `src-tauri/resources/data/…`, which is what
+/// Stage the runtime-loaded seeds into `target/bundle-resources/data/…`, which is what
 /// `bundle.resources` points at — NOT the live `data/` tree.
+///
+/// The staged copy lives under `target/` because it is a BUILD OUTPUT and build output does not
+/// belong inside the source tree (`epic-built-items-live-only-in-target`). Moving it there also took
+/// it out of `tauri dev`'s watch scope for free — `.taurignore` never listed it, so the watcher was
+/// carrying 9.7 MB of staged copy it could only ever see change as a result of its own build.
 ///
 /// ## Why the indirection exists
 ///
@@ -97,7 +123,9 @@ const BUNDLED_SEEDS: &[&str] = &[
 /// at `data/` therefore re-created exactly the coupling this work exists to remove: MEASURED, with
 /// resources aimed at the source tree, touching `react-ui.json` rebuilt and relinked the app in
 /// 23.2s; with the entries removed it was 1.2s and zero crates. Aiming them at a staged copy keeps
-/// the seeds shipping while leaving the source tree unwatched.
+/// the seeds shipping while leaving the source tree unwatched. That property is the reason this
+/// indirection exists AT ALL, so do not "simplify" it later by pointing the resource entries back at
+/// `data/` — the staged copy moving to `target/` does not change the argument.
 ///
 /// ## Why "if absent" and not "always"
 ///
@@ -135,7 +163,7 @@ fn ensure_bundled_seeds() {
     }
 
     for rel in &seeds {
-        let dst = root.join("resources").join("data").join(rel);
+        let dst = root.join(BUNDLE_RESOURCE_DIR).join("data").join(rel);
         if dst.exists() {
             continue;
         }
@@ -273,10 +301,17 @@ fn ensure_sidecar_placeholder() {
     }
     let ext = if target.contains("windows") { ".exe" } else { "" };
     for name in sidecar_names() {
-        let path = format!("binaries/{name}-{target}{ext}");
+        let path = format!("{SIDECAR_DIR}/{name}-{target}{ext}");
         if !Path::new(&path).exists() {
-            let _ = fs::create_dir_all("binaries");
-            let _ = fs::write(&path, b"");
+            // Loudly: a placeholder that fails to appear surfaces later as `tauri_build` reporting a
+            // missing resource, which names the path but not the reason. Both errors were swallowed
+            // by `let _ =` and that cost a debugging round on exactly this function.
+            if let Err(e) = fs::create_dir_all(SIDECAR_DIR) {
+                panic!("could not create the sidecar staging dir {SIDECAR_DIR}: {e}");
+            }
+            if let Err(e) = fs::write(&path, b"") {
+                panic!("could not write the sidecar placeholder {path}: {e}");
+            }
         }
     }
 }
@@ -307,7 +342,12 @@ fn sidecar_names() -> Vec<String> {
         let after = &rest[start + 1..];
         let end = after.find('"').expect("unterminated externalBin entry");
         let entry = &after[..end];
-        names.push(entry.strip_prefix("binaries/").unwrap_or(entry).to_string());
+        // The NAME is the entry's basename. Taken that way rather than by stripping a known
+        // directory prefix: the staged directory moved once already (`src-tauri/binaries/` ->
+        // `target/sidecars/`), and a stale prefix here does not fail — it silently yields the whole
+        // path as the "name", so the placeholder is written one directory too deep and `tauri_build`
+        // reports the resource as missing with no hint about why.
+        names.push(entry.rsplit('/').next().unwrap_or(entry).to_string());
         rest = &after[end + 1..];
     }
     assert!(

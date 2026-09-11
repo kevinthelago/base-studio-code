@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           echo "== staged externalBin =="
-          ls -la src-tauri/binaries || true
+          ls -la target/sidecars || true
           missing=0
           for bin in bsc-plan bsc-agent; do
             echo "== searching bundle output for $bin =="

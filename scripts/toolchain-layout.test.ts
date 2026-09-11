@@ -52,7 +52,7 @@ describe("toolchain-layout: gh staged name (Tauri externalBin convention)", () =
 
 describe("toolchain-layout: PortableGit dir", () => {
   it("nests portable-git under the out dir (what env.rs resolves beside the exe)", () => {
-    expect(portableGitDir("src-tauri/binaries")).toBe(join("src-tauri/binaries", "portable-git"));
+    expect(portableGitDir("target/sidecars")).toBe(join("target/sidecars", "portable-git"));
   });
 });
 
