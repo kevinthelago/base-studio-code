@@ -241,6 +241,11 @@ async function capture(
       writeFileSync(f, ERRAND);
       args.push("--errand-file", f);
     }
+    // A manual console's directory and command are the user's own; the view hands them down, and so does this.
+    if (paneId.startsWith("man:") && props.initialCwd) {
+      args.push("--cwd", props.initialCwd);
+      if (props.initCmd) args.push("--init-cmd", props.initCmd);
+    }
     const r = spawnSync(RUST_BIN, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     let rust: Record<string, unknown> | null;
     try { rust = JSON.parse(r.stdout) as Record<string, unknown>; } catch { rust = null; }
@@ -338,6 +343,10 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
       ...pick("llmNumCtx"), ...pick("defaultModel"), ...pick("sandboxConsoles"), ...pick("agentProfiles"),
       ...pick("mcpServers"), ...pick("planClassification"), ...pick("projectBlueprintId"),
       ...pick("restrictToBscIssues"), ...pick("repoTriagePromptDoc"), ...pick("planFleet"),
+      // The user's own per-pane choices. The resolver reads the same persisted maps over its derivation, so
+      // the renderer's side has to start from them too or every pane a user ever touched reads as a diff.
+      ...pick("paneProviders"), ...pick("paneModels"), ...pick("paneProfiles"), ...pick("panePersonas"),
+      ...pick("sessionSkillOverrides"), ...pick("sessionSkillGroups"),
       githubToken: sentinel("githubToken", p.githubToken),
       repoGithubTokens: repoTokens,
       claudeApiKey: sentinel("claudeApiKey", p.claudeApiKey),
@@ -448,6 +457,11 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
     const clone = join(BASE, "projects", TRIAGE_PROJECT, TRIAGE_REPO.split("/").pop()!);
     store.useAppStore.getState().triageStartProject(TRIAGE_PROJECT, [TRIAGE_REPO], TRIAGE_PROJECT, undefined, { [TRIAGE_REPO]: clone });
     await fleetPane(`${TRIAGE_PROJECT}:${TRIAGE_REPO}:triage`)();
+  }, 120_000);
+
+  it("manual console — man:parity-tab:p0", async () => {
+    // The Console page's "+" pane: the user's own directory and command, handed down by the slot.
+    await capture("man:parity-tab:p0", { initialCwd: APP_REPO, initCmd: "claude" });
   }, 120_000);
 
   it("surface operator — surface-studio:noun-session", surfacePane("noun:session"), 120_000);
