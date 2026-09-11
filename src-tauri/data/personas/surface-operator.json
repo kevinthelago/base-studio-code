@@ -3,6 +3,7 @@
   "order": 12.75,
   "name": "Surface operator",
   "role": "operator",
+  "label": "surface",
   "permissions": {
     "github": "read",
     "git": "read",

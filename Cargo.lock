@@ -1085,6 +1085,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-llm",
+ "bsc-persona",
  "bsc-project",
  "bsc-sandbox",
  "bsc-util",
