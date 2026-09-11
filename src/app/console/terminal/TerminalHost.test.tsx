@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TerminalHost, ownerClaim, claimIsOnScreen, onScreenPaneIds, type SlotTerminalProps } from "./TerminalHost";
+import { act } from "@testing-library/react";
+import { TerminalHost, ownerClaim, claimIsOnScreen, onScreenPaneIds, heldPaneIds, type SlotTerminalProps } from "./TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { useAppStore } from "@/store";
 
@@ -31,7 +32,10 @@ vi.mock("@/app/console/panes/views/TerminalView", async () => {
   };
 });
 
-beforeEach(() => { rec.mounts.length = 0; rec.unmounts.length = 0; });
+beforeEach(() => {
+  rec.mounts.length = 0; rec.unmounts.length = 0;
+  useAppStore.setState({ paneLaunchGen: {}, endedPanes: {}, disabledPanes: {}, dormantPanes: {} });
+});
 
 /** Console cell (primary) + optionally the Glance dock (viewer), both claiming the same agent's terminal. */
 function Harness({ showDock, cellVisible = true }: { showDock: boolean; cellVisible?: boolean }) {
@@ -473,5 +477,61 @@ describe("onScreenPaneIds — every pane a surface is showing, not one focused i
   it("is empty for an empty registry — nothing mounted means nothing protected", () => {
     expect(onScreenPaneIds(new Map())).toEqual([]);
     expect(onScreenPaneIds(new Map([["p:x", []]]))).toEqual([]);
+  });
+});
+
+/// `a-woken-fleet-worker-has-no-mount-so-wake-spawns-nothing`. The maintainer's rule: a session that wakes
+/// another MOUNTS and STARTS it with the prompt it gave. The console is one terminal per tab, so a woken worker
+/// has no surface; the host holds it. MEASURED before this: `bsc fleet provision radio --stream ui-lan` acked
+/// `woke: true` and the app log has no pty line for the pane at all.
+describe("TerminalHost holds the panes a session started (a-woken-fleet-worker-has-no-mount-so-wake-spawns-nothing)", () => {
+  const wire = (paneId: string, cwd: string) => {
+    const st = useAppStore.getState();
+    useAppStore.setState({
+      paneCwds: { ...st.paneCwds, [paneId]: cwd },
+      paneInitCmds: { ...st.paneInitCmds, [paneId]: "claude" },
+    });
+  };
+
+  it("mounts and launches a started pane that no surface claims", () => {
+    wire("radio:ui-lan", "/worktrees/radio/ui-lan");
+    useAppStore.setState({ paneLaunchGen: { "radio:ui-lan": 1 } });
+    render(<TerminalHost><div /></TerminalHost>);
+    const tv = document.querySelector("[data-pane='radio:ui-lan']");
+    expect(tv, "a woken pane with no surface never started").toBeTruthy();
+    expect(tv!.getAttribute("data-cwd")).toBe("/worktrees/radio/ui-lan");
+    expect(tv!.getAttribute("data-cmd")).toBe("claude");
+  });
+
+  it("relaunches the terminal when a wake bumps the generation", () => {
+    wire("radio:radio", "/worktrees/radio/radio");
+    useAppStore.setState({ paneLaunchGen: { "radio:radio": 1 } });
+    render(<TerminalHost><div /></TerminalHost>);
+    expect(rec.mounts).toEqual(["radio:radio"]);
+    act(() => { useAppStore.setState({ paneLaunchGen: { "radio:radio": 2 } }); });
+    // The wake bridge has already killed the PTY, so a remount is what spawns the new session.
+    expect(rec.unmounts).toEqual(["radio:radio"]);
+    expect(rec.mounts).toEqual(["radio:radio", "radio:radio"]);
+  });
+
+  it("relaunches a pane a SURFACE is showing too, rather than leaving it attached to a killed PTY", () => {
+    render(
+      <TerminalHost>
+        <div data-testid="glance-dock"><TerminalSlot paneId="radio:director" visible /></div>
+      </TerminalHost>,
+    );
+    act(() => { useAppStore.setState({ paneLaunchGen: { "radio:director": 1 } }); });
+    expect(rec.mounts).toEqual(["radio:director", "radio:director"]);
+    expect(document.querySelectorAll("[data-pane='radio:director']")).toHaveLength(1);
+  });
+
+  it("does not hold a pane that was reaped, ended or disabled, so held terminals cannot pile up", () => {
+    expect(heldPaneIds(
+      { a: 1, b: 2, c: 1, d: 1, e: 0 },
+      { dormantPanes: { b: true }, endedPanes: { c: {} }, disabledPanes: { d: true } },
+    )).toEqual(["a"]);
+    useAppStore.setState({ paneLaunchGen: { "radio:lexicographer": 1 }, dormantPanes: { "radio:lexicographer": true } });
+    render(<TerminalHost><div /></TerminalHost>);
+    expect(document.querySelector("[data-pane='radio:lexicographer']")).toBeNull();
   });
 });

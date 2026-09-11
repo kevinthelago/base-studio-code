@@ -75,6 +75,16 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(useAppStore.getState().endedPanes[PANE]).toBeUndefined();
   });
 
+  // `a-woken-fleet-worker-has-no-mount-so-wake-spawns-nothing`: nothing keys on runId since the console went
+  // one terminal per tab. The launch generation is what `TerminalHost` mounts and relaunches by.
+  it("bumps the pane's launch generation on every wake, so the host mounts and relaunches it", () => {
+    useAppStore.setState({ paneLaunchGen: {} });
+    expect(useAppStore.getState().wakePane(PANE, "first")).toBe(true);
+    expect(useAppStore.getState().paneLaunchGen[PANE]).toBe(1);
+    expect(useAppStore.getState().wakePane(PANE, "second")).toBe(true);
+    expect(useAppStore.getState().paneLaunchGen[PANE]).toBe(2);
+  });
+
   it("returns false for a pane no open tab hosts, so the caller can fall back", () => {
     expect(useAppStore.getState().wakePane("other-project:ghost", "x")).toBe(false);
   });

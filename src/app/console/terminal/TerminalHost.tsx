@@ -207,7 +207,32 @@ export function useTerminalHost(): HostApi | null {
   return useContext(TerminalHostCtx);
 }
 
+/** The panes the HOST itself holds: every pane a session started (it has a launch generation) that has not
+ *  since been reaped, ended or disabled (`a-woken-fleet-worker-has-no-mount-so-wake-spawns-nothing`).
+ *
+ *  A wake used to be "seat the pane and bump its tab's `runId`", which remounted a console grid cell. The
+ *  console is one terminal per tab now, so a woken worker was seated where nothing renders it and never
+ *  started. The maintainer's rule: a session that wakes another MOUNTS and STARTS it with the prompt it gave.
+ *  Holding it here, rather than in a surface, means it starts whether or not anyone is looking — and a
+ *  reaped pane drops out, so held terminals cannot accumulate. Pure — exported for the unit tests. */
+export function heldPaneIds(
+  launchGen: Record<string, number> | undefined,
+  gone: { endedPanes?: Record<string, unknown>; disabledPanes?: Record<string, unknown>; dormantPanes?: Record<string, unknown> },
+): string[] {
+  return Object.entries(launchGen ?? {})
+    .filter(([id, gen]) => gen > 0 && !gone.endedPanes?.[id] && !gone.disabledPanes?.[id] && !gone.dormantPanes?.[id])
+    .map(([id]) => id);
+}
+
 export function TerminalHost({ children }: { children: ReactNode }) {
+  const launchGen     = useAppStore((s) => s.paneLaunchGen);
+  const endedPanes    = useAppStore((s) => s.endedPanes);
+  const disabledPanes = useAppStore((s) => s.disabledPanes);
+  const dormantPanes  = useAppStore((s) => s.dormantPanes);
+  const held = useMemo(
+    () => new Set(heldPaneIds(launchGen, { endedPanes, disabledPanes, dormantPanes })),
+    [launchGen, endedPanes, disabledPanes, dormantPanes],
+  );
   // paneId → ordered claims (last = owner). Held in a ref (the source of truth); a version counter drives
   // re-renders so we never store DOM els / live callbacks in React state.
   const registryRef = useRef<Map<string, Claim[]>>(new Map());
@@ -282,7 +307,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
       const owner = claims && ownerClaim(claims, claimIsOnScreen);
       if (owner?.el) {
         if (container.parentElement !== owner.el) owner.el.appendChild(container);
-      } else if (map.has(paneId)) {
+      } else if (map.has(paneId) || held.has(paneId)) {
         // Claimed but the owner has no element yet — hold it (shouldn't happen; defensive).
         if (container.parentElement !== holdingRef.current) holdingRef.current?.appendChild(container);
       } else {
@@ -293,7 +318,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
     }
   });
 
-  const activePaneIds = Array.from(registryRef.current.keys());
+  const activePaneIds = [...new Set([...registryRef.current.keys(), ...held])];
 
   return (
     <TerminalHostCtx.Provider value={api}>
@@ -303,7 +328,29 @@ export function TerminalHost({ children }: { children: ReactNode }) {
       {/* eslint-disable-next-line no-restricted-syntax -- imperative re-parent target for parked terminals */}
       <div ref={holdingRef} style={{ display: "none" }} aria-hidden />
       {activePaneIds.map((paneId) => {
-        const claims = registryRef.current.get(paneId)!;
+        const claims = registryRef.current.get(paneId) ?? [];
+        // THE LAUNCH GENERATION IS PART OF THE KEY, so a wake that bumps it remounts the terminal — the wake
+        // bridge has already killed the PTY, so the remount spawns fresh with the prompt rather than reattaching.
+        const launchKey = `${paneId}:${launchGen?.[paneId] ?? 0}`;
+        if (!claims.length) {
+          // HELD BY THE HOST — started by a session, shown by no surface. Launched from what the store wired
+          // for it; the prompt is read from the store by `TerminalView`, which `wakePane` wrote in the same
+          // update that bumped the generation, so it cannot be missed.
+          const st = useAppStore.getState();
+          return createPortal(
+            <TerminalView
+              paneId={paneId}
+              visible={false}
+              focused={false}
+              initialCwd={st.paneCwds[paneId]}
+              initCmd={st.paneInitCmds[paneId]}
+              onCwdChange={(path) => st.setPaneCwd(paneId, path)}
+              onStatusChange={(status) => st.setPaneStatus(paneId, status)}
+            />,
+            containerFor(paneId),
+            launchKey,
+          );
+        }
         const owner = ownerClaim(claims, claimIsOnScreen)!;
         // Launch/data props from the primary (console) claim; visibility/focus from the current owner.
         const primaryClaim = claims.find((c) => c.propsRef.current.primary);
@@ -361,7 +408,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
             onFocus={pp.onFocus}
           />,
           containerFor(paneId),
-          paneId,
+          launchKey,
         );
       })}
     </TerminalHostCtx.Provider>
