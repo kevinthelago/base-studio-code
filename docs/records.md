@@ -2,11 +2,11 @@
 
 Most of this app's frontend no longer exists as files. **969 modules ship as records** — 311 component
 records under `src-tauri/data/components/app/**` and 658 implementations carrying a `provides` in the
-**committed record store** (`graph/records.db`, a database — 2,946 records), each
+**committed record store** (`graph/algorithms.db`, a database — 2,946 records), each
 answering a specifier an importer writes. **57 non-test modules remain under `src/`**, down from 388. This
 is epic #3604, "the graph IS the app".
 
-> **THE COMMITTED STORE IS A DATABASE** (`retire-the-committed-json-record-store`). `graph/records.db`,
+> **THE COMMITTED STORE IS A DATABASE** (`retire-the-committed-json-record-store`). `graph/algorithms.db`,
 > in the ledger's own schema, named by `graph/store.toml`. `graph/algorithms.json` and the 2,944
 > per-record JSON files are GONE — there is no file to open in an editor, and no promote step: an
 > `impl set --repo` writes the store the build reads, and an `impl set` WITHOUT it writes the per-user
@@ -14,7 +14,7 @@ is epic #3604, "the graph IS the app".
 
 > **The algorithm half moved out of the packaged seed** (`retire-the-packaged-seed-directories`). It used
 > to live in `src-tauri/data/knowledge/algorithms.json`; `bsc-emit` now materializes it from the committed
-> store instead — the same pair of files `graph-materialize` compiles 25 Rust crates from. So one store
+> store instead — the same pair of files `graph-materialize` compiles 76 Rust crates from. So one store
 > decides what BOTH halves of the app compile, and a record edit is reviewable on a branch. The seed file
 > still exists and still ships, but nothing the build does reads it any more.
 
@@ -74,7 +74,7 @@ There are two copies of every record and they are not the same thing.
 | | what it is | where |
 |---|---|---|
 | **seed** (components) | what SHIPS, and for a COMPONENT also the committed home. Checked into git, identical for everyone. | `src-tauri/data/components/app/**` |
-| **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and the materialized Rust crates. Checked into git, ONE DATABASE, merged by a git driver and rendered readable by a textconv. | `graph/records.db` (named by `graph/store.toml`) |
+| **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and the materialized Rust crates. Checked into git, ONE DATABASE, merged by a git driver and rendered readable by a textconv. | `graph/algorithms.db` (named by `graph/store.toml`) |
 | **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc graph`, never off the file. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
 
 The two committed homes are asymmetric and it matters: an ALGORITHM record has a git-tracked home that is

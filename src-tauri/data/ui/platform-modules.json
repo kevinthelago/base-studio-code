@@ -209,6 +209,7 @@
   "@/shared/hooks/usePoll",
   "@/shared/hooks/useRailSections",
   "@/shared/hooks/useSandboxReadiness",
+  "@/shared/hooks/useScreenDescriptor",
   "@/shared/lib/a11y/announcer",
   "@/shared/lib/a11y/speech",
   "@/shared/lib/core/achievementChime",

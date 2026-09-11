@@ -178,3 +178,21 @@
 }
 .mem-node[data-orphan="true"] { border-color: var(--warning, #d29922); }
 
+
+/* ─── The Topics page (`the-memory-workspace-shows-the-topic-tree`) ─── */
+.mem-topics-count { color: var(--fg-dim); font-size: 12px; margin: 0; }
+.mem-topic-tree {
+  list-style: none; margin: 0; padding: 0 0 0 16px;
+  border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px;
+}
+.mem-topic-roots { padding-left: 0; border-left: none; }
+.mem-topic-head { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 3px 0; }
+.mem-topic-name { font-weight: 600; }
+.mem-topic-scale { color: var(--fg-dim); font-size: 11px; }
+.mem-topic-text { color: var(--fg-dim); font-size: 12px; margin: 0 0 4px 18px; max-width: 80ch; line-height: 1.45; }
+.mem-topic-items { list-style: none; margin: 0 0 4px 18px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mem-topic-item { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.mem-topic-item .mem-kind { min-width: 72px; }
+.mem-topic[data-status="done"] > details > .mem-topic-head { opacity: 0.6; }
+.mem-row[data-kind="topic"], .mem-node[data-kind="topic"] { border-left-color: var(--accent, #58a6ff); border-left-width: 4px; }
+.mem-row[data-kind="entry"], .mem-node[data-kind="entry"] { border-left-color: color-mix(in srgb, var(--accent, #58a6ff) 55%, var(--border)); }
