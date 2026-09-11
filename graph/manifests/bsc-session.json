@@ -128,7 +128,16 @@
           "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [],
-          "value": "{ path = \"../bsc-sqlite-util\" }"
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# session.db (frontend-state-3-the-store-stops-restating-pane-wiring): the per-pane choices a user makes,",
+            "# kept where the launch reads them instead of only in the renderer's app-state.json."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
           "cont": [],

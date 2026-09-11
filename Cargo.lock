@@ -1533,6 +1533,7 @@ dependencies = [
  "bsc-sqlite-util",
  "bsc-util",
  "plandb",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
