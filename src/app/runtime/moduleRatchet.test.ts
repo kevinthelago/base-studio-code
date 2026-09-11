@@ -98,7 +98,6 @@ const ON_DISK: string[] = [
   "src/shared/lib/core/log.ts",
   "src/shared/lib/core/perf.ts",
   "src/shared/lib/core/startupTrace.ts",
-  "src/shared/lib/fleet/launchGate.ts",
   "src/shared/lib/github/githubProbe.ts",
   "src/shared/lib/graph/cssColor.ts",
   "src/shared/lib/preview/componentBundle.ts",

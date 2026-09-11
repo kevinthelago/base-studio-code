@@ -71,9 +71,9 @@ import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
 import * as Bsc from "@/shared/lib/core/bsc";
 import * as ProjectPaths from "@/shared/lib/core/projectPaths";
 import * as UseCoordLog from "@/shared/lib/fleet/useCoordLog";
-// #4186 — the four the Console page reaches that no earlier graph page did: the launch gate and its hook,
-// the worker-audit reader behind the pane states, and the CI watcher. Feature-agnostic, so the shell's set.
-import * as LaunchGate from "@/shared/lib/fleet/launchGate";
+// #4186 — what the Console page reaches that no earlier graph page did: the fleet gate hook, the worker-audit
+// reader behind the pane states, and the CI watcher. Feature-agnostic, so the shell's set. (The launch gate
+// that sat here is gone: the launch is resolved in Rust — frontend-state-2b-the-typescript-launch-composers-are-deleted.)
 import * as UseFleetGate from "@/shared/lib/fleet/useFleetGate";
 import * as WorkerAudit from "@/shared/lib/fleet/workerAudit";
 import * as CoordinationWakes from "@/shared/lib/fleet/coordinationWakes";
@@ -214,7 +214,6 @@ import * as TerminalNudge from "@/app/console/lib/terminalNudge";
 import * as JumbleProbe from "@/app/console/lib/jumbleProbe";
 import * as Checkpoint from "@/shared/lib/session/checkpoint";
 import * as PendingPtyData from "@/app/console/lib/pendingPtyData";
-import * as SessionLaunch from "@/app/console/lib/sessionLaunch";
 import * as UseTerminalSession from "@/app/console/useTerminalSession";
 import * as RepoCredentials from "@/shared/lib/github/repoCredentials";
 import * as PaneActivity from "@/app/console/lib/paneActivity";
@@ -522,7 +521,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/core/bsc": Bsc,
   "@/shared/lib/core/projectPaths": ProjectPaths,
   "@/shared/lib/fleet/useCoordLog": UseCoordLog,
-  "@/shared/lib/fleet/launchGate": LaunchGate,
   "@/shared/lib/fleet/useFleetGate": UseFleetGate,
   "@/shared/lib/fleet/workerAudit": WorkerAudit,
   "@/shared/lib/fleet/coordinationWakes": CoordinationWakes,
@@ -590,7 +588,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/app/console/lib/jumbleProbe": JumbleProbe,
   "@/shared/lib/session/checkpoint": Checkpoint,
   "@/app/console/lib/pendingPtyData": PendingPtyData,
-  "@/app/console/lib/sessionLaunch": SessionLaunch,
   "@/app/console/useTerminalSession": UseTerminalSession,
   "@/shared/lib/github/repoCredentials": RepoCredentials,
   "@/app/console/lib/paneActivity": PaneActivity,
