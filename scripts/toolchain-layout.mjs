@@ -20,7 +20,7 @@ export function ghArchiveMember(version, assetOs, assetArch) {
 }
 
 /** The staged on-disk name for a bundled `gh`, matching Tauri's externalBin convention
- *  (`gh-<triple>[.exe]`) so a future `externalBin: ["binaries/gh"]` flip resolves it. */
+ *  (`gh-<triple>[.exe]`) so a future `externalBin: ["../target/sidecars/gh"]` flip resolves it. */
 export function ghStagedName(triple) {
   const ext = triple.includes("windows") ? ".exe" : "";
   return `gh-${triple}${ext}`;

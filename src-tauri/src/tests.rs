@@ -1113,10 +1113,18 @@
             .expect("bundle.resources must exist — the runtime-loaded seeds have to ship");
 
         // The TARGET path is what matters: `bsc_util::packaged` looks for `<exe_dir>/data/<rel>`, so
-        // the resource must land there whatever the source path is. The SOURCE is deliberately
-        // `resources/data/<rel>` — a staged copy — because `tauri_build` emits a rerun-if-changed for
-        // every resource, and pointing them at the live tree rebuilt the app on every record edit
-        // (measured 23.2s vs 1.2s). Asserting the target keeps that indirection free to change.
+        // the resource must land there whatever the source path is. The SOURCE is deliberately a
+        // STAGED COPY, because `tauri_build` emits a rerun-if-changed for every resource, and
+        // pointing them at the live tree rebuilt the app on every record edit (measured 23.2s vs
+        // 1.2s; re-measured after the copy moved: 3.09s against a 4.11s no-op, i.e. no rebuild).
+        //
+        // WHAT IS ASSERTED, and why it is not the directory. This used to demand the source start
+        // with `resources/`, which contradicted the comment directly above it ("asserting the target
+        // keeps that indirection free to change") and broke the moment the staged copy moved to
+        // `target/bundle-resources/` (`epic-built-items-live-only-in-target`). The property that
+        // actually matters has no directory in it: the source must MIRROR the target's layout, and
+        // must not BE the live tree. Pointing at the live tree is exactly the case `source == target`,
+        // since the target is `data/<rel>` and the live seed is at `data/<rel>` too.
         for rel in bsc_util::packaged::RUNTIME_SEEDS {
             let target = format!("data/{rel}");
             let entry = resources.iter().find(|(_, v)| v.as_str() == Some(target.as_str()));
@@ -1126,11 +1134,18 @@
                      `{target}`, so a shipped build would not contain it"
                 );
             };
+            assert_ne!(
+                source.as_str(),
+                target.as_str(),
+                "bundle.resources maps `{source}` onto ITSELF, which means it points at the live \
+                 src-tauri/data/ tree. `tauri_build` emits a rerun-if-changed for every resource, so \
+                 that rebuilds and relinks the app on every record edit. Point it at the staged copy.",
+            );
             assert!(
-                source.starts_with("resources/"),
-                "bundle.resources maps `{source}` -> `{target}`, but a seed's SOURCE must be the \
-                 staged copy under resources/. Pointing it at the live data/ tree makes tauri_build \
-                 watch the file and rebuilds the app on every record edit.",
+                source.ends_with(&target),
+                "bundle.resources maps `{source}` -> `{target}`, but a staged seed's source must \
+                 MIRROR its bundled path, so that staging is a copy rather than a rename. Wherever \
+                 the staging directory lives, the tail of the source is the target.",
             );
         }
     }
@@ -1194,7 +1209,7 @@
             assert!(
                 build_rs.contains(rel),
                 "build.rs BUNDLED_SEEDS is missing `{rel}`, so it would never be staged into \
-                 resources/ and the bundled copy would be absent or stale",
+                 BUNDLE_RESOURCE_DIR and the bundled copy would be absent or stale",
             );
         }
     }

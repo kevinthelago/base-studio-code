@@ -13,13 +13,13 @@ import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Sidecar names from `tauri.conf.json`'s `bundle.externalBin`, `binaries/` prefix stripped. */
+/** Sidecar names from `tauri.conf.json`'s `bundle.externalBin` — the basename of each entry. */
 function externalBinNames(): string[] {
   const conf = JSON.parse(
     readFileSync(join(root, "src-tauri", "tauri.conf.json"), "utf8"),
   );
   const ext: string[] = conf?.bundle?.externalBin ?? [];
-  return ext.map((p) => p.replace(/^binaries\//, ""));
+  return ext.map((p) => p.replace(/^.*\//, ""));
 }
 
 /** Sidecar names from `package.json`'s `build:plan` script (`--bin <name>` flags). */

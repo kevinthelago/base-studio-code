@@ -1,7 +1,7 @@
 // Stage the bsc-plan + bsc-agent sidecars for Tauri's `bundle.externalBin` (#1089/#1117).
 //
 // Tauri's externalBin requires each binary on disk to be named with the target triple
-// (`binaries/<name>-<triple>[.exe]`); at bundle time the bundler strips the triple and
+// (`target/sidecars/<name>-<triple>[.exe]`); at bundle time the bundler strips the triple and
 // copies it next to the app exe — exactly where the runtime resolver looks
 // (current_exe().with_file_name("<name>[.exe]")).
 //
@@ -23,7 +23,7 @@ import {
 } from "./toolchain-layout.mjs";
 
 /** The sidecar binaries shipped beside the app, derived from `tauri.conf.json`'s
- *  `bundle.externalBin` (the canonical list) with the `binaries/` prefix stripped — so adding a
+ *  `bundle.externalBin` (the canonical list), taken as each entry's basename — so adding a
  *  sidecar only means editing `externalBin`, never this file too (#1763). */
 function sidecarBins() {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,7 @@ function sidecarBins() {
   if (!Array.isArray(ext) || ext.length === 0) {
     throw new Error(`no bundle.externalBin array in ${confPath}`);
   }
-  return ext.map((p) => p.replace(/^binaries\//, ""));
+  return ext.map((p) => p.replace(/^.*\//, ""));
 }
 
 const BINS = sidecarBins();
@@ -58,7 +58,7 @@ function buildOne(name, triple) {
 
 /** Refresh the bundle-resource copies of the runtime-loaded seeds from the live `src-tauri/data`.
  *
- *  `bundle.resources` deliberately points at `src-tauri/resources/data/**` rather than at `data/**`:
+ *  `bundle.resources` deliberately points at `target/bundle-resources/data/**` rather than at `data/**`:
  *  `tauri_build` emits a `cargo:rerun-if-changed` for every resource, so aiming them at the source
  *  tree made every record edit rebuild AND relink the app (measured 23.2s vs 1.2s). `build.rs`
  *  guarantees those staged files EXIST; refreshing them is this script's job, because it runs from
@@ -67,13 +67,19 @@ function buildOne(name, triple) {
  *  Without this the bundler would happily ship whatever copy `build.rs` first created — a seed frozen
  *  at some past checkout, in a build that otherwise looks correct. The source list is read from
  *  `bundle.resources` itself, so adding a seed means editing one place. */
+const STAGED_SEED_PREFIX = "../target/bundle-resources";
+
 function stageBundledSeeds() {
   const here = dirname(fileURLToPath(import.meta.url));
   const repo = join(here, "..");
   const conf = JSON.parse(readFileSync(join(repo, "src-tauri", "tauri.conf.json"), "utf8"));
+  // The keys are the SOURCE paths, relative to `src-tauri/` because that is where Tauri resolves
+  // them from. They point under `target/` — build output does not live in the source tree
+  // (`epic-built-items-live-only-in-target`) — so the live seed is that path with the staging
+  // prefix swapped back for `data/`.
   for (const src of Object.keys(conf.bundle?.resources ?? {})) {
-    if (!src.startsWith("resources/data/")) continue; // not a staged seed — leave it alone
-    const from = join(repo, "src-tauri", src.replace(/^resources\//, ""));
+    if (!src.startsWith(`${STAGED_SEED_PREFIX}/data/`)) continue; // not a staged seed — leave it alone
+    const from = join(repo, "src-tauri", src.replace(`${STAGED_SEED_PREFIX}/`, ""));
     const to = join(repo, "src-tauri", src);
     mkdirSync(dirname(to), { recursive: true });
     copyFileSync(from, to);
@@ -84,7 +90,11 @@ function stageBundledSeeds() {
 stageBundledSeeds();
 
 const triple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple();
-const outDir = join("src-tauri", "binaries");
+// Both staging destinations live under `target/`, matching `SIDECAR_DIR` / `BUNDLE_RESOURCE_DIR` in
+// `src-tauri/build.rs` and the paths in `tauri.conf.json`. `STAGED_SEED_PREFIX` is spelled relative to
+// `src-tauri/` because that is how Tauri reads a `bundle.resources` key; `outDir` is relative to the
+// repo root because that is this script's own cwd.
+const outDir = join("target", "sidecars");
 mkdirSync(outDir, { recursive: true });
 
 for (const name of BINS) {
