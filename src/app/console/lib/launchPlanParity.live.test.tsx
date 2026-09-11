@@ -4,10 +4,11 @@
  *
  * Slice 1 of `epic-the-frontend-derives-its-state-from-the-crates` adds a Rust resolver
  * (`bsc session launch-plan <paneId> --json`) that must reproduce the launch payload the frontend
- * composes. This file is the TypeScript half of that proof, and it measures by EXECUTING the real
- * code rather than re-deriving it: the real store writers seed each pane exactly as its launching
- * surface does, the real `TerminalView` mounts, and `invoke` is mocked only to CAPTURE the
- * `ensure_session_settings` and `pty_create` arguments it sends.
+ * composes, and slice 2a extends it to every kind of pane the renderer launches. This file is the
+ * TypeScript half of that proof, and it measures by EXECUTING the real code rather than re-deriving it:
+ * the real store writers seed each pane exactly as its launching surface does, the real `TerminalView`
+ * mounts, and `invoke` is mocked only to CAPTURE the `ensure_session_settings` and `pty_create`
+ * arguments it sends.
  *
  * OPT-IN AND LIVE. It reads this machine's real stores (plan.db, personas, skills, requests,
  * `app-state.json`, the config dir), so it cannot run in CI and costs nothing unless asked for:
@@ -15,8 +16,13 @@
  *   BSC_LAUNCH_PARITY=1 BSC_LAUNCH_PARITY_OUT=<dir> [BSC_LAUNCH_PARITY_BIN=<bsc>] \
  *     npx vitest run src/app/console/lib/launchPlanParity.live.test.tsx
  *
+ * ONE BINARY FOR BOTH SIDES. When `BSC_LAUNCH_PARITY_BIN` is set, the renderer's `bsc` reads go through
+ * it too, so the surface catalog and the crate drills the two sides read are the same build's — a surface
+ * charter is taught from that drill, and an installed `bsc` older than the build under test would make
+ * the renderer quote verbs the verb's own binary does not list.
+ *
  * READ-ONLY BY CONSTRUCTION. Every `bsc` call the app would make is routed to the real binary ONLY
- * when it is a read (`list` / `get`); anything else is swallowed and recorded, so hydrating the
+ * when it is a read (`list` / `get` / `drill`); anything else is swallowed and recorded, so hydrating the
  * library can never push a persona or skill back into a real store. Secret VALUES never enter the
  * store: a present credential is replaced by `<secret:NAME>`, so the captured env shows which
  * variable carries which secret without carrying it.
@@ -73,6 +79,9 @@ const APP_STATE = join(HOME, ".local/share/com.basestudio.code/app-state.json");
 const OUT = process.env.BSC_LAUNCH_PARITY_OUT ?? join(tmpdir(), "bsc-launch-parity");
 const RUST_BIN = process.env.BSC_LAUNCH_PARITY_BIN;
 const ERRAND = "PARITY ERRAND";
+/** The project and repo the triage pane is launched for — a real clone under the project's hub. */
+const TRIAGE_PROJECT = process.env.BSC_LAUNCH_PARITY_TRIAGE_PROJECT ?? "studio-code";
+const TRIAGE_REPO = process.env.BSC_LAUNCH_PARITY_TRIAGE_REPO ?? "kevinthelago/base-studio-code";
 
 /** Every invoke the app made, in order — the capture this whole file exists for. */
 const calls: Array<[string, Record<string, unknown> | undefined]> = [];
@@ -82,9 +91,11 @@ const suppressed: string[] = [];
 /** The read verbs the hydration + launch path may run for real. Anything else could write a store. */
 const READS: string[][] = [
   ["persona", "list"],
+  ["persona", "get"],
   ["skill", "list"],
   ["skill", "group", "list"],
   ["surface", "list"],
+  ["surface", "drill"],
   ["plan", "fleet", "get"],
   ["plan", "classify", "get"],
   ["request", "list"],
@@ -96,7 +107,7 @@ function runBsc(projectKey: string | null, args: string[], stdin?: string): stri
   const env: NodeJS.ProcessEnv = { ...process.env, BSC_SKILL_DB: join(BASE, "skills.db") };
   delete env.BSC_PLAN_DB;
   if (projectKey) env.BSC_PLAN_DB = join(BASE, "plans", `${projectKey}.db`);
-  const r = spawnSync("bsc", args, { env, input: stdin, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync(RUST_BIN ?? "bsc", args, { env, input: stdin, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`bsc ${args.join(" ")} failed: ${r.stderr || r.stdout}`);
   return r.stdout;
 }
@@ -131,12 +142,17 @@ const sentinel = (name: string, v: unknown) => (typeof v === "string" && v.trim(
 /** Probed in `beforeAll`, never at import: a skipped suite must not spawn anything. */
 let bwrapOk = false;
 
-/** Drop null/undefined recursively, so "absent" and "null" compare equal in the diff. */
+/** Drop null/undefined recursively, so "absent" and "null" compare equal in the diff — and order every
+ *  object's keys, since a JSON object has no order and the two sides build theirs differently (a generated
+ *  profile is an object literal on one side and a sorted map on the other). */
 function norm(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(norm);
   if (v && typeof v === "object") {
     const o: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v)) if (x !== null && x !== undefined) o[k] = norm(x);
+    for (const k of Object.keys(v).sort()) {
+      const x = (v as Record<string, unknown>)[k];
+      if (x !== null && x !== undefined) o[k] = norm(x);
+    }
     return o;
   }
   return v;
@@ -193,6 +209,8 @@ let TerminalView: typeof TerminalViewType;
 let store: typeof import("@/store");
 let studio: typeof import("@/features/studio-sessions");
 let debug: typeof import("@/features/debug");
+let spawn: typeof import("@/features/glance/lib/surfaceSpawn");
+let models: typeof import("@/app/console/lib/models");
 let debugRequest: { id: number; origin: string | null; display_title: string | null } | null = null;
 
 /** Mount the real TerminalView for one pane and return what its launch sent. */
@@ -211,7 +229,7 @@ async function capture(
   const settings = [...calls].reverse().find(([c]) => c === "ensure_session_settings")?.[1] ?? null;
   const { cols: _cols, rows: _rows, ...ptyCreate } = pty;
   void _cols; void _rows;
-  const name = `${paneId.replace(/:/g, "__")}${variant ? `.${variant}` : ""}`;
+  const name = `${paneId.replace(/[:/]/g, "__")}${variant ? `.${variant}` : ""}`;
   mkdirSync(OUT, { recursive: true });
   const ts = { paneId, ptyCreate, sessionSettings: settings };
   writeFileSync(join(OUT, `${name}.json`), JSON.stringify(ts, null, 2));
@@ -299,6 +317,8 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
     store = await import("@/store");
     studio = await import("@/features/studio-sessions");
     debug = await import("@/features/debug");
+    spawn = await import("@/features/glance/lib/surfaceSpawn");
+    models = await import("@/app/console/lib/models");
 
     const st = store.useAppStore.getState();
     await st.hydratePersonas();
@@ -317,6 +337,7 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
       ...pick("fleetHarness"), ...pick("llmProvider"), ...pick("llmModel"), ...pick("localBaseUrl"),
       ...pick("llmNumCtx"), ...pick("defaultModel"), ...pick("sandboxConsoles"), ...pick("agentProfiles"),
       ...pick("mcpServers"), ...pick("planClassification"), ...pick("projectBlueprintId"),
+      ...pick("restrictToBscIssues"), ...pick("repoTriagePromptDoc"), ...pick("planFleet"),
       githubToken: sentinel("githubToken", p.githubToken),
       repoGithubTokens: repoTokens,
       claudeApiKey: sentinel("claudeApiKey", p.claudeApiKey),
@@ -341,6 +362,36 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
   const fleetPane = (paneId: string) => async () => {
     const st = store.useAppStore.getState();
     await capture(paneId, { initialCwd: st.paneCwds[paneId], initCmd: st.paneInitCmds[paneId] });
+  };
+
+  /** A surface session, seeded exactly as Glance's `openSurfaceSession` seeds it before the slot mounts:
+   *  the crate's drill, the persona's prompt and model, the operator's generated profile — then the slot
+   *  passes the joined cwd and the charter, and no command. */
+  const surfacePane = (nodeId: string) => async () => {
+    const noun = nodeId.split(":")[1];
+    const catalog = JSON.parse(runBsc(null, ["surface", "list", "--json"])) as Array<{ name: string; crate: string }>;
+    const crate = catalog.find((r) => r.name === noun)?.crate;
+    expect(crate, `the catalog serves \`bsc ${noun}\``).toBeTruthy();
+    const doc = JSON.parse(runBsc(null, ["surface", "drill", crate!, "--json"]));
+    const paneId = spawn.surfacePaneIdForNode(nodeId)!;
+    const assignment = spawn.surfaceAssignment(nodeId, doc)!;
+    const personaId = assignment.kind === "operator" ? "persona-surface-operator" : "persona-surface-maintainer";
+    const persona = JSON.parse(runBsc(null, ["persona", "get", personaId])) as { startPrompt: string; model?: string | null };
+    const st = store.useAppStore.getState();
+    if (persona.model) {
+      st.setPaneModel(paneId, persona.model);
+      const provider = models.providerForModel(persona.model);
+      if (provider) st.setPaneProvider(paneId, provider);
+    }
+    if (assignment.kind === "operator") {
+      const profile = spawn.surfaceOperatorProfile(assignment.noun);
+      st.setAgentProfiles([...st.agentProfiles.filter((x) => x.id !== profile.id), profile]);
+      st.setPaneProfile(paneId, spawn.surfaceOperatorProfileId(assignment.noun));
+    }
+    await capture(paneId, {
+      initialCwd: `${APP_REPO}/${assignment.path}`,
+      startupPrompt: spawn.surfaceCharter(assignment, persona.startPrompt, doc),
+    });
   };
 
   it("director — studio-code:director", fleetPane("studio-code:director"), 120_000);
@@ -391,6 +442,17 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
       initCmd: studio.studioInitCmd(store.paneHarness(st, paneId)),
     });
   }, 120_000);
+
+  it(`triage — ${TRIAGE_PROJECT}:${TRIAGE_REPO}:triage`, async () => {
+    // Exactly what AppBanners hands `triageStartProject`: the key as both name and id, and the Rust-resolved clone.
+    const clone = join(BASE, "projects", TRIAGE_PROJECT, TRIAGE_REPO.split("/").pop()!);
+    store.useAppStore.getState().triageStartProject(TRIAGE_PROJECT, [TRIAGE_REPO], TRIAGE_PROJECT, undefined, { [TRIAGE_REPO]: clone });
+    await fleetPane(`${TRIAGE_PROJECT}:${TRIAGE_REPO}:triage`)();
+  }, 120_000);
+
+  it("surface operator — surface-studio:noun-session", surfacePane("noun:session"), 120_000);
+  it("surface maintainer — surface-studio:verb-session-ask", surfacePane("verb:session:ask"), 120_000);
+  it("surface maintainer, a hyphenated verb — surface-studio:verb-session-launch-plan", surfacePane("verb:session:launch-plan"), 120_000);
 
   it("never ran a store write", () => {
     // Swallowed writes are expected (hydration reconciles built-ins); the point is that none RAN.
