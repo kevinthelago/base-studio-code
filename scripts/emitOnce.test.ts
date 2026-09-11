@@ -8,7 +8,7 @@
 //
 // Lives under `scripts/` rather than `src/` because `vite/` is outside the tsconfig `include` and this
 // test has to actually IMPORT the plugin — reading the file as text could not observe a shared guard.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +24,12 @@ const start = (plugin: ReturnType<typeof bscRecords>) =>
   (plugin.buildStart as unknown as (this: unknown) => void).call({});
 
 describe("bscRecords emission (#3604)", () => {
-  beforeEach(() => emitRecords.mockClear());
+  // A BLOCK BODY, not `() => emitRecords.mockClear()`: that arrow RETURNS the mock, and vitest treats a function
+  // returned from `beforeEach` as a cleanup and calls it after the test — which ran the previous test's mock
+  // implementation against a root `afterEach` had already removed, and recreated it in /tmp.
+  beforeEach(() => {
+    emitRecords.mockClear();
+  });
 
   it("emits at most once across INSTANCES — the root build and the worker sub-build share the guard", () => {
     const root = bscRecords({ repoRoot: process.cwd() });
@@ -54,13 +59,27 @@ describe("bscRecords emission (#3604)", () => {
 describe("bscRecords re-emits a stale tree on a resolve miss", () => {
   // Its own reset: the suite above shares the module-level mock, so its calls would otherwise be
   // counted here.
-  beforeEach(() => emitRecords.mockReset());
+  // A BLOCK BODY, not `() => emitRecords.mockReset()`: that arrow RETURNS the mock, and vitest treats a function
+  // returned from `beforeEach` as a cleanup and calls it after the test — which ran the previous test's mock
+  // implementation against a root `afterEach` had already removed, and recreated it in /tmp.
+  beforeEach(() => {
+    emitRecords.mockReset();
+  });
+
+  // Every root `repo()` makes is removed after each test, PASS OR FAIL
+  // (`the-test-suites-still-leak-temp-entries-per-gate`). The trailing `rmSync` in a test body never runs
+  // once an assertion above it throws, and a clean run still left a `bscrec-` root behind.
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+  });
 
   /** A throwaway repo root with the seed layout `newestInputMtime` reads. */
   const repo = () => {
     const root = mkdtempSync(join(tmpdir(), "bscrec-"));
     mkdirSync(join(root, "src-tauri", "data", "components"), { recursive: true });
     writeFileSync(join(root, "src-tauri", "data", "components", "seed.json"), "{}");
+    roots.push(root);
     return root;
   };
   /** Call `resolveId` the way vite does. */
@@ -121,13 +140,27 @@ describe("bscRecords re-emits a stale tree on a resolve miss", () => {
 // whole life, which is how a payload-tolerant `pty_data` listener written at 09:56 was still the 09:05
 // version when the Rust half landed a minute later.
 describe("bscRecords re-emits on a seed EDIT, with no resolve involved", () => {
-  beforeEach(() => emitRecords.mockReset());
+  // A BLOCK BODY, not `() => emitRecords.mockReset()`: that arrow RETURNS the mock, and vitest treats a function
+  // returned from `beforeEach` as a cleanup and calls it after the test — which ran the previous test's mock
+  // implementation against a root `afterEach` had already removed, and recreated it in /tmp.
+  beforeEach(() => {
+    emitRecords.mockReset();
+  });
+
+  // Every root `repo()` makes is removed after each test, PASS OR FAIL
+  // (`the-test-suites-still-leak-temp-entries-per-gate`). The trailing `rmSync` in a test body never runs
+  // once an assertion above it throws, and a clean run still left a `bscrec-` root behind.
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+  });
 
   /** A throwaway repo root with the seed layout `newestInputMtime` reads. */
   const repo = () => {
     const root = mkdtempSync(join(tmpdir(), "bscrec-poll-"));
     mkdirSync(join(root, "src-tauri", "data", "components"), { recursive: true });
     writeFileSync(join(root, "src-tauri", "data", "components", "seed.json"), "{}");
+    roots.push(root);
     return root;
   };
 

@@ -11,7 +11,7 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { withGateTmp } from "./lib/gateTmp.mjs";
+import { formatLeakReport, withGateTmp } from "./lib/gateTmp.mjs";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -387,9 +387,7 @@ await withGateTmp(async () => {
   }
 }, {
   report: (leaks) => {
-    const total = leaks.reduce((n, l) => n + l.count, 0);
-    const top = leaks.slice(0, 8).map((l) => `${l.name} ×${l.count}`).join(" · ");
-    process.stdout.write(`\ngate: the legs left ${total} temp entr${total === 1 ? "y" : "ies"} behind (removed): ${top}\n`);
+    process.stdout.write(`\n${formatLeakReport(leaks)}\n`);
   },
 });
 

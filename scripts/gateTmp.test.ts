@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { leakReport, sweepStaleGateTmp, tempEnv, withGateTmp, GATE_TMP_BASE } from "./lib/gateTmp.mjs";
+import { formatLeakReport, leakReport, sweepStaleGateTmp, tempEnv, withGateTmp, GATE_TMP_BASE, LEAK_REPORT_GROUPS } from "./lib/gateTmp.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const made: string[] = [];
@@ -74,6 +74,24 @@ describe("the gate's temp directory", () => {
     expect(existsSync(join(b, "old"))).toBe(false);
     expect(existsSync(join(b, "fresh"))).toBe(true);
     expect(leakReport(join(b, "missing"))).toEqual([]);
+  });
+
+  it("names every leak group up to the cap, and counts what it did not name (the-test-suites-still-leak-temp-entries-per-gate)", () => {
+    const leaks = Array.from({ length: 25 }, (_, i) => ({ name: `leaker-${String(i).padStart(2, "0")}-N`, count: 25 - i }));
+    const line = formatLeakReport(leaks);
+    expect(line).toContain("the legs left 325 temp entries behind");
+    for (const l of leaks.slice(0, LEAK_REPORT_GROUPS)) expect(line).toContain(`${l.name} ×${l.count}`);
+    expect(line).not.toContain("leaker-20-N");
+    expect(line).toMatch(/\+5 more groups \(15 entries\)$/);
+    expect(formatLeakReport([{ name: "only-N", count: 1 }])).toBe("gate: the legs left 1 temp entry behind (removed): only-N ×1");
+    expect(formatLeakReport(leaks.slice(0, 3), 3)).not.toContain("more group");
+  });
+
+  it("gate.mjs prints the leak line through formatLeakReport, not a silent slice", () => {
+    const gate = readFileSync(join(HERE, "gate.mjs"), "utf8");
+    expect(gate).toMatch(/import \{[^}]*formatLeakReport[^}]*\} from "\.\/lib\/gateTmp\.mjs"/);
+    expect(gate).toContain("formatLeakReport(leaks)");
+    expect(gate, "the report must not cap its groups inline").not.toMatch(/leaks\.slice\(0,/);
   });
 
   it("gate.mjs runs its legs inside withGateTmp — the wiring, not just the helper", () => {

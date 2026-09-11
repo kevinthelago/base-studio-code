@@ -52,6 +52,28 @@ export function leakReport(dir) {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
+/** How many leak groups the gate names before it summarizes the rest. */
+export const LEAK_REPORT_GROUPS = 20;
+
+/** The one line the gate prints about what its legs left behind — every group up to `max`, and the
+ *  count of what it did not name (`the-test-suites-still-leak-temp-entries-per-gate`). It used to be an
+ *  inline `slice(0, 8)` with nothing after it: a full gate reported "507 entries" and named 76 of them,
+ *  so the other 431 read as if they did not exist.
+ *  @param {Leak[]} leaks
+ *  @param {number} [max]
+ *  @returns {string} */
+export function formatLeakReport(leaks, max = LEAK_REPORT_GROUPS) {
+  const total = leaks.reduce((n, l) => n + l.count, 0);
+  const shown = leaks.slice(0, max);
+  const rest = leaks.slice(max);
+  const named = shown.map((l) => `${l.name} ×${l.count}`).join(" · ");
+  const restCount = rest.reduce((n, l) => n + l.count, 0);
+  const tail = rest.length
+    ? ` · +${rest.length} more group${rest.length === 1 ? "" : "s"} (${restCount} entr${restCount === 1 ? "y" : "ies"})`
+    : "";
+  return `gate: the legs left ${total} temp entr${total === 1 ? "y" : "ies"} behind (removed): ${named}${tail}`;
+}
+
 /** Remove run directories under `base` older than `maxAgeMs` — the ones a killed gate left. */
 export function sweepStaleGateTmp(base = GATE_TMP_BASE, maxAgeMs = STALE_RUN_MS, now = Date.now()) {
   let entries;
