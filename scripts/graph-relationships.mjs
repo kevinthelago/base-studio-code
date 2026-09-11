@@ -8,7 +8,7 @@
 // Record→record refs resolve by the rules above. External-CRATE refs are the OTHER half, and they
 // resolve into `crateDeps` rather than `composes` — see `crateDepsOf`.
 import fs from 'node:fs';
-import { loadStore, writeStore, resolveStorePath } from './lib/recordStore.mjs';
+import { loadStore, writeStore, resolveStorePath, isSqliteStore } from './lib/recordStore.mjs';
 const STORE = process.env.GRAPH_STORE || resolveStorePath();
 const BASELINE = 'scripts/graph-relationships.baseline.json';
 import path from 'node:path';
@@ -174,6 +174,44 @@ export function crateGaps() {
 
 export function gaps() { const g = {}; for (const r of recs) { const der = derive(r); const have = new Set(r.composes || []); const missing = [...der].filter(x => !have.has(x)); if (missing.length) g[r.id] = missing.sort(); } return g; }
 
+/// What `--apply` would change, computed WITHOUT touching a record: the `composes` edges to ADD (union-
+/// preserving — resolution is conservative, so an edge nobody derived is not wrong) and the `crateDeps`
+/// to REPLACE (read straight off the code, so a stale entry is wrong rather than extra).
+export function backfillPlan() {
+  const plan = [];
+  for (const r of recs) {
+    const change = {};
+    const der = derive(r);
+    if (der.size) {
+      const existing = r.composes || [];
+      const have = new Set(existing);
+      const add = [...der].filter(x => !have.has(x)).sort();
+      if (add.length) change.composes = [...existing, ...add];
+    }
+    if (r.id?.endsWith('.rs')) {
+      const d = crateDepsOf(r);
+      if (d.join(',') !== (r.crateDeps || []).join(',')) change.crateDeps = d;
+    }
+    if (Object.keys(change).length) plan.push({ rec: r, ...change });
+  }
+  return plan;
+}
+
+/// The LEDGER write for one planned change — a revision per record, never a rewritten file. Every value
+/// is single-quoted for the shell, and `--name` is the record's CURRENT name: `impl set` requires it and
+/// silently renames the record to whatever it is given.
+export function implSetCommand(p) {
+  const q = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
+  const r = p.rec;
+  const parts = ['bsc graph impl set --repo --root "$PWD"', `--tech ${q(r.tech)}`, `--id ${q(r.id)}`, `--role ${q(r.role)}`, `--name ${q(r.name)}`];
+  if (p.composes) parts.push(`--composes ${q(p.composes.join(','))}`);
+  if (p.crateDeps) parts.push(p.crateDeps.length ? `--crate-deps ${q(p.crateDeps.join(','))}` : '--clear crateDeps');
+  return parts.join(' ');
+}
+
+/// A store this script must not write: it writes JSON, and the committed store is a database.
+const isDatabase = (p) => isSqliteStore(p) || /\.db$/i.test(p);
+
 const mode = process.argv[2] || '--report';
 if (mode === '--report') {
   const g = gaps(); const prod = recs.filter(r => r.role === 'algorithm');
@@ -193,26 +231,42 @@ else if (mode === '--check') {
   if (Object.keys(cg).length) {
     console.error(`RELATIONSHIP GATE: ${Object.keys(cg).length} record(s) have stale crateDeps:`);
     Object.entries(cg).slice(0, 20).forEach(([id, d]) => console.error(`  ${id} -> [${d.join(', ')}]`));
-    console.error('  run `node scripts/graph-relationships.mjs --apply` to refresh them');
+    // The fix is printed ready to run, one LEDGER write per record. This line used to say "run --apply",
+    // which on a database store wrote JSON over the committed store
+    // (`graph-relationships-apply-overwrites-the-committed-store`).
+    const stale = new Set(Object.keys(cg));
+    console.error('  refresh each through the ledger:');
+    for (const p of backfillPlan().filter((p) => stale.has(p.rec.id)).slice(0, 20)) {
+      console.error('    ' + implSetCommand({ rec: p.rec, crateDeps: p.crateDeps }));
+    }
     process.exit(1);
   }
   console.log('relationship gate: no new missing edges, crateDeps current');
 }
 else if (mode === '--baseline') { fs.writeFileSync(BASELINE, JSON.stringify(gaps(), null, 2) + '\n'); console.log('baseline written'); }
 else if (mode === '--apply') {
-  let added = 0, changed = 0;
-  for (const r of recs) { const der = derive(r); if (!der.size) continue; const existing = r.composes || []; const have = new Set(existing); const add = [...der].filter(x => !have.has(x)).sort(); if (add.length) { r.composes = [...existing, ...add]; added += add.length; changed++; } }
-  // Through `writeStore`, not `writeFileSync`: the store is SPLIT, and writing the merged
-  // document straight back would put all 1,885 records into the monolith beside their own files.
-  // crateDeps are REPLACED, not unioned: they are derived from the code, so a stale entry is wrong
-  // rather than merely extra — a record that stopped using `rusqlite` must stop declaring it.
-  let cd = 0, cdRecs = 0;
-  for (const r of recs) {
-    if (!r.id?.endsWith('.rs')) continue;
-    const der = crateDepsOf(r);
-    if (der.join(',') === (r.crateDeps || []).join(',')) continue;
-    if (der.length) r.crateDeps = der; else delete r.crateDeps;
-    cd += der.length; cdRecs++;
+  const plan = backfillPlan();
+  // A DATABASE store is REFUSED, and the plan is printed as ledger writes instead
+  // (`graph-relationships-apply-overwrites-the-committed-store`). `writeStore` writes JSON; pointed at
+  // `graph/algorithms.db` it replaced the store the build compiles from, and the --check leg told people
+  // to run exactly this. A revision per record through `bsc graph impl set --repo` is the only write that
+  // store takes.
+  if (isDatabase(STORE)) {
+    if (!plan.length) {
+      console.log('relationship backfill: nothing to apply');
+      process.exit(0);
+    }
+    console.error(`relationship backfill: ${plan.length} record(s) need edges, and ${STORE} is a record DATABASE — this script writes JSON and will not touch it.`);
+    console.error('Apply each through the ledger:');
+    for (const p of plan) console.log('  ' + implSetCommand(p));
+    process.exit(1);
+  }
+  // A JSON store (a temp GRAPH_STORE in a test) is still written, through `writeStore` so the split
+  // per-record layout is respected.
+  let added = 0, changed = 0, cd = 0, cdRecs = 0;
+  for (const p of plan) {
+    if (p.composes) { added += p.composes.length - (p.rec.composes || []).length; changed++; p.rec.composes = p.composes; }
+    if (p.crateDeps) { cd += p.crateDeps.length; cdRecs++; if (p.crateDeps.length) p.rec.crateDeps = p.crateDeps; else delete p.rec.crateDeps; }
   }
   writeStore(store, STORE);
   console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving)`);
