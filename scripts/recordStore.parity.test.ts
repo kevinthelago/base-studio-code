@@ -14,7 +14,7 @@
 // This is the same mitigation `emit-manifests.test.ts` uses for its second renderer: render both, diff.
 import { describe, it, expect } from "vitest";
 import { execFileSync, } from "node:child_process";
-import { statSync, existsSync, mkdtempSync } from "node:fs";
+import { statSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { loadStore, resolveStorePath, isSqliteStore } from "./lib/recordStore.mjs";
@@ -69,13 +69,17 @@ describe("the JS and Rust readers agree about the committed store", () => {
     // MEASURED: 2,968 against 2,946. So ask a question only the new binary answers: pointed at a root
     // with no committed store it must FAIL. An old one happily dumps the runtime library.
     let understandsRepo = false;
+    // Removed after the probe, whatever it answers (`the-test-suites-leak-temp-dirs-into-tmp`).
+    const storeless = mkdtempSync(join(tmpdir(), "bsc-parity-"));
     try {
-      execFileSync(bsc, ["graph", "dump", "--repo", "--root", mkdtempSync(join(tmpdir(), "bsc-parity-"))], {
+      execFileSync(bsc, ["graph", "dump", "--repo", "--root", storeless], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {
       understandsRepo = true; // refused, as a store-less root should be
+    } finally {
+      rmSync(storeless, { recursive: true, force: true });
     }
     if (!understandsRepo) {
       console.warn("parity NOT cross-checked: this `bsc` predates `graph dump --repo` (run npm run build:plan)");

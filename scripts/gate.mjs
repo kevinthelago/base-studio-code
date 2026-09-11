@@ -11,6 +11,7 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { withGateTmp } from "./lib/gateTmp.mjs";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -367,19 +368,30 @@ const releaseSlot = needsGateSlot(plan)
 // EVERY step runs, even after one fails. A gate that stops at the first failure hands back a partial
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
-for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
-  const { ok, seconds } = run(label, cmd, args, { key, stage });
-  // WHICH TESTS FAILED, so a known-red declaration can excuse the failure it NAMES rather than every
-  // failure in the leg it lives in. Read off nextest's JUnit report (`.config/nextest.toml`) rather
-  // than off stdout, because `run` inherits stdio on purpose and piping would cost cargo's live
-  // progress. Empty means UNKNOWN — `bsc-work`'s `classify` fails closed on it.
-  const failures = ok ? [] : nextestFailures(key);
-  // `key` is the leg's STABLE id — the same one `record-run.mjs` measures under as `gate:<key>`, so a
-  // scoped and a full run of one leg share an identity instead of splitting into two that can never be
-  // compared. It is what a change record's gate evidence is filed under; `label` is prose and may be
-  // reworded ("lint" vs "lint (changed files)") without breaking a reader.
-  results.push({ key: key ?? label, label, ok, seconds, failures });
-}
+// Every leg runs with its temp directory OFF the /tmp tmpfs, and whatever it leaves is named and removed
+// (`the-test-suites-leak-temp-dirs-into-tmp`). A leak is REPORTED, not failed: ~30 tests leak today, and
+// reddening every gate for them would train the fleet to read red as noise.
+await withGateTmp(async () => {
+  for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
+    const { ok, seconds } = run(label, cmd, args, { key, stage });
+    // WHICH TESTS FAILED, so a known-red declaration can excuse the failure it NAMES rather than every
+    // failure in the leg it lives in. Read off nextest's JUnit report (`.config/nextest.toml`) rather
+    // than off stdout, because `run` inherits stdio on purpose and piping would cost cargo's live
+    // progress. Empty means UNKNOWN — `bsc-work`'s `classify` fails closed on it.
+    const failures = ok ? [] : nextestFailures(key);
+    // `key` is the leg's STABLE id — the same one `record-run.mjs` measures under as `gate:<key>`, so a
+    // scoped and a full run of one leg share an identity instead of splitting into two that can never be
+    // compared. It is what a change record's gate evidence is filed under; `label` is prose and may be
+    // reworded ("lint" vs "lint (changed files)") without breaking a reader.
+    results.push({ key: key ?? label, label, ok, seconds, failures });
+  }
+}, {
+  report: (leaks) => {
+    const total = leaks.reduce((n, l) => n + l.count, 0);
+    const top = leaks.slice(0, 8).map((l) => `${l.name} ×${l.count}`).join(" · ");
+    process.stdout.write(`\ngate: the legs left ${total} temp entr${total === 1 ? "y" : "ies"} behind (removed): ${top}\n`);
+  },
+});
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet
 
