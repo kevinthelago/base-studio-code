@@ -62,7 +62,21 @@ describe("record resolvers (#3604)", () => {
   });
 
   it("the kit generator resolves records as well as files", () => {
-    expect(read("src/features/designs/lib/reactUiKit.gen.test.ts")).toContain("bscRecords");
+    // READ FROM THE RECORD, not the file. `reactUiKit.gen.test.ts` is now a `tests` entry carried on
+    // the `react-ui-kit.ts` record, exactly as `bsc-ui--emit--mod.rs` below stopped being a file —
+    // and the same correction applies: reading the path would now be reading nothing at all.
+    const store = loadStore(resolveStorePath(REPO)) as {
+      implementations?: { id?: string; tests?: { name?: string; src?: string }[] }[];
+    };
+    const impls = store.implementations ?? [];
+    // NON-VACUITY, the same rule the assertion below states: a store that parsed to nothing, or a
+    // renamed id, must fail LOUDLY rather than as a silent `toContain` miss that reads as "the
+    // resolver was dropped" and sends the next reader to the wrong place.
+    expect(impls.length).toBeGreaterThan(100);
+    const carried = impls.find((i) => i.id === "react-ui-kit.ts")?.tests ?? [];
+    const gen = carried.map((t) => t.src ?? "").join("\n");
+    expect(gen, "no carried test on the `react-ui-kit.ts` record").not.toBe("");
+    expect(gen).toContain("bscRecords");
   });
 
   // The seventh resolver is RUST, so this side cannot assert the resolution itself — `cargo test -p
