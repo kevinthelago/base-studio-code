@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { TerminalHost, ownerClaim, claimIsOnScreen, onScreenPaneIds, type SlotTerminalProps } from "./TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
+import { useAppStore } from "@/store";
 
 // #2378 guardrail: there is exactly ONE <TerminalView> per paneId (one xterm, one PTY listener), owned by
 // the host and RE-PARENTED between slots — never a second mount, never a remount on hand-off. xterm can't
@@ -11,7 +12,7 @@ const rec = vi.hoisted(() => ({ mounts: [] as string[], unmounts: [] as string[]
 vi.mock("@/app/console/panes/views/TerminalView", async () => {
   const { useEffect } = await import("react");
   return {
-    TerminalView: ({ paneId, visible, initialCwd, startupPrompt }: { paneId: string; visible?: boolean; initialCwd?: string; startupPrompt?: string }) => {
+    TerminalView: ({ paneId, visible, initialCwd, initCmd, startupPrompt }: { paneId: string; visible?: boolean; initialCwd?: string; initCmd?: string; startupPrompt?: string }) => {
       useEffect(() => {
         rec.mounts.push(paneId);
         return () => { rec.unmounts.push(paneId); };
@@ -22,6 +23,7 @@ vi.mock("@/app/console/panes/views/TerminalView", async () => {
           data-pane={paneId}
           data-visible={String(!!visible)}
           data-cwd={initialCwd ?? ""}
+          data-cmd={initCmd ?? ""}
           data-prompt={startupPrompt ?? ""}
         />
       );
@@ -173,6 +175,38 @@ describe("TerminalHost parked holding claims (#3357)", () => {
       </TerminalHost>,
     );
     expect(rec.mounts).toEqual(["proj:api"]);
+  });
+
+  /// `a-fleet-worker-launches-bare-when-no-console-cell-claims-it`. The console is ONE TERMINAL PER TAB, so
+  /// a build tab's workers have no console cell and the Glance morph is their only claim. The morph carries
+  /// no launch props; the store carries what the fleet wired. Measured on the radio fleet before this fix:
+  /// `radio:lexicographer` launched with cwd `<none>` and no command, a permission-less bare shell.
+  it("launches a FLEET worker with the store's cwd and command when no console cell claims it", () => {
+    const st = useAppStore.getState();
+    useAppStore.setState({
+      paneCwds: { ...st.paneCwds, "radio:ui-lan": "/worktrees/radio/base-studio-code--ui-lan" },
+      paneInitCmds: { ...st.paneInitCmds, "radio:ui-lan": "claude" },
+    });
+    render(
+      <TerminalHost>
+        <div data-testid="glance-dock"><TerminalSlot paneId="radio:ui-lan" visible /></div>
+      </TerminalHost>,
+    );
+    const tv = document.querySelector("[data-pane='radio:ui-lan']")!;
+    expect(tv.getAttribute("data-cwd"), "an empty cwd skips ensure_session_settings: no role gate").toBe("/worktrees/radio/base-studio-code--ui-lan");
+    expect(tv.getAttribute("data-cmd"), "no init command launches a bare shell, not the agent").toBe("claude");
+  });
+
+  it("still sources launch props from a PRIMARY claim over the store", () => {
+    const st = useAppStore.getState();
+    useAppStore.setState({ paneCwds: { ...st.paneCwds, "radio:lexicographer": "/from-store" } });
+    render(
+      <TerminalHost>
+        <div data-testid="console-cell"><TerminalSlot paneId="radio:lexicographer" primary visible={false} initialCwd="/from-primary" /></div>
+        <div data-testid="glance-dock"><TerminalSlot paneId="radio:lexicographer" visible /></div>
+      </TerminalHost>,
+    );
+    expect(document.querySelector("[data-pane='radio:lexicographer']")!.getAttribute("data-cwd")).toBe("/from-primary");
   });
 
   /// A DEBUG-studio session is per-REQUEST, so its pane id is not in the exact-match

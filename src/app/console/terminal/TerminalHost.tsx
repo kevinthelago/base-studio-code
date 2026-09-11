@@ -17,6 +17,7 @@ import {
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { isStudioSessionPaneId, isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
+import { useAppStore } from "@/store";
 
 /** The terminal props a slot supplies to the shared <TerminalView>. The console cell is the `primary`
  *  (it owns the launch/data props); the Glance dock is a viewer that supplies only visibility/focus. */
@@ -338,13 +339,22 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
         const pp = primary.propsRef.current;
+        // NO PRIMARY => THE LAUNCH PROPS COME FROM THE STORE (`a-fleet-worker-launches-bare-when-no-console-cell-claims-it`).
+        // The comment above assumes a fleet pane's primary is its console grid cell. Since the console went ONE
+        // TERMINAL PER TAB (`consolepage` rev 22) that cell exists only for pane 0 of a build tab — the
+        // director — so every worker's only claim is the Glance morph: a viewer with no cwd and no init
+        // command. Sourcing from it launched a bare shell in the app's own working directory with no role gate,
+        // and the reaper took it as idle ten seconds later (measured on the radio fleet, 2026-09-11). The store
+        // already holds what `fleetStartProject` / `wakePane` wired for the pane, so read that. Read once at
+        // render rather than subscribed, because `TerminalView` consumes launch props one-shot at mount.
+        const wired = primaryClaim ? undefined : useAppStore.getState();
         return createPortal(
           <TerminalView
             paneId={paneId}
             visible={op.visible}
             focused={op.focused}
-            initialCwd={pp.initialCwd}
-            initCmd={pp.initCmd}
+            initialCwd={pp.initialCwd ?? wired?.paneCwds[paneId]}
+            initCmd={pp.initCmd ?? wired?.paneInitCmds[paneId]}
             startupPrompt={pp.startupPrompt}
             onCwdChange={pp.onCwdChange}
             onStatusChange={pp.onStatusChange}
