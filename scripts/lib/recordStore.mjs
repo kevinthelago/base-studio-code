@@ -128,6 +128,18 @@ export function loadImplementations(storePath) { return loadStore(storePath).imp
  * temp `GRAPH_STORE` in a test behaves exactly as it did before.
  */
 export function writeStore(store, storePath = 'graph/algorithms.json') {
+  // A DATABASE is never written from here (`graph-relationships-apply-overwrites-the-committed-store`).
+  // This function writes JSON; the committed store the build compiles from is SQLite, and with no
+  // `records/` dir beside it the branch below would have replaced it with a JSON document. Refused by
+  // the file's magic AND by a `.db` name, so a path that does not exist yet is not minted as JSON either.
+  if (isSqliteStore(storePath) || /\.db$/i.test(storePath)) {
+    throw new Error(
+      `refusing to write ${storePath}: it is a record DATABASE and writeStore writes JSON, which would replace ` +
+        'the store the build compiles from. Change a record through the ledger instead: ' +
+        'bsc graph impl set --repo --root <checkout> --tech <tech> --id <id> --role <role> --name <its name> ' +
+        '--composes a,b --crate-deps a,b',
+    );
+  }
   const dir = join(dirname(storePath) || '.', 'records');
   if (!existsSync(dir)) {
     writeFileSync(storePath, JSON.stringify(store, null, 2) + '\n');

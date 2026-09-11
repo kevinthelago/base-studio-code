@@ -311,6 +311,10 @@ if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
   const work = join(tmpdir(), "bsc-graph-rust-sweep");
   rmSync(work, { recursive: true, force: true });
   mkdirSync(join(work, "out"), { recursive: true });
+  // Removed on the way out, whatever the way out is — either `process.exit` below, a normal end, or a
+  // throw. The gate's temp-leaks leg caught this directory surviving every run
+  // (`the-test-suites-still-leak-temp-entries-per-gate`).
+  process.on("exit", () => rmSync(work, { recursive: true, force: true }));
 
   // NOT wrapped in a catch. An earlier version swallowed everything here, which turned a missing import
   // into an empty crate list — the filter silently did nothing and the sweep failed on a record it

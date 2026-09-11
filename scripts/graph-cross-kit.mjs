@@ -106,6 +106,10 @@ if (process.argv[1]?.endsWith("graph-cross-kit.mjs")) {
   const work = join(tmpdir(), "bsc-cross-kit");
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
+  // Removed on the way out, whatever the way out is — `process.exit` below, a normal end, or a throw.
+  // The gate's temp-leaks leg caught this directory surviving every run
+  // (`the-test-suites-still-leak-temp-entries-per-gate`).
+  process.on("exit", () => rmSync(work, { recursive: true, force: true }));
 
   let checked = 0;
   const failures = [];
