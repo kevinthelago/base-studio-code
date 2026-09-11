@@ -346,7 +346,7 @@ describe.skipIf(!ENABLED)("launch-plan parity — what the frontend sends today 
       // The user's own per-pane choices. The resolver reads the same persisted maps over its derivation, so
       // the renderer's side has to start from them too or every pane a user ever touched reads as a diff.
       ...pick("paneProviders"), ...pick("paneModels"), ...pick("paneProfiles"), ...pick("panePersonas"),
-      ...pick("sessionSkillOverrides"), ...pick("sessionSkillGroups"),
+      ...pick("sessionSkillOverrides"), ...pick("sessionSkillGroups"), ...pick("paneWasClaude"),
       githubToken: sentinel("githubToken", p.githubToken),
       repoGithubTokens: repoTokens,
       claudeApiKey: sentinel("claudeApiKey", p.claudeApiKey),
