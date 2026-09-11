@@ -53,4 +53,35 @@ describe("the docs never name a deleted script", () => {
     expect(mentions).toBeGreaterThan(5);
     expect(dangling, `these docs point at scripts that do not exist:\n${dangling.join("\n")}`).toEqual([]);
   });
+
+  // package.json is the same rule applied to the file that can actually RUN the path. A doc naming a
+  // deleted script misleads a reader; an npm script naming one hands them
+  // `Error: Cannot find module`. This hole was live: `npm run retirement-candidates` ran
+  // `scripts/retirement-candidates.mjs` for however long it had been since that capability became
+  // `bsc ui retirable` — the very migration this file's header describes its author getting wrong in
+  // the docs. The guard was written for the prose half and never extended to the executable half.
+  it("every `scripts/…` path package.json would RUN exists on disk", () => {
+    const pkg = JSON.parse(readFileSync(resolve(REPO, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const scripts = Object.entries(pkg.scripts ?? {});
+    // NON-VACUITY, same reason as above: a renamed key or a reshaped manifest must fail loudly rather
+    // than scan nothing and pass. There were 29 npm scripts naming 20 script paths when this landed.
+    expect(scripts.length).toBeGreaterThan(15);
+
+    const dangling: string[] = [];
+    let mentions = 0;
+    for (const [name, cmd] of scripts) {
+      for (const m of cmd.matchAll(/scripts\/[A-Za-z0-9_./-]+\.(?:mjs|cjs|ts|ps1)/g)) {
+        mentions++;
+        const p = resolve(REPO, m[0]);
+        if (!existsSync(p) || !statSync(p).isFile()) dangling.push(`npm run ${name} → ${m[0]}`);
+      }
+    }
+    expect(mentions).toBeGreaterThan(5);
+    expect(
+      dangling,
+      `these npm scripts would run a file that does not exist:\n${dangling.join("\n")}`,
+    ).toEqual([]);
+  });
 });
