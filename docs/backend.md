@@ -26,7 +26,7 @@ React/TypeScript WebView frontend. The Rust side is the focus of this document.
 > **THE FOLDERS BELOW ARE NOT ON DISK — they are RECORDS.**
 > `src-tauri-compiles-from-the-graph` moved all 138 of this crate's modules into the algorithms
 > graph, so `src-tauri/src/` holds four files: the two crate roots, `tests.rs`, and one orphan.
-> Everything else lives in the committed record store — `graph/records.db`, a DATABASE named by
+> Everything else lives in the committed record store — `graph/algorithms.db`, a DATABASE named by
 > `graph/store.toml` (`retire-the-committed-json-record-store`) — and reaches the compiler through
 > `$OUT_DIR/crate.rs`, materialized by `graph_materialize::emit_when_adopted()` — called from
 > `src-tauri/build.rs` as a fifth job, because a package gets exactly ONE build script and this one
