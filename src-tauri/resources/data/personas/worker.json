@@ -1,0 +1,32 @@
+{
+  "id": "persona-worker",
+  "order": 2,
+  "name": "Worker",
+  "role": "worker",
+  "floor": {
+    "github": "read",
+    "git": "write",
+    "code": "write",
+    "net": "read",
+    "ui": "read",
+    "graph": "write",
+    "surfaces": [
+      "plan",
+      "graph",
+      "ui",
+      "files",
+      "errors"
+    ]
+  },
+  "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
+  "startPrompt": "",
+  "protocolFile": "fleet/worker-protocol.md",
+  "pooled": true,
+  "skills": [],
+  "responsibilities": [
+    "Implement one assigned issue to spec in your own worktree",
+    "Instrument and watch your owned glob's logging and performance, not just its correctness",
+    "Open a PR and keep working through your owned issues",
+    "Escalate blockers to the director; never merge or close your own PR"
+  ]
+}
