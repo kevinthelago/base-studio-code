@@ -1,0 +1,525 @@
+{
+  "version": 1,
+  "note": "SHARED validation fixtures (#3485) — run by BOTH the TypeScript validator (generalNode.ts) and the Rust one (bsc ui validate). schema.ts has long CLAIMED 'a spec that passes here passes there'; with two independent implementations in different languages that claim has to be TESTED, because two validators drifting apart is worse than one — callers trust the agreement precisely where it is most likely to quietly break. Each case: `node` is validated, `count` is the exact number of errors expected, and every string in `contains` must appear in some error. Hand-authored (unlike primitives.json, which is generated).",
+  "cases": [
+    {
+      "name": "a complete node validates clean",
+      "node": {
+        "type": "Text",
+        "children": "hello",
+        "props": {
+          "tone": "accent"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "an unknown primitive is rejected and named",
+      "node": {
+        "type": "NotAPrimitive"
+      },
+      "count": 1,
+      "contains": [
+        "unknown primitive",
+        "NotAPrimitive"
+      ]
+    },
+    {
+      "name": "a non-object is not a node",
+      "node": "just a string",
+      "count": 1,
+      "contains": [
+        "expected a node object"
+      ]
+    },
+    {
+      "name": "a node with no type is rejected",
+      "node": {
+        "props": {}
+      },
+      "count": 1,
+      "contains": [
+        "missing string \"type\""
+      ]
+    },
+    {
+      "name": "a missing required prop is reported with its name",
+      "node": {
+        "type": "Text"
+      },
+      "count": 1,
+      "contains": [
+        "missing required prop",
+        "children",
+        "Text"
+      ]
+    },
+    {
+      "name": "an out-of-union enum value lists the allowed set",
+      "node": {
+        "type": "Text",
+        "children": "x",
+        "props": {
+          "tone": "chartreuse"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "chartreuse",
+        "dim",
+        "accent"
+      ]
+    },
+    {
+      "name": "a scalar type mismatch is caught",
+      "node": {
+        "type": "Text",
+        "children": "x",
+        "props": {
+          "mono": "yes"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected a boolean"
+      ]
+    },
+    {
+      "name": "an absent optional prop is fine — the component default applies",
+      "node": {
+        "type": "Text",
+        "children": "x"
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "unknown props are NOT flagged on a passthrough primitive",
+      "node": {
+        "type": "Text",
+        "children": "x",
+        "props": {
+          "data-testid": "t",
+          "className": "c"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "unknown props ARE flagged on a non-passthrough primitive",
+      "node": {
+        "type": "Spacer",
+        "props": {
+          "nonsense": 1
+        }
+      },
+      "count": 1,
+      "contains": [
+        "unknown prop",
+        "nonsense",
+        "Spacer"
+      ]
+    },
+    {
+      "name": "a space prop accepts a rung name or a number",
+      "node": {
+        "type": "Spacer",
+        "props": {
+          "size": 12
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "a handler must be an action NAME, never a literal value",
+      "node": {
+        "type": "Dialog",
+        "props": {
+          "title": "t",
+          "children": "c",
+          "actions": "a",
+          "onDismiss": 42
+        }
+      },
+      "count": 1,
+      "contains": [
+        "action NAME"
+      ]
+    },
+    {
+      "name": "a handler given as an action name is accepted",
+      "node": {
+        "type": "Dialog",
+        "props": {
+          "title": "t",
+          "children": "c",
+          "actions": "a",
+          "onDismiss": "closeDialog"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "node-level children is sugar for the children prop",
+      "node": {
+        "type": "Stack",
+        "children": [
+          {
+            "type": "Text",
+            "children": "x"
+          }
+        ]
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "children written as a prop validates identically",
+      "node": {
+        "type": "Stack",
+        "props": {
+          "children": [
+            {
+              "type": "Text",
+              "children": "x"
+            }
+          ]
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "plain text is a legitimate children value",
+      "node": {
+        "type": "Stack",
+        "children": "just text"
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "children entries that are neither nodes nor text are rejected",
+      "node": {
+        "type": "Stack",
+        "children": [
+          42,
+          true
+        ]
+      },
+      "count": 1,
+      "contains": [
+        "expected nodes or text"
+      ]
+    },
+    {
+      "name": "recursion reports the failing path inside children",
+      "node": {
+        "type": "Stack",
+        "children": [
+          {
+            "type": "Text",
+            "children": "x",
+            "props": {
+              "tone": "bogus"
+            }
+          }
+        ]
+      },
+      "count": 1,
+      "contains": [
+        "$.children[0].props.tone",
+        "bogus"
+      ]
+    },
+    {
+      "name": "array props are checked to the CONTAINER only — wrong container is caught",
+      "node": {
+        "type": "Legend",
+        "props": {
+          "items": "not-a-list"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected an array"
+      ]
+    },
+    {
+      "name": "array CONTENTS are deliberately unvalidated — the documented gap",
+      "node": {
+        "type": "Legend",
+        "props": {
+          "items": [
+            {
+              "nonsense": true
+            }
+          ]
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "actions: a handler on a PASSTHROUGH primitive is legitimate (the reason the map exists)",
+      "node": {
+        "type": "Button",
+        "children": "Go",
+        "actions": {
+          "onClick": "doTheThing"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "actions: a DECLARED function prop may also be bound through the map",
+      "node": {
+        "type": "Toggle",
+        "props": {
+          "on": true
+        },
+        "actions": {
+          "onClick": "toggleIt"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "actions: the value must be a non-empty action name",
+      "node": {
+        "type": "Button",
+        "children": "Go",
+        "actions": {
+          "onClick": 42
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected a non-empty action name"
+      ]
+    },
+    {
+      "name": "actions: an empty action name is rejected",
+      "node": {
+        "type": "Button",
+        "children": "Go",
+        "actions": {
+          "onClick": ""
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected a non-empty action name"
+      ]
+    },
+    {
+      "name": "actions: binding a handler onto a DATA prop is a stated mistake",
+      "node": {
+        "type": "Toggle",
+        "props": {
+          "on": true
+        },
+        "actions": {
+          "tone": "nope"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "is declared as enum, not a handler",
+        "Toggle"
+      ]
+    },
+    {
+      "name": "actions: an undeclared key on a NON-passthrough primitive is an unknown prop",
+      "node": {
+        "type": "Spacer",
+        "actions": {
+          "onClick": "doTheThing"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "unknown prop",
+        "Spacer"
+      ]
+    },
+    {
+      "name": "actions: a non-object map is rejected",
+      "node": {
+        "type": "Button",
+        "children": "Go",
+        "actions": "onClick"
+      },
+      "count": 1,
+      "contains": [
+        "expected an object of prop"
+      ]
+    },
+    {
+      "name": "binds: a value prop may read from host state",
+      "node": {
+        "type": "Toggle",
+        "binds": {
+          "on": "autoResumeClaude"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "binds: pairs with actions — value in, behaviour out",
+      "node": {
+        "type": "Toggle",
+        "binds": {
+          "on": "autoResumeClaude"
+        },
+        "actions": {
+          "onClick": "toggleAutoResume"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "binds: the value must be a non-empty state key",
+      "node": {
+        "type": "Toggle",
+        "binds": {
+          "on": ""
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected a non-empty state key"
+      ]
+    },
+    {
+      "name": "binds: binding a VALUE onto a handler points at the right map",
+      "node": {
+        "type": "Toggle",
+        "props": {
+          "on": true
+        },
+        "binds": {
+          "onClick": "someKey"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "is a handler",
+        "bind it with \"actions\""
+      ]
+    },
+    {
+      "name": "binds: an undeclared key on a NON-passthrough primitive is an unknown prop",
+      "node": {
+        "type": "Spacer",
+        "binds": {
+          "on": "someKey"
+        }
+      },
+      "count": 1,
+      "contains": [
+        "unknown prop",
+        "Spacer"
+      ]
+    },
+    {
+      "name": "binds: a non-object map is rejected",
+      "node": {
+        "type": "Toggle",
+        "props": {
+          "on": true
+        },
+        "binds": "on"
+      },
+      "count": 1,
+      "contains": [
+        "expected an object of prop"
+      ]
+    },
+    {
+      "name": "slot: a host hole needs a name",
+      "node": {
+        "type": "Slot",
+        "props": {
+          "name": "workerBoard"
+        }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "slot: the name is REQUIRED — an anonymous hole cannot be filled",
+      "node": {
+        "type": "Slot"
+      },
+      "count": 1,
+      "contains": [
+        "missing required prop",
+        "name",
+        "Slot"
+      ]
+    },
+    {
+      "name": "slot: the name must be a string",
+      "node": {
+        "type": "Slot",
+        "props": {
+          "name": 42
+        }
+      },
+      "count": 1,
+      "contains": [
+        "expected a string"
+      ]
+    },
+    {
+      "name": "slot: it is not passthrough — a stray prop is caught like any other",
+      "node": {
+        "type": "Slot",
+        "props": {
+          "name": "x",
+          "bogus": 1
+        }
+      },
+      "count": 1,
+      "contains": [
+        "unknown prop",
+        "bogus",
+        "Slot"
+      ]
+    },
+    {
+      "name": "slot: nests in a layout exactly like any other node",
+      "node": {
+        "type": "Grid",
+        "props": {
+          "cols": "1.6fr 1fr"
+        },
+        "children": [
+          {
+            "type": "Slot",
+            "props": {
+              "name": "left"
+            }
+          },
+          {
+            "type": "Slot",
+            "props": {
+              "name": "right"
+            }
+          }
+        ]
+      },
+      "count": 0,
+      "contains": []
+    }
+  ]
+}

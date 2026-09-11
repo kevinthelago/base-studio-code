@@ -1,0 +1,11 @@
+{
+  "id": "compliance-docs",
+  "name": "Compliance docs pack",
+  "kind": "docs",
+  "source": "first-party",
+  "desc": "Generates the compliance document set — privacy policy, DPA, and a Record of Processing Activities — from the codebase's actual data flows.",
+  "body": "Generate the compliance document set from the codebase's real data flows. Write Markdown to /docs and open a docs-only PR.\n1. Derive the data inventory: every category of personal data the app collects, its purpose, lawful basis, storage location, and retention period — cite the code that handles each.\n2. Privacy policy: what is collected, why, who it is shared with (sub-processors), user rights, and contact — in plain language.\n3. Data Processing Agreement (DPA) skeleton: processing scope, sub-processor list, security measures, breach-notification terms.\n4. Record of Processing Activities (RoPA, GDPR Art. 30): a table of processing activities, categories, recipients, transfers, and retention.\n5. Cross-link the docs and flag any data flow with no documented purpose or basis. These are drafts for legal review — say so explicitly.",
+  "tools": ["write_file", "repo_map", "kb_write"],
+  "profiles": ["docs"],
+  "pinned": false
+}

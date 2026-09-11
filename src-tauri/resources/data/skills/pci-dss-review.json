@@ -1,0 +1,11 @@
+{
+  "id": "pci-dss-review",
+  "name": "PCI-DSS cardholder-data review",
+  "kind": "review",
+  "source": "first-party",
+  "desc": "Verifies cardholder-data handling against PCI-DSS — no PAN/CVV storage, tokenization, scoped network, TLS — and flags scope creep.",
+  "body": "Read-only review of cardholder-data handling against PCI-DSS v4.0. Report findings only.\n1. Storage (Req. 3): confirm the PAN is never stored in the clear and the CVV/CVC/track data is NEVER stored post-authorization. Prefer tokenization / a hosted payment field so card data never touches the server.\n2. Transmission (Req. 4): strong TLS for any cardholder data in transit; no card data in URLs or logs.\n3. Access (Req. 7/8): need-to-know access, unique IDs, MFA for the cardholder-data environment.\n4. Scope: identify every component that touches card data and flag scope creep (analytics, logs, error trackers receiving PAN).\n5. Output: a requirement-by-requirement table (req · status · evidence file:line · remediation), blockers first.",
+  "tools": ["git_diff", "rank_files", "repo_map"],
+  "profiles": ["review"],
+  "pinned": false
+}
