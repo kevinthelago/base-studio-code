@@ -11,7 +11,7 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { formatLeakReport, withGateTmp } from "./lib/gateTmp.mjs";
+import { formatLeakReport, tempLeakLeg, withGateTmp } from "./lib/gateTmp.mjs";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -369,8 +369,10 @@ const releaseSlot = needsGateSlot(plan)
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
 // Every leg runs with its temp directory OFF the /tmp tmpfs, and whatever it leaves is named and removed
-// (`the-test-suites-leak-temp-dirs-into-tmp`). A leak is REPORTED, not failed: ~30 tests leak today, and
-// reddening every gate for them would train the fleet to read red as noise.
+// (`the-test-suites-leak-temp-dirs-into-tmp`). What was left is its own leg, `temp-leaks`, and it FAILS the
+// gate (`the-test-suites-still-leak-temp-entries-per-gate`): it was report-only while ~30 tests leaked, and
+// once they were all fixed a report could no longer stop the next one.
+let leaked = [];
 await withGateTmp(async () => {
   for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
     const { ok, seconds } = run(label, cmd, args, { key, stage });
@@ -387,9 +389,11 @@ await withGateTmp(async () => {
   }
 }, {
   report: (leaks) => {
+    leaked = leaks;
     process.stdout.write(`\n${formatLeakReport(leaks)}\n`);
   },
 });
+results.push(tempLeakLeg(leaked));
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet
 

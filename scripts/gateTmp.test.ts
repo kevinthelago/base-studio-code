@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatLeakReport, leakReport, sweepStaleGateTmp, tempEnv, withGateTmp, GATE_TMP_BASE, LEAK_REPORT_GROUPS } from "./lib/gateTmp.mjs";
+import { formatLeakReport, leakReport, sweepStaleGateTmp, tempEnv, tempLeakLeg, withGateTmp, GATE_TMP_BASE, IGNORED_TEMP_ENTRIES, LEAK_REPORT_GROUPS } from "./lib/gateTmp.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const made: string[] = [];
@@ -85,6 +85,32 @@ describe("the gate's temp directory", () => {
     expect(line).toMatch(/\+5 more groups \(15 entries\)$/);
     expect(formatLeakReport([{ name: "only-N", count: 1 }])).toBe("gate: the legs left 1 temp entry behind (removed): only-N ×1");
     expect(formatLeakReport(leaks.slice(0, 3), 3)).not.toContain("more group");
+  });
+
+  it("a leak is a RED leg that names each group, and a clean run is a green one (the-test-suites-still-leak-temp-entries-per-gate)", () => {
+    expect(tempLeakLeg([])).toEqual({ key: "temp-leaks", label: "temp leaks", ok: true, seconds: 0, failures: [] });
+    const red = tempLeakLeg([{ name: "bsc-waiting-N-N", count: 23 }, { name: "bscrec-RAND", count: 1 }]);
+    expect(red.ok).toBe(false);
+    expect(red.failures).toEqual(["bsc-waiting-N-N", "bscrec-RAND"]);
+  });
+
+  it("does not count the toolchain's own cache as a leak", async () => {
+    const b = base();
+    const reports: { name: string; count: number }[][] = [];
+    await withGateTmp(async (dir: string) => {
+      for (const n of IGNORED_TEMP_ENTRIES) mkdirSync(join(dir, n));
+    }, { base: b, id: "run-cache", report: (l) => reports.push(l) });
+    expect(reports.flat()).toEqual([]);
+    expect(IGNORED_TEMP_ENTRIES).toContain("node-compile-cache");
+  });
+
+  it("gate.mjs records the temp-leaks leg with the other legs, so it can fail the gate", () => {
+    const gate = readFileSync(join(HERE, "gate.mjs"), "utf8");
+    expect(gate).toMatch(/import \{[^}]*tempLeakLeg[^}]*\} from "\.\/lib\/gateTmp\.mjs"/);
+    const push = gate.indexOf("results.push(tempLeakLeg(leaked))");
+    const verdict = gate.indexOf("const failed = results.filter");
+    expect(push, "the leg is never recorded").toBeGreaterThan(-1);
+    expect(verdict, "the leg must be recorded before the verdict is computed").toBeGreaterThan(push);
   });
 
   it("gate.mjs prints the leak line through formatLeakReport, not a silent slice", () => {
