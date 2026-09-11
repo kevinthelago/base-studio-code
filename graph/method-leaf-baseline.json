@@ -45,7 +45,7 @@
   "features--credentials--credentials-workspace.ts": 2,
   "features--credentials--lib--credentials.ts": 9,
   "features--memory--memory-graph-view.ts": 2,
-  "features--memory--memory-workspace.ts": 2,
+  "features--memory--memory-workspace.ts": 5,
   "fleet-director-bridge.ts": 2,
   "fleet-plan-progress.ts": 5,
   "fleet-policy.ts": 2,
