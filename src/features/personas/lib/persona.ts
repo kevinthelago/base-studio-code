@@ -140,6 +140,11 @@ export interface Persona {
    *  BEING RETIRED: `permissions` below now carries the capability directly. This field stays until
    *  `personas-are-the-launch-primitive` rewires every launch site off `SessionRole`. */
   role: SessionRole;
+  /** What this persona's node READS AS in the Glance drill, when that is not its role — the lexicographer
+   *  runs under the `director` role (which is what makes it a coordinator) but reads "lexicographer".
+   *  Absent means the role. Resolved by `bsc fleet graph`, never here: the UI renders the label it is
+   *  handed rather than deciding it. */
+  label?: string;
   /** This persona's own permissions — the whole answer to "what may this agent do". */
   permissions?: PersonaPermissions;
   /** The persona this one's permissions NARROW from. Read by the store's clamp: a persona with no

@@ -134,6 +134,15 @@
         },
         {
           "cont": [],
+          "key": "bsc-persona",
+          "lead": [
+            "# `bsc fleet graph` resolves each drill node's role and LABEL from the persona library, read through the",
+            "# same store resolution `bsc persona list` uses rather than a second copy of where that store lives."
+          ],
+          "value": "{ path = \"../bsc-persona\" }"
+        },
+        {
+          "cont": [],
           "key": "logs",
           "lead": [
             "# The coord log (#the-director-can-see-which-streams-are-held) — tier 3 of the dependency gate is a",
