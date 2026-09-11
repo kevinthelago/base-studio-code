@@ -1,5 +1,5 @@
 {
-  "note": "GENERATED from @/app/console/lib/sessionLaunch paneLlmConfig — do not hand-edit; see the .gen.test.ts",
+  "note": "FROZEN golden cases, last generated from @/app/console/lib/sessionLaunch paneLlmConfig before the launch moved into bsc-session (frontend-state-2b-the-typescript-launch-composers-are-deleted). The TypeScript generator is gone; the Rust reader is what these guard. Change a case only with a stated reason on the change record.",
   "tierModelIds": [
     "haiku-4.5",
     "sonnet-4.5",

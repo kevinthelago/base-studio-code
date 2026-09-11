@@ -1,5 +1,5 @@
 {
-  "note": "GENERATED from @/app/console/lib/sessionLaunch sessionDeniedCommands + its two helpers — do not hand-edit; see the .gen.test.ts",
+  "note": "FROZEN golden cases, last generated from @/app/console/lib/sessionLaunch sessionDeniedCommands + its two helpers before the launch moved into bsc-session (frontend-state-2b-the-typescript-launch-composers-are-deleted). The TypeScript generator is gone; the Rust reader is what these guard. Change a case only with a stated reason on the change record.",
   "cases": [
     {
       "label": "no role, no profile, no flow — only the user's own denies",
