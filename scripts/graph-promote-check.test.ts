@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   ago,
   attribute,
@@ -346,7 +346,7 @@ describe("a clean verdict is only worth what it covered", () => {
 
 // observe the declaration order the CLI actually uses.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -371,8 +371,16 @@ function stageModule(root: string): string[] {
 }
 
 /** A checkout-shaped temp dir: the module, every lib module it imports, a stub `bsc`, and a repo store. */
+// Every stub checkout is REMOVED once the file finishes (`the-test-suites-leak-temp-dirs-into-tmp`): they
+// were never cleaned, and 1,627 `promote-check-cli-*` plus 261 `promote-check-slow-*` sat in the /tmp tmpfs.
+const CHECKOUTS: string[] = [];
+afterAll(() => {
+  for (const dir of CHECKOUTS.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function stubCheckout(): string {
   const root = mkdtempSync(join(tmpdir(), "promote-check-cli-"));
+  CHECKOUTS.push(root);
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });
@@ -451,6 +459,7 @@ describe("graph-promote-check as a CLI", () => {
 /** A checkout whose stub `bsc` hangs on `graph promote --check` (but answers the version handshake). */
 function stubSlowCheckout(): string {
   const root = mkdtempSync(join(tmpdir(), "promote-check-slow-"));
+  CHECKOUTS.push(root);
   mkdirSync(join(root, "scripts", "lib"), { recursive: true });
   mkdirSync(join(root, "target", "debug"), { recursive: true });
   mkdirSync(join(root, "graph"), { recursive: true });

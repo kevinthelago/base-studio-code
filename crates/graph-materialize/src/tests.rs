@@ -17,13 +17,40 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A scratch directory of our own. No `tempfile` dependency: this crate is a build-dependency of ~54
 /// others and every dev-dependency it grows is compiled before any of them can start.
-fn scratch(tag: &str) -> PathBuf {
+fn scratch(tag: &str) -> Scratch {
     static N: AtomicUsize = AtomicUsize::new(0);
     let n = N.fetch_add(1, Ordering::Relaxed);
     let d = std::env::temp_dir().join(format!("gm-{}-{tag}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).expect("scratch dir");
-    d
+    Scratch(d)
+}
+
+/// A scratch directory that REMOVES ITSELF when the test ends, pass or fail — unwinding runs `Drop`.
+/// Returning a bare `PathBuf` left every one behind in /tmp, a 16 GB RAM tmpfs: 6,930 `gm-*` and 3,352
+/// `gmtt-*` entries when measured (`the-test-suites-leak-temp-dirs-into-tmp`). It derefs to `PathBuf`,
+/// so every call site reads exactly as it did.
+#[derive(Debug)]
+struct Scratch(PathBuf);
+
+/// So an assertion reads `assert_eq!(path, root)` whether `root` is the guard or the path it holds.
+impl PartialEq<Scratch> for PathBuf {
+    fn eq(&self, other: &Scratch) -> bool {
+        *self == other.0
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// A repo root holding a committed store with `records` — each `(id, src, code)`.
