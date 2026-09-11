@@ -129,6 +129,51 @@
           "key": "bsc-sqlite-util",
           "lead": [],
           "value": "{ path = \"../bsc-sqlite-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-perms",
+          "lead": [
+            "# `bsc session launch-plan` (frontend-state-1-a-launch-plan-resolves-in-bsc-session) composes a pane's",
+            "# launch from the ported rules, the stores and the config overlay. None of these depend on this crate."
+          ],
+          "value": "{ path = \"../bsc-perms\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-resolve",
+          "lead": [],
+          "value": "{ path = \"../bsc-resolve\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-request",
+          "lead": [],
+          "value": "{ path = \"../bsc-request\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sandbox",
+          "lead": [],
+          "value": "{ path = \"../bsc-sandbox\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-config",
+          "lead": [],
+          "value": "{ path = \"../bsc-config\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-json-store",
+          "lead": [],
+          "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "plandb",
+          "lead": [],
+          "value": "{ path = \"../plandb\" }"
         }
       ],
       "lead": [
