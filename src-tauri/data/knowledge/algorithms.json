@@ -13310,7 +13310,14 @@
       "folder": "features/memory",
       "src": "src/features/memory/MemoryWorkspace.tsx",
       "provides": "@/features/memory/MemoryWorkspace",
-      "composes": [],
+      "composes": [
+        "bsc.ts",
+        "features--memory--lib--memory.ts",
+        "features--memory--memory-graph-view.ts",
+        "use-page-tabs.ts",
+        "use-graph-viewport.ts",
+        "use-rail-sections.ts"
+      ],
       "tests": [
         {
           "name": "MemoryWorkspace",
@@ -13342,7 +13349,10 @@
       "folder": "features/memory",
       "src": "src/features/memory/MemoryGraphView.tsx",
       "provides": "@/features/memory/MemoryGraphView",
-      "composes": [],
+      "composes": [
+        "features--memory--lib--memory.ts",
+        "edge-path.ts"
+      ],
       "code": "// The Memory GRAPH (`the-memory-workspace-is-a-graph-like-algorithms`) — the Algorithms idiom: an SVG edge layer\n// under absolutely positioned node cards, with the selection lighting its neighbourhood and dimming the rest.\n//\n// It draws the layout `layoutTopicGraph` computed and decides nothing about which node belongs or which edge\n// exists: both come from `bsc memory graph`. No GPU layer — plain SVG and HTML, as Algorithms and Glance draw.\nimport { useMemo } from \"react\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { graphEdge } from \"@/shared/lib/graph/edgePath\";\nimport { KIND_META, MEMORY_NODE_W, MEMORY_NODE_H, type MemoryGraphLayout } from \"@/features/memory/lib/memory\";\n\nexport function MemoryGraphView({ layout, selected, onSelect }: {\n  layout: MemoryGraphLayout;\n  selected: string | null;\n  onSelect: (id: string) => void;\n}) {\n  // What the selection touches: itself, every node one edge away, and those edges.\n  const lit = useMemo(() => {\n    if (!selected) return null;\n    const nodes = new Set<string>([selected]);\n    const edges = new Set<string>();\n    for (const e of layout.edges) {\n      if (e.from === selected) { nodes.add(e.to); edges.add(e.id); }\n      if (e.to === selected) { nodes.add(e.from); edges.add(e.id); }\n    }\n    return { nodes, edges };\n  }, [layout.edges, selected]);\n\n  const geoms = useMemo(\n    () =>\n      layout.edges.flatMap((e) => {\n        const a = layout.pos.get(e.from);\n        const b = layout.pos.get(e.to);\n        if (!a || !b) return [];\n        const g = graphEdge({ x: a.x, y: a.y, w: MEMORY_NODE_W, h: MEMORY_NODE_H }, { x: b.x, y: b.y, w: MEMORY_NODE_W, h: MEMORY_NODE_H });\n        return [{ ...e, g }];\n      }),\n    [layout.edges, layout.pos],\n  );\n\n  return (\n    <>\n      <svg\n        className=\"mem-graph-edges\"\n        width={layout.world.w}\n        height={layout.world.h}\n        style={{ position: \"absolute\", left: 0, top: 0, overflow: \"visible\", pointerEvents: \"none\" }}\n        aria-hidden=\"true\"\n      >\n        {geoms.map((e) => {\n          const isLit = !!lit && lit.edges.has(e.id);\n          return (\n            <g key={e.id} className=\"mem-edge\" data-rel={e.rel} data-lit={isLit} style={{ opacity: lit && !isLit ? 0.14 : 1, transition: \"opacity 0.16s ease\" }}>\n              <path d={e.g.d} fill=\"none\" strokeWidth={isLit ? 1.75 : 1.25} />\n              <path d={e.g.arrow} className=\"mem-edge-arrow\" />\n              {/* The relationship is NAMED on a lit edge, and every edge type is keyed in the legend. */}\n              {isLit && (\n                <text className=\"mem-edgelabel\" x={e.g.labelX} y={e.g.labelY} textAnchor=\"middle\" dominantBaseline=\"middle\">\n                  {e.rel}\n                </text>\n              )}\n            </g>\n          );\n        })}\n      </svg>\n\n      {layout.nodes.map((n) => (\n        <Box\n          key={n.id}\n          data-node\n          role=\"button\"\n          tabIndex={0}\n          className={`mem-node${n.id === selected ? \" on\" : \"\"}${lit && !lit.nodes.has(n.id) ? \" dim\" : \"\"}`}\n          data-kind={n.kind}\n          data-status={n.status}\n          data-unattached={n.unattached}\n          style={{ left: n.x, top: n.y, width: MEMORY_NODE_W, height: MEMORY_NODE_H }}\n          onClick={(e) => { e.stopPropagation(); onSelect(n.id); }}\n          onKeyDown={(e) => { if (e.key === \"Enter\" || e.key === \" \") { e.preventDefault(); onSelect(n.id); } }}\n          title={n.title}\n        >\n          <Text as=\"span\" className=\"mem-node-name\">{n.title}</Text>\n          {/* The kind is TEXT on every card — colour reinforces it, never carries it alone. */}\n          <Text as=\"span\" mono className=\"mem-node-meta\">\n            {KIND_META[n.kind].label.replace(/s$/, \"\").toLowerCase()}\n            {n.name && n.name !== n.title ? ` · ${n.name}` : \"\"}\n          </Text>\n        </Box>\n      ))}\n    </>\n  );\n}\n"
     },
     {
