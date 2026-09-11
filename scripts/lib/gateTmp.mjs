@@ -23,6 +23,12 @@ export const STALE_RUN_MS = 6 * 60 * 60 * 1000;
 
 const TEMP_VARS = ["TMPDIR", "TMP", "TEMP"];
 
+/** Entries a leg's TOOLCHAIN makes in its temp directory, which no test created and no test can remove.
+ *  `node-compile-cache` is Node's own module compile cache (`module.enableCompileCache()` defaults it to
+ *  `os.tmpdir()`), and it appeared in every gate run once the legs got their own TMPDIR. Counting it would
+ *  make the temp-leaks leg red on every run for something that is not a leak. */
+export const IGNORED_TEMP_ENTRIES = ["node-compile-cache"];
+
 /** The environment a leg needs so every temp file it makes lands in `dir`. */
 export function tempEnv(dir) {
   return Object.fromEntries(TEMP_VARS.map((k) => [k, dir]));
@@ -41,6 +47,7 @@ export function leakReport(dir) {
   }
   const groups = new Map();
   for (const name of names) {
+    if (IGNORED_TEMP_ENTRIES.includes(name)) continue;
     const key = name
       .replace(/ThreadId\(\d+\)/g, "ThreadId(N)")
       .replace(/-[A-Za-z0-9]{6}$/, "-RAND")
@@ -50,6 +57,41 @@ export function leakReport(dir) {
   return [...groups]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/** How many leak groups the gate names before it summarizes the rest. */
+export const LEAK_REPORT_GROUPS = 20;
+
+/** The one line the gate prints about what its legs left behind — every group up to `max`, and the
+ *  count of what it did not name (`the-test-suites-still-leak-temp-entries-per-gate`). It used to be an
+ *  inline `slice(0, 8)` with nothing after it: a full gate reported "507 entries" and named 76 of them,
+ *  so the other 431 read as if they did not exist.
+ *  @param {Leak[]} leaks
+ *  @param {number} [max]
+ *  @returns {string} */
+export function formatLeakReport(leaks, max = LEAK_REPORT_GROUPS) {
+  const total = leaks.reduce((n, l) => n + l.count, 0);
+  const shown = leaks.slice(0, max);
+  const rest = leaks.slice(max);
+  const named = shown.map((l) => `${l.name} ×${l.count}`).join(" · ");
+  const restCount = rest.reduce((n, l) => n + l.count, 0);
+  const tail = rest.length
+    ? ` · +${rest.length} more group${rest.length === 1 ? "" : "s"} (${restCount} entr${restCount === 1 ? "y" : "ies"})`
+    : "";
+  return `gate: the legs left ${total} temp entr${total === 1 ? "y" : "ies"} behind (removed): ${named}${tail}`;
+}
+
+/** The gate LEG for what the other legs left behind (`the-test-suites-still-leak-temp-entries-per-gate`).
+ *
+ *  Red when anything was left. Leaks used to be reported and not failed, because ~30 tests leaked and a
+ *  permanently red leg trains everyone to read red as noise. Once every leaker was fixed and a full run
+ *  left nothing, a report could no longer protect that: the next leaking test would be one line in
+ *  scrollback. Failing is what makes it visible. `failures` names each group, so a known-red declaration
+ *  can excuse one leaker with `--test <group>` instead of the whole leg.
+ *  @param {Leak[]} leaks
+ *  @returns {{ key: string, label: string, ok: boolean, seconds: number, failures: string[] }} */
+export function tempLeakLeg(leaks) {
+  return { key: "temp-leaks", label: "temp leaks", ok: leaks.length === 0, seconds: 0, failures: leaks.map((l) => l.name) };
 }
 
 /** Remove run directories under `base` older than `maxAgeMs` — the ones a killed gate left. */
