@@ -81,6 +81,10 @@ const ON_DISK: string[] = [
   "src/features/sounds/lib/synth.ts",
   "src/features/teams/lib/team.ts",
   "src/shared/data/skills.ts",
+  // The screen registry `bsc app go` reads (`the-shared-navigation-mechanism-drill-select-and-show`):
+  // module state on a specifier `appModules` registers for the graph-loaded pages, so a record would be a
+  // second copy of the registry — the shape `bsc graph impl set` refuses.
+  "src/shared/hooks/useScreenDescriptor.ts",
   "src/shared/lib/a11y/announcer.ts",
   "src/shared/lib/algorithms/groupTotals.ts",
   "src/shared/lib/algorithms/llmEnergy.ts",

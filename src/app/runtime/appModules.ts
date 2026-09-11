@@ -59,6 +59,9 @@ import * as UsePoll from "@/shared/hooks/usePoll";
 // perf marker, the session-log tail, the preview source resolver, the claude-running guard, and the demo
 // snapshot. None of these are glance's own, so they belong to the shell's platform set, not a feature's.
 import * as UseCrumbEntity from "@/shared/hooks/useCrumbEntity";
+// The screen registry `bsc app go` reads — every navigable page record publishes into it, so it must be
+// the ONE module instance the bridge also imports.
+import * as UseScreenDescriptor from "@/shared/hooks/useScreenDescriptor";
 import * as Perf from "@/shared/lib/core/perf";
 import * as SessionLog from "@/shared/lib/logs/sessionLog";
 import * as PreviewSource from "@/shared/lib/preview/previewSource";
@@ -509,6 +512,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/usePoll": UsePoll,
   "@/shared/hooks/useCrumbEntity": UseCrumbEntity,
+  "@/shared/hooks/useScreenDescriptor": UseScreenDescriptor,
   "@/shared/lib/core/perf": Perf,
   "@/shared/lib/logs/sessionLog": SessionLog,
   "@/shared/lib/preview/previewSource": PreviewSource,
