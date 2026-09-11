@@ -29,7 +29,9 @@ export function tempEnv(dir) {
 }
 
 /** What a run left behind, grouped by name with the per-run noise (pids, counters, random suffixes)
- *  folded out, most-numerous first — so thirty `gm-<pid>-<tag>-<n>` entries read as one leaker. */
+ *  folded out, most-numerous first — so thirty `gm-<pid>-<tag>-<n>` entries read as one leaker.
+ *  @param {string} dir
+ *  @returns {Leak[]} */
 export function leakReport(dir) {
   let names;
   try {
@@ -73,10 +75,17 @@ export function sweepStaleGateTmp(base = GATE_TMP_BASE, maxAgeMs = STALE_RUN_MS,
   return removed;
 }
 
+/** @typedef {{ name: string, count: number }} Leak */
+
 /**
  * Run `fn` with every temp variable pointing at a fresh per-run directory, then report what was left
  * in it and remove it — even when `fn` throws. The previous values are restored, so nothing after the
  * legs inherits a directory that no longer exists.
+ *
+ * @template T
+ * @param {(dir: string) => Promise<T> | T} fn
+ * @param {{ base?: string, report?: (leaks: Leak[]) => void, id?: string }} [options]
+ * @returns {Promise<T>}
  */
 export async function withGateTmp(fn, { base = GATE_TMP_BASE, report = () => {}, id = `${process.pid}-${Date.now()}` } = {}) {
   sweepStaleGateTmp(base);
