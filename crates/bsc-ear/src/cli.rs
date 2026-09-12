@@ -29,9 +29,13 @@ missing from the list is indistinguishable from an input that is not plugged in.
         name: "start",
         summary: "begin listening in the background",
         usage: "\
-bsc ear start [--device <name>] [--window <minutes>] [--dir <path>]
+bsc ear start [--device <name>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
 
 Detaches and listens until `bsc ear stop`. Output goes to the log beside the audio.
+
+--channel and --speaker are forwarded to the detached listener and mean what they mean for
+`bsc ear listen`: the baseline is keyed per (speaker, channel), so label the recording path or two
+microphones pool into one habit and every absolute measure describes the mix rather than the voice.
 
 IT IS ALWAYS-ON BY DESIGN, which is the whole point of the feature and also the reason the retention
 bound is a function rather than a promise: --window (default 120 minutes) is enforced after every
@@ -65,10 +69,15 @@ off. The daemon touches a heartbeat every few seconds and anything older than 20
         name: "listen",
         summary: "listen in the foreground, printing every boundary as it happens",
         usage: "\
-bsc ear listen [--device <name>] [--window <minutes>] [--dir <path>]
+bsc ear listen [--device <name>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
 
 The same capture as `start`, in your terminal, printing the noise floor once it has learned the room
 and a line per segment. This is how you check a threshold against a real microphone.
+
+--channel LABELS THE RECORDING PATH — this desk mic, that phone — and it is not decoration. The
+baseline is keyed per (speaker, channel), so two microphones sharing one label pool into a single
+habit, and every absolute measure (loudness, effort) then describes two rooms and two preamps mixed
+together rather than a voice. --speaker names who is talking, defaulting to `me`.
 
 IT IS DEAF FOR THE FIRST SECOND, deliberately. A detector that can trigger before it knows how loud
 the room is will trigger on the room.",
