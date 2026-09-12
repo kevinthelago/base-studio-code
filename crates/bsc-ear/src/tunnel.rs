@@ -278,7 +278,7 @@ fn generate_psk() -> String {
 mod tests {
     use super::*;
     use base64::Engine;
-    use bsc_secret::vault::MapVault;
+    use bsc_secret::vault::{Lookup, MapVault};
 
     /// A vault that accepts every write and remembers nothing — `keyring`'s `mock` backend, which
     /// is what a Linux build with no Secret Service feature silently falls back to.
@@ -296,6 +296,12 @@ mod tests {
         fn get(&self, _id: &str) -> Option<String> {
             None
         }
+        /// ABSENT, not unreadable. This backend answers every question it is asked — it simply has
+        /// no record, because it threw the write away. That is exactly what `Absent` means, and it
+        /// is what makes `load_or_create`'s read-back able to call the forgotten write a failure.
+        fn lookup(&self, _id: &str) -> Lookup {
+            Lookup::Absent
+        }
     }
 
     /// A vault that cannot store anything — a locked keychain.
@@ -312,6 +318,13 @@ mod tests {
         }
         fn get(&self, _id: &str) -> Option<String> {
             None
+        }
+        /// UNREADABLE, never absent. A locked keychain answers nothing: it cannot say whether an
+        /// identity is stored, so reporting `Absent` would assert the one falsehood this enum was
+        /// added to prevent — and for an always-on ear that falsehood mints a SECOND identity and
+        /// silently unpairs every phone that pinned the first.
+        fn lookup(&self, _id: &str) -> Lookup {
+            Lookup::Unreadable("the keychain is locked".into())
         }
     }
 
