@@ -5,9 +5,32 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(null),
 }));
 
+// ONE `listen` spy, shared by the event module and by the WINDOW-SCOPED door.
+//
+// The app's bridges subscribe on their own window now (`the-agent-view-is-a-window-a-session-navigates-without-moving-yours`):
+// `listen()` from the api root registers the target `Any` and so hears an emit aimed at another window,
+// which is how a tear-off could answer a request meant for the user's window. `getCurrentWebviewWindow()`
+// reaches the real API, which throws in jsdom ("Cannot read properties of undefined (reading 'metadata')"),
+// so it needs a mock — and it must be the SAME spy, or a test that asserts what the app subscribed to sees
+// an empty call list and fails while the app is fine.
+const tauriEvents = vi.hoisted(() => ({ listen: vi.fn().mockResolvedValue(vi.fn()) }));
+
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn().mockResolvedValue(vi.fn()),
+  listen: tauriEvents.listen,
   emit: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main", listen: tauriEvents.listen }),
+  // Kept because mocking the module replaces ALL of it: `detachWindow.ts` constructs one of these for a
+  // tab tear-off, and losing the export would break tests that have nothing to do with listening.
+  WebviewWindow: class {
+    label: string;
+    constructor(label: string) { this.label = label; }
+    once = vi.fn();
+    close = vi.fn();
+    listen = tauriEvents.listen;
+  },
 }));
 
 vi.mock("@tauri-apps/plugin-log", () => ({

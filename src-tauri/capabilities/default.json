@@ -1,11 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema/acl/capability.schema.json",
   "identifier": "default",
-  "description": "Default capability \u2014 grants core Tauri APIs to the main window and detached tab windows.",
+  "description": "Default capability — grants core Tauri APIs to the main window, detached tab windows, and the agent view.",
   "windows": [
     "main",
     "tab-*",
-    "bsc-widget-*"
+    "bsc-widget-*",
+    "agent-view"
   ],
   "permissions": [
     "core:default",

@@ -15,8 +15,10 @@ const CLI = "bsc-navigate--cli.rs";
 const TAURI = "src-tauri--navigate--mod.rs";
 const BRIDGE = "navigate-bridge.ts";
 
-/** Request fields that only READ, so `is_read_only` must not name them. */
-const READ_FLAGS = new Set(["force", "targets"]);
+/** Request fields that do not CHANGE the view, so `is_read_only` must not name them: `force` is a
+ *  permission, `targets` asks for more in the reply, and `window` says WHICH window is being read or
+ *  steered — a read of one window is still a read. */
+const READ_FLAGS = new Set(["force", "targets", "window"]);
 /** TypeScript ack keys that are the frontend's own bookkeeping, stripped before the ack is sent. */
 const INTERNAL = new Set(["id", "error", "retryAfterHydrate", "awaitMount", "steerBlocked"]);
 
@@ -94,6 +96,30 @@ describe("the navigate contract holds in all five places", () => {
   it("the lean line prints every result field", () => {
     const body = between(code(CLI), "fn lean(", "\n}\n");
     expect(result.filter((f) => !body.includes(`r.${f}`))).toEqual([]);
+  });
+
+  // ── ONE REQUEST, ONE WINDOW (`the-agent-view-is-a-window-a-session-navigates-without-moving-yours`) ──
+  //
+  // Both halves are needed and neither is visible in a render: Rust must emit to the window the request
+  // NAMED, and the bridge must subscribe on ITS OWN window. `listen()` from the api root registers the
+  // target `Any`, which hears an emit aimed at somebody else — so a broadcast, or a global listener, and
+  // the agent view answers for the user's window (or the reverse). The ack registry delivers the FIRST
+  // answer, so the wrong window wins silently and the caller photographs the wrong screen.
+  it("Rust delivers a navigate to ONE window, not every window", () => {
+    const apply = between(code(TAURI), "pub fn apply(", "\n}\n");
+    expect(apply, "the request's window is what it is delivered to").toContain("emit_to(label");
+    expect(apply.includes("app.emit("), "a broadcast reaches every window's bridge").toBe(false);
+    // And the window is ensured before the emit, so `bsc app view` opens the view on first use.
+    expect(apply).toContain("agent_window::ensure(app, label)");
+  });
+
+  it("the bridge subscribes on its OWN window", () => {
+    const bridge = code("use-navigate-bridge.ts");
+    expect(bridge).toContain('getCurrentWebviewWindow().listen<NavRequest & { id: string }>("bsc://navigate"');
+    expect(
+      /^\s*const un = listen</m.test(bridge),
+      "a root-level listen() registers the target Any and hears another window's request",
+    ).toBe(false);
   });
 
   it("the workspace help names the current rail", () => {
