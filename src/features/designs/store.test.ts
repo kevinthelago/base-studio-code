@@ -11,6 +11,7 @@ import { stampSeedHash } from "@/features/designs/lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
 import * as themeBridge from "@/features/designs/lib/themeBridge";
 import * as usageBridge from "@/features/designs/lib/kitUsageBridge";
+import * as kitStoreRead from "@/features/designs/lib/kitStoreRead";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
 
 // The packaged seed is now a single EMPTY kit (#3543): SEED_KITS = [base-studio-code], SEED_COMPONENTS = [].
@@ -554,7 +555,7 @@ describe("kit-theme collection slice (#2488)", () => {
 
 describe("kit-usage consumer index slice (#2277)", () => {
   beforeEach(() => {
-    useAppStore.setState({ kitUsage: [] });
+    useAppStore.setState({ kitUsage: [], kitUsageUnread: false });
     vi.restoreAllMocks();
   });
 
@@ -577,15 +578,33 @@ describe("kit-usage consumer index slice (#2277)", () => {
     expect(drop).toHaveBeenCalledWith("proj-a>react-ui"); // matches the Rust usage_id
   });
 
-  it("hydrateKitUsage replaces from the bridge, but keeps the cache when unreachable", async () => {
-    useAppStore.setState({ kitUsage: [{ projectKey: "cached", kitId: "react-ui" }] });
-    vi.spyOn(usageBridge, "loadKitUsage").mockResolvedValueOnce(null); // unreachable → keep
+  it("hydrateKitUsage replaces from the store, keeps the cache when the read could not RUN, and SAYS SO", async () => {
+    // `the-kit-cluster-folds-into-bsc-ui`: keeping the cache was already right, but it was SILENT — the
+    // renderer could not tell a stale cache from what the store holds. `kitUsageUnread` is that
+    // difference, and it matters because a consumer count of 0 read off a failed hydrate says "this kit
+    // is unused", which is the input someone acts on to retire a kit.
+    useAppStore.setState({ kitUsage: [{ projectKey: "cached", kitId: "react-ui" }], kitUsageUnread: false });
+    vi.spyOn(kitStoreRead, "readKitUsage").mockResolvedValueOnce(null); // the read could not happen
     await useAppStore.getState().hydrateKitUsage();
     expect(useAppStore.getState().kitUsage).toEqual([{ projectKey: "cached", kitId: "react-ui" }]);
-    const loaded = [{ projectKey: "m", kitId: "spring-kotlin" }];
-    vi.spyOn(usageBridge, "loadKitUsage").mockResolvedValueOnce(loaded);
+    expect(useAppStore.getState().kitUsageUnread).toBe(true);
+
+    const edges = [{ projectKey: "m", kitId: "spring-kotlin" }];
+    vi.spyOn(kitStoreRead, "readKitUsage").mockResolvedValueOnce({ edges });
     await useAppStore.getState().hydrateKitUsage();
-    expect(useAppStore.getState().kitUsage).toEqual(loaded);
+    expect(useAppStore.getState().kitUsage).toEqual(edges);
+    expect(useAppStore.getState().kitUsageUnread).toBe(false); // a successful read CLEARS the flag
+  });
+
+  it("a store that ANSWERED with no edges replaces the cache — a real empty is not an unreadable one", async () => {
+    // The other side of the same distinction. `[]` from a live store is a FACT and must overwrite a
+    // stale cache; only `null` may preserve it. Collapsing the two is what made the old reader unable
+    // to report anything but "keep whatever you had".
+    useAppStore.setState({ kitUsage: [{ projectKey: "cached", kitId: "react-ui" }], kitUsageUnread: true });
+    vi.spyOn(kitStoreRead, "readKitUsage").mockResolvedValueOnce({ edges: [] });
+    await useAppStore.getState().hydrateKitUsage();
+    expect(useAppStore.getState().kitUsage).toEqual([]);
+    expect(useAppStore.getState().kitUsageUnread).toBe(false);
   });
 });
 
