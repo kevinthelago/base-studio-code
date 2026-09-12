@@ -117,5 +117,11 @@
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { Screen } from \"./Screen\";\r\nimport type { TabItem } from \"./TabBar\";\r\n\r\n// The shared Screen shell (#1878): the root tabbed device a Workspace renders through —\r\n// a PageTabs strip (the TabBar) over one active Page body. See docs/frontend-structure.md.\r\nconst PAGES: TabItem[] = [\r\n  { id: \"library\", label: \"Library\" },\r\n  { id: \"runs\", label: \"Runs\" },\r\n];\r\n\r\nfunction noop() {}\r\n\r\ndescribe(\"Screen shell\", () => {\r\n  it(\"renders the PageTabs strip and the active Page body\", () => {\r\n    render(\r\n      <Screen tabs={PAGES} active=\"library\" onSelect={noop} onReorder={noop} onTearOff={noop}>\r\n        <div>library body</div>\r\n      </Screen>,\r\n    );\r\n    // PageTabs renders one tab per page…\r\n    expect(screen.getByText(\"Library\")).toBeTruthy();\r\n    expect(screen.getByText(\"Runs\")).toBeTruthy();\r\n    // …and the active page's body is rendered.\r\n    expect(screen.getByText(\"library body\")).toBeTruthy();\r\n  });\r\n\r\n  it(\"hides the PageTabs strip in torn-off pageOverride mode but still renders the body\", () => {\r\n    render(\r\n      <Screen tabs={PAGES} active=\"runs\" onSelect={noop} onReorder={noop} onTearOff={noop} pageOverride=\"runs\">\r\n        <div>runs body</div>\r\n      </Screen>,\r\n    );\r\n    // No tab bar when a single page is torn off into its own window…\r\n    expect(screen.queryByText(\"Library\")).toBeNull();\r\n    expect(screen.queryByText(\"Runs\")).toBeNull();\r\n    // …but the page body is still there.\r\n    expect(screen.getByText(\"runs body\")).toBeTruthy();\r\n  });\r\n});\r\n"
     }
   ],
-  "role": "layout"
+  "role": "layout",
+  "whenUse": [
+    "The tabbed shell every Workspace composes: a TabBar over one Page at a time, with built-in loading, error and no-pages-open states."
+  ],
+  "whenNot": [
+    "Tabs inside a page body — use TabBar on its own."
+  ]
 }

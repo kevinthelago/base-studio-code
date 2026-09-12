@@ -31,8 +31,15 @@
     "default"
   ],
   "pageKind": "kit",
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A complete records browser for homogeneous rows with fixed aligned columns: a header strip, DataTableRow rows and a selected-row detail."
+  ],
+  "whenNot": [
+    "Rows of differing shape — use CollectionPage."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "table"
+  ]
 }

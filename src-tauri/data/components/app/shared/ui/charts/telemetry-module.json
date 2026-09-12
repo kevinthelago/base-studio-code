@@ -13,5 +13,14 @@
       "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { TelemetryPanel, ItemBars, SplitBar } from \"@/shared/ui/charts/telemetry\";\n\ndescribe(\"telemetry primitives (#1826)\", () => {\n  it(\"TelemetryPanel renders the title, hint, right slot, and body\", () => {\n    render(\n      <TelemetryPanel title=\"Calls per server\" hint=\"per server\" right={<span>legend</span>}>\n        <span>body</span>\n      </TelemetryPanel>,\n    );\n    expect(screen.getByText(\"Calls per server\")).toBeInTheDocument();\n    expect(screen.getByText(\"per server\")).toBeInTheDocument();\n    expect(screen.getByText(\"legend\")).toBeInTheDocument();\n    expect(screen.getByText(\"body\")).toBeInTheDocument();\n  });\n\n  it(\"ItemBars renders a row per item, and the empty slot when there are none\", () => {\n    const { rerender } = render(\n      <ItemBars rows={[{ key: \"a\", label: \"server-a\", meta: \"http\", value: 12, fraction: 0.5 }]} />,\n    );\n    expect(screen.getByText(\"server-a\")).toBeInTheDocument();\n    expect(screen.getByText(\"http\")).toBeInTheDocument();\n    expect(screen.getByText(\"12\")).toBeInTheDocument();\n\n    rerender(<ItemBars rows={[]} empty={<span>nothing here</span>} />);\n    expect(screen.getByText(\"nothing here\")).toBeInTheDocument();\n  });\n\n  it(\"SplitBar shows the label + both labelled counts\", () => {\n    render(<SplitBar label=\"db\" a={7} b={2} aLabel=\"ok\" bLabel=\"err\" />);\n    expect(screen.getByText(\"db\")).toBeInTheDocument();\n    expect(screen.getByText(\"7 ok\")).toBeInTheDocument();\n    expect(screen.getByText(\"2 err\")).toBeInTheDocument();\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "Pulling the telemetry-tab primitives (the framed panel plus its two bar shapes) that every analytics tab was otherwise copy-pasting."
+  ],
+  "whenNot": [
+    "A whole dashboard layout — compose DashboardPage instead."
+  ],
+  "shapes": [
+    "series"
+  ]
 }

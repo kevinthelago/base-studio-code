@@ -10,10 +10,10 @@
   "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `ConfirmButton` defaults `label`, `armedLabel`, `onConfirm`, `pendingLabel`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `ConfirmButton` holds 8 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 8 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
   "folder": "shared/ui/controls",
   "whenUse": [
-    "A destructive or confirming action that should require a deliberate second click before firing."
+    "A destructive or irreversible action that should take a deliberate second click: the first click arms it, the second fires, and it can show a pending spinner while the async work runs."
   ],
   "whenNot": [
-    "A non-destructive action - use Button directly."
+    "An ordinary action — use Button. A decision needing explanation — use promptDialog."
   ],
   "tags": [
     "control",

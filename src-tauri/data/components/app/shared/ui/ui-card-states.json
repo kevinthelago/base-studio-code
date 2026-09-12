@@ -12,5 +12,11 @@
   ],
   "src": "src/shared/ui/feedback/CardStates.tsx",
   "folder": "shared/ui/feedback",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The shared loading and empty bodies for a dashboard card, so the card keeps its frame and head while only its body swaps."
+  ],
+  "whenNot": [
+    "A whole-page empty state — use EmptyState."
+  ]
 }

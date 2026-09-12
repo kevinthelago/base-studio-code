@@ -12,8 +12,12 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "One choice inside a SelectField when the UI is authored as a data spec, where a raw `<option>` cannot be named."
+  ],
+  "whenNot": [
+    "Hand-written JSX — write a plain `<option>`."
+  ],
   "tags": [],
   "feature": "core"
 }

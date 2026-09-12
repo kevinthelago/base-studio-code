@@ -15,5 +15,14 @@
     }
   ],
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A labelled list where each row carries a caption, a value and a proportional fill bar you supply as a 0..1 fraction."
+  ],
+  "whenNot": [
+    "Absolute values you want scaled for you — HBars computes the maximum itself."
+  ],
+  "shapes": [
+    "list"
+  ]
 }

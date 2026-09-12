@@ -64,5 +64,11 @@
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Stack } from \"./Stack\";\r\n\r\ndescribe(\"Stack\", () => {\r\n  it(\"renders a flex column with the resolved gap and children\", () => {\r\n    render(<Stack gap=\"md\" data-testid=\"s\"><span>a</span><span>b</span></Stack>);\r\n    const el = screen.getByTestId(\"s\");\r\n    expect(el.style.display).toBe(\"flex\");\r\n    expect(el.style.flexDirection).toBe(\"column\");\r\n    expect(el.style.gap).toBe(\"12px\");\r\n    expect(el).toHaveTextContent(\"ab\");\r\n  });\r\n\r\n  it(\"leaves alignItems unset by default (native stretch) and applies it when asked\", () => {\r\n    const { rerender } = render(<Stack data-testid=\"s\">x</Stack>);\r\n    expect(screen.getByTestId(\"s\").style.alignItems).toBe(\"\");\r\n    rerender(<Stack align=\"center\" data-testid=\"s\">x</Stack>);\r\n    expect(screen.getByTestId(\"s\").style.alignItems).toBe(\"center\");\r\n  });\r\n\r\n  it(\"supports a raw px gap, padding, inline, and passes through arbitrary div props\", () => {\r\n    const onClick = vi.fn();\r\n    render(<Stack gap={10} pad={[\"sm\", \"md\"]} inline className=\"c\" onClick={onClick} data-testid=\"s\">x</Stack>);\r\n    const el = screen.getByTestId(\"s\");\r\n    expect(el.style.gap).toBe(\"10px\");\r\n    expect(el.style.padding).toBe(\"8px 12px\");\r\n    expect(el.style.display).toBe(\"inline-flex\");\r\n    expect(el.classList.contains(\"c\")).toBe(true);\r\n    fireEvent.click(el);\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"lets a style override win last\", () => {\r\n    render(<Stack gap=\"md\" style={{ gap: 3 }} data-testid=\"s\">x</Stack>);\r\n    expect(screen.getByTestId(\"s\").style.gap).toBe(\"3px\");\r\n  });\r\n});\r\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A vertical flex column with a gap, plus alignment, justification, wrapping and padding."
+  ],
+  "whenNot": [
+    "A horizontal arrangement — use Row. Explicit row tracks — use Grid."
+  ]
 }

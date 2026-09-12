@@ -13,5 +13,14 @@
     }
   ],
   "folder": "shared/ui/data",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "One row of a scrollable card list: a leading glyph, a title with an optional badge, a subtitle and a trailing action."
+  ],
+  "whenNot": [
+    "New UI — the live library serves this specifier from `ui-card-list-row`."
+  ],
+  "shapes": [
+    "list"
+  ]
 }

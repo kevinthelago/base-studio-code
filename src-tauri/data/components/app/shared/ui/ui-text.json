@@ -78,5 +78,11 @@
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Text } from \"./Text\";\r\n\r\ndescribe(\"Text\", () => {\r\n  it(\"renders a bare span with no size/color/weight forced by default\", () => {\r\n    render(<Text data-testid=\"t\">hi</Text>);\r\n    const el = screen.getByTestId(\"t\");\r\n    expect(el.tagName).toBe(\"SPAN\");\r\n    expect(el.style.fontSize).toBe(\"\");\r\n    expect(el.style.color).toBe(\"\");\r\n    expect(el.style.fontWeight).toBe(\"\");\r\n    expect(el).toHaveTextContent(\"hi\");\r\n  });\r\n\r\n  it(\"resolves a named size rung and a semantic tone to CSS\", () => {\r\n    render(<Text size=\"sm\" tone=\"dim\" data-testid=\"t\">x</Text>);\r\n    const el = screen.getByTestId(\"t\");\r\n    expect(el.style.fontSize).toBe(\"11px\");\r\n    expect(el.style.color).toBe(\"var(--fg-dim)\");\r\n  });\r\n\r\n  it(\"supports a raw px size, a weight, and the mono utility class\", () => {\r\n    render(<Text size={10.5} weight={600} mono data-testid=\"t\">x</Text>);\r\n    const el = screen.getByTestId(\"t\");\r\n    expect(el.style.fontSize).toBe(\"10.5px\");\r\n    expect(el.style.fontWeight).toBe(\"600\");\r\n    expect(el.classList.contains(\"mono\")).toBe(true);\r\n  });\r\n\r\n  it(\"renders as the requested element and passes through arbitrary props\", () => {\r\n    const onClick = vi.fn();\r\n    render(<Text as=\"label\" htmlFor=\"f\" className=\"c\" onClick={onClick} data-testid=\"t\">x</Text>);\r\n    const el = screen.getByTestId(\"t\");\r\n    expect(el.tagName).toBe(\"LABEL\");\r\n    expect(el.getAttribute(\"for\")).toBe(\"f\");\r\n    expect(el.classList.contains(\"c\")).toBe(true);\r\n    fireEvent.click(el);\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"lets a style override win last\", () => {\r\n    render(<Text size=\"md\" tone=\"accent\" style={{ fontSize: 3, color: \"red\" }} data-testid=\"t\">x</Text>);\r\n    const el = screen.getByTestId(\"t\");\r\n    expect(el.style.fontSize).toBe(\"3px\");\r\n    expect(el.style.color).toBe(\"red\");\r\n  });\r\n});\r\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "Any run of text that should take its size, tone, weight and mono-ness from the token scale rather than from inline styles."
+  ],
+  "whenNot": [
+    "A section heading with its own controls — use SectionHeader."
+  ]
 }

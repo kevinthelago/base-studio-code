@@ -64,5 +64,11 @@
     }
   ],
   "folder": "shared/ui/controls",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The filter box above a list, rail or table: a leading search icon, a controlled value, and an optional trailing clear or count."
+  ],
+  "whenNot": [
+    "A general text input in a form — use TextField."
+  ]
 }
