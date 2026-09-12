@@ -29,3 +29,4 @@ pub mod segment;
 pub mod detect;
 pub mod diarize;
 pub mod imprint;
+pub mod tunnel;

@@ -378,6 +378,27 @@ IT DOES NOT SEPARATE OVERLAPPING SPEAKERS. Two voices share the same frequencies
 so no filter can pull them apart — that is target-speaker extraction, a separate model-driven step.
 This is the model-free clean-up that comes first.",
     },
+    CmdDoc {
+        name: "pair",
+        summary: "what a phone needs to pair with this ear — a DURABLE identity, unlike the app's",
+        usage: "\
+bsc ear pair [--relay <url>] [--json|--pretty]
+
+Prints { relayUrl, room, hostPubKey, psk } — the payload the mobile client scans or accepts pasted.
+
+THE IDENTITY IS GENERATED ONCE AND KEPT. The desktop app mints a fresh Noise keypair, room and psk
+at every launch, so restarting it unpairs the phone that had pinned the old key. That is fine for an
+app you pair at the machine and fatal for an ear, whose whole job is to be always listening — so
+this identity is generated on first use, stored in the OS keychain, and loaded unchanged thereafter.
+A reboot, or `bsc ear stop` and `start`, leaves the pairing intact.
+
+THE RELAY IS REMEMBERED, so pairing again reproduces the same payload without being told twice.
+Supply it once with --relay (or $BSC_RELAY_URL); there is no default, because the relay is the
+zero-knowledge Worker you deployed and is not guessable.
+
+THIS IS THE ONE VERB THAT PRINTS A SECRET, deliberately: the psk is what the phone echoes back to
+authenticate. Nothing else on this surface reads it, and it reaches no log line.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -396,6 +417,7 @@ struct Args {
     no_learn: bool,
     dir: Option<String>,
     window_min: Option<u64>,
+    relay: Option<String>,
     positional: Vec<String>,
 }
 
@@ -428,6 +450,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                         .map_err(|_| "--window needs a whole number of minutes".to_string())?,
                 );
             }
+            "--relay" => a.relay = Some(rest.value("--relay needs the relay URL to pair through")?),
             _ => return Ok(false),
         }
         Ok(true)
@@ -1959,6 +1982,57 @@ fn cmd_segments(a: &Args, p: &Paths) -> Result<(), String> {
     Ok(())
 }
 
+/// Load (or first-time create) the ear's identity in `vault`, remember `relay` when one is supplied,
+/// and assemble the payload the phone parses.
+///
+/// The vault is a parameter for the same reason `bsc secret`'s `run_with` takes one: a real keychain
+/// is unavailable in exactly the environments the tests run in, and a test that wrote to the
+/// developer's login keychain would mutate their machine.
+fn pair_payload(relay: Option<&str>, vault: &dyn bsc_secret::vault::Vault) -> Result<crate::tunnel::PairingPayload, String> {
+    let mut identity = crate::tunnel::load_or_create(vault)?;
+    if let Some(url) = relay {
+        identity.remember_relay(url, vault)?;
+    }
+    identity.pairing(None)
+}
+
+/// `bsc ear pair` — print what a phone needs to pair with this ear.
+///
+/// THE ONLY VERB ON THIS SURFACE THAT PRINTS A SECRET, and that is its entire purpose: the psk is
+/// what the phone echoes back inside the Noise session. Nothing else here reads the identity, and
+/// `tunnel::Identity` exposes no accessor for either secret, so the payload is the only way out.
+///
+/// A supplied relay URL is REMEMBERED (`--relay`, else `$BSC_RELAY_URL`), so running this again
+/// reproduces the same payload without being told twice. Remembering it never rotates the keypair.
+fn cmd_pair(a: &Args) -> Result<(), String> {
+    use crate::tunnel;
+    use bsc_secret::vault::Keyring;
+
+    // The env fallback is resolved HERE rather than inside `pair_payload`, so the assembly below is
+    // a pure function of its arguments and can be tested against a fake vault on any machine —
+    // including one that happens to have $BSC_RELAY_URL set.
+    let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
+    let payload = pair_payload(relay.as_deref(), &Keyring)?;
+
+    if a.json || a.pretty {
+        return print_json(&payload, a.pretty);
+    }
+    println!("relay      {}", payload.relay_url);
+    println!("room       {}", payload.room);
+    println!("host key   {}", payload.host_pub_key);
+    println!("psk        {}", payload.psk);
+    println!(
+        "\nThis identity is DURABLE — generated once and kept in the OS keychain — so a phone paired\n\
+         with it stays paired across a reboot and across `bsc ear stop` / `start`.\n\n\
+         The phone reads this as JSON. Scan it, or paste this line:"
+    );
+    println!(
+        "{}",
+        serde_json::to_string(&payload).map_err(|e| format!("could not render the payload: {e}"))?
+    );
+    Ok(())
+}
+
 pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     let a = parse_args(argv)?;
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &a.positional) {
@@ -1985,6 +2059,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("attribute") => cmd_attribute(&a, &p),
         Some("imprint") => cmd_imprint(&a, &p),
         Some("embed") => cmd_embed(&a),
+        Some("pair") => cmd_pair(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -2005,7 +2080,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "embed", "clean"
+                "diarize", "attribute", "imprint", "embed", "clean", "pair"
             ]
         );
     }
@@ -2136,6 +2211,41 @@ mod tests {
         let d = Paths::resolve(None).unwrap();
         assert!(d.root.ends_with("ear"), "{:?}", d.root);
         assert!(d.root.to_string_lossy().contains(".base-studio-code"), "{:?}", d.root);
+    }
+
+    /// THE PROMISE OF THE VERB: pairing again later reproduces the SAME payload, because the
+    /// identity was stored the first time rather than minted afresh. A phone that pinned
+    /// `hostPubKey` yesterday is therefore still paired today.
+    #[test]
+    fn pairing_twice_reproduces_the_same_payload_and_remembers_the_relay() {
+        use bsc_secret::vault::{MapVault, Vault};
+        let vault = MapVault::default();
+
+        let first = pair_payload(Some("https://relay.example/"), &vault).unwrap();
+        assert_eq!(first.relay_url, "https://relay.example", "trailing slash trimmed as the app does");
+        assert!(vault.has(crate::tunnel::IDENTITY_ID), "the identity must have been persisted");
+
+        // No --relay this time: the remembered one carries it, so the phone is handed one payload.
+        let again = pair_payload(None, &vault).unwrap();
+        assert_eq!(again.room, first.room);
+        assert_eq!(again.host_pub_key, first.host_pub_key);
+        assert_eq!(again.psk, first.psk);
+        assert_eq!(again.relay_url, first.relay_url);
+    }
+
+    /// With nothing remembered and no `--relay`, the verb must say how to supply one rather than
+    /// inventing a relay — there is no default, and a wrong one fails silently at pairing time.
+    #[test]
+    fn pairing_with_no_relay_anywhere_refuses_and_says_how() {
+        use bsc_secret::vault::MapVault;
+        let e = pair_payload(None, &MapVault::default()).unwrap_err();
+        assert!(e.contains("--relay"), "{e}");
+    }
+
+    #[test]
+    fn the_relay_flag_needs_a_value_and_says_which_flag() {
+        let e = parse_args(vec!["pair".into(), "--relay".into()]).unwrap_err();
+        assert!(e.contains("--relay"), "{e}");
     }
 
     #[test]
