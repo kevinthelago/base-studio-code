@@ -116,6 +116,46 @@ pub struct CaptureConfig {
     pub state: Option<PathBuf>,
 }
 
+/// Where one run's audio comes from.
+///
+/// **THE SOURCE IS A SEAM, NOT A DEVICE.** The loop consumes interleaved `f32` through a channel and
+/// knows nothing else about it: it folds to mono at `channels`, resamples from `hz`, and feeds the
+/// segmenter. A microphone is one implementation. A phone streaming over the tunnel is another, and
+/// nothing downstream — segmentation, retention, prosody, the per-channel baseline — can tell them
+/// apart or needs to.
+///
+/// This existed implicitly already: the cpal callback did nothing but convert to `f32` and send. All
+/// this does is name the seam so a second producer can stand where the microphone stands.
+pub struct SampleSource {
+    /// Interleaved `f32`, `channels` wide, at `hz`.
+    pub rx: mpsc::Receiver<Vec<f32>>,
+    pub channels: u16,
+    pub hz: u32,
+    /// What to call this in the log and in `ear.state`.
+    pub name: String,
+    /// Held for exactly as long as the source is read, and NEVER inspected.
+    ///
+    /// A `cpal::Stream` stops delivering the moment it is dropped — the old code kept it in a local
+    /// for that reason alone. Moving the source behind a struct without carrying the stream with it
+    /// would have ended capture silently, with no error on any path.
+    _alive: Box<dyn std::any::Any>,
+}
+
+impl SampleSource {
+    /// A source fed by hand: the test path, and the shape a network source takes.
+    ///
+    /// Nothing is kept alive, because nothing needs to be — the sender is the caller's to hold, and
+    /// dropping it is how a source says it has ended.
+    pub fn from_channel(
+        rx: mpsc::Receiver<Vec<f32>>,
+        channels: u16,
+        hz: u32,
+        name: impl Into<String>,
+    ) -> SampleSource {
+        SampleSource { rx, channels, hz, name: name.into(), _alive: Box::new(()) }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize)]
 pub struct Progress {
     pub kept: u64,
@@ -525,23 +565,28 @@ fn spec() -> hound::WavSpec {
     }
 }
 
-/// Listen until `stop` returns true.
+/// Listen to the configured microphone until `stop` returns true.
 ///
 /// `on_event` receives one human line per boundary, so the foreground form is legible and the
 /// daemon's log says what it heard.
-/// `cpal::SampleFormat` is non_exhaustive with nine variants, all handled identically here — by
-/// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
-/// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
-/// deny is not for.
-#[allow(clippy::wildcard_enum_match_arm)]
 pub fn run(
     cfg: &CaptureConfig,
     stop: &dyn Fn() -> bool,
     on_event: &mut dyn FnMut(String),
 ) -> Result<Progress, String> {
     cfg.vad.validate()?;
-    std::fs::create_dir_all(&cfg.dir).map_err(|e| format!("could not create {}: {e}", cfg.dir.display()))?;
+    let src = open_device(cfg)?;
+    run_with_source(cfg, src, stop, on_event)
+}
 
+/// Open the configured capture device as a [`SampleSource`].
+///
+/// `cpal::SampleFormat` is non_exhaustive with nine variants, all handled identically here — by
+/// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
+/// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
+/// deny is not for.
+#[allow(clippy::wildcard_enum_match_arm)]
+fn open_device(cfg: &CaptureConfig) -> Result<SampleSource, String> {
     let host = cpal::default_host();
     let device = match &cfg.device {
         Some(want) => host
@@ -592,6 +637,24 @@ pub fn run(
     }
     .map_err(|e| format!("could not open '{name}': {e}"))?;
     stream.play().map_err(|e| format!("could not start '{name}': {e}"))?;
+    Ok(SampleSource { rx, channels, hz: in_hz, name, _alive: Box::new(stream) })
+}
+
+/// Run the capture loop against ANY source.
+///
+/// The whole of segmentation, retention and the per-channel baseline hangs off this, and none of it
+/// asks where the samples came from — which is what lets a phone stand where a microphone stands.
+pub fn run_with_source(
+    cfg: &CaptureConfig,
+    src: SampleSource,
+    stop: &dyn Fn() -> bool,
+    on_event: &mut dyn FnMut(String),
+) -> Result<Progress, String> {
+    cfg.vad.validate()?;
+    std::fs::create_dir_all(&cfg.dir).map_err(|e| format!("could not create {}: {e}", cfg.dir.display()))?;
+    let name = src.name.clone();
+    let channels = src.channels;
+    let in_hz = src.hz;
     on_event(format!("listening on '{name}' ({channels}ch @ {in_hz}Hz → mono @ {TARGET_HZ}Hz)"));
 
     let mut rec =
@@ -607,7 +670,7 @@ pub fn run(
     publish_state(cfg, rec.segmenter(), &name, &rec.progress());
 
     while !stop() {
-        match rx.recv_timeout(Duration::from_millis(200)) {
+        match src.rx.recv_timeout(Duration::from_millis(200)) {
             Ok(chunk) => {
                 let mono = audio::to_mono(&chunk, channels);
                 pending.extend(audio::resample_linear(&mono, in_hz, TARGET_HZ));
@@ -672,7 +735,8 @@ pub fn run(
         on_event(format!("kept {name} (closed at shutdown)"));
     }
     let mut progress = rec.progress();
-    drop(stream);
+    // Ends the cpal stream when there is one, and is a no-op for every other source.
+    drop(src);
     progress.evicted += sweep(&cfg.dir, &cfg.budget, None, cfg.transcripts.as_deref());
     Ok(progress)
 }
@@ -719,6 +783,64 @@ mod tests {
             .unwrap_or_default();
         v.sort();
         v
+    }
+
+    /// THE SOURCE IS A SEAM — the whole loop runs from something that is not a microphone.
+    ///
+    /// This is the property that lets a phone stand where the desk mic stands: segmentation,
+    /// retention and the per-channel baseline never learn where the samples came from. It is also
+    /// the only way to test the loop at all on this machine, three of whose four inputs deliver
+    /// digital silence.
+    ///
+    /// The timings are not arbitrary — they are `VadConfig::default()` read back. The ear is DEAF
+    /// for `warmup_ms` while it learns the floor, so an utterance pushed before that can never open
+    /// a segment and the test would pass by producing nothing.
+    #[test]
+    fn the_capture_loop_runs_from_a_source_that_is_not_a_microphone() {
+        let t = tmp("src");
+        let (tx, rx) = mpsc::channel::<Vec<f32>>();
+
+        // 20ms mono chunks already at the capture rate, so nothing resamples and the shape the loop
+        // sees is the shape a real source delivers.
+        let flen = audio::frame_len(20);
+        let push = |level: f32, ms: u32| {
+            for _ in 0..ms / 20 {
+                tx.send(vec![level; flen]).expect("the loop holds the receiver");
+            }
+        };
+        push(QUIET, 1_200); // warmup_ms 1000 — the floor is learned before anything can open
+        push(LOUD, 1_000); // comfortably past min_segment_ms 400
+        push(QUIET, 900); // past hangover_ms 700, so it closes itself rather than at shutdown
+
+        let cfg = CaptureConfig {
+            device: None,
+            channel: Some("phone-stand-in".into()),
+            vad: VadConfig::default(),
+            budget: Budget::default(),
+            dir: t.0.clone(),
+            transcripts: None,
+            heartbeat: None,
+            state: None,
+        };
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(2_000);
+        let mut events: Vec<String> = Vec::new();
+        let src = SampleSource::from_channel(rx, 1, TARGET_HZ, "phone-stand-in");
+        let progress = run_with_source(
+            &cfg,
+            src,
+            &|| std::time::Instant::now() >= deadline,
+            &mut |e| events.push(e),
+        )
+        .expect("a source that is not a device must drive the loop");
+
+        assert!(
+            events.first().is_some_and(|e| e.contains("phone-stand-in")),
+            "the source names ITSELF in the log, not a device: {events:?}"
+        );
+        assert_eq!(progress.kept, 1, "one utterance, one segment: {events:?}");
+        assert_eq!(wavs(&t.0).len(), 1, "and exactly one wav on disk: {events:?}");
+        drop(tx);
     }
 
     /// THE WHOLE PATH, with no microphone in it: frames in, a real wav out, at the right spec and a
