@@ -13,5 +13,11 @@
   ],
   "folder": "shared/ui/controls",
   "srcRetired": "src/shared/ui/controls/Dropdown.tsx",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A single-select menu with full control over each option's label, including a leading colour dot, glyph or avatar."
+  ],
+  "whenNot": [
+    "New UI — the live library serves this specifier from `ui-dropdown`."
+  ]
 }

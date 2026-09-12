@@ -14,5 +14,14 @@
       "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { RoleTierChips } from \"@/shared/ui/data/RoleTierChips\";\n\ndescribe(\"RoleTierChips (#2420)\", () => {\n  it(\"renders all four capability tiers for a role\", () => {\n    render(<RoleTierChips role=\"planner\" />);\n    // Planner floor per role-capabilities.json: git read · github read · code WRITE · net read.\n    // \"Plan-only\" is encoded as code:write + writeGlobs scoped to the plan-section files (*.md,\n    // prompts/*, …) — unlike the director, whose carve-out is encoded as code:none + globs (#851).\n    expect(screen.getByText(\"git · read\")).toBeTruthy();\n    expect(screen.getByText(\"github · read\")).toBeTruthy();\n    expect(screen.getByText(\"code · write\")).toBeTruthy();\n    expect(screen.getByText(\"net · read\")).toBeTruthy();\n  });\n\n  it(\"reflects a mutating role's write tiers\", () => {\n    render(<RoleTierChips role=\"worker\" />);\n    // Worker: git write · github read · code write (#219) — the fleet's actual mutating role.\n    expect(screen.getByText(\"git · write\")).toBeTruthy();\n    expect(screen.getByText(\"github · read\")).toBeTruthy();\n    expect(screen.getByText(\"code · write\")).toBeTruthy();\n  });\n\n  it(\"shows the director as read on git + github — it plans and routes, it does not mutate\", () => {\n    render(<RoleTierChips role=\"director\" />);\n    expect(screen.getByText(\"git · read\")).toBeTruthy();\n    expect(screen.getByText(\"github · read\")).toBeTruthy();\n    expect(screen.getByText(\"code · write\")).toBeTruthy(); // the plan files\n  });\n\n  it(\"renders exactly four pills\", () => {\n    render(<RoleTierChips role=\"worker\" />);\n    expect(screen.getAllByText(/ · /).length).toBe(4);\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The capability floor of a session role, as one chip per access axis (git · github · code · net) coloured by tier."
+  ],
+  "whenNot": [
+    "Arbitrary key/value pairs — use KeyValueList."
+  ],
+  "shapes": [
+    "key-value"
+  ]
 }

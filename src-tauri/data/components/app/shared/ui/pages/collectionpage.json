@@ -28,8 +28,15 @@
     "default"
   ],
   "pageKind": "kit",
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A complete list-and-detail page for a flat collection: a titled header over a CardListRow rail driving a detail column."
+  ],
+  "whenNot": [
+    "Aligned columns — use TablePage. Ordered steps — use PipelinePage."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "list"
+  ]
 }

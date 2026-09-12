@@ -14,8 +14,12 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A GitHub issue or PR label rendered as a colour-tinted pill with a dot, taking its colour from the label's own six-digit hex."
+  ],
+  "whenNot": [
+    "A status or category you control — use Chip, which takes a semantic tone."
+  ],
   "tags": [],
   "feature": "core"
 }

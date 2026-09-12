@@ -12,8 +12,12 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A hole in a data-authored spec tree that the host fills with its own React, so the layout stays data while its leaves stay app code."
+  ],
+  "whenNot": [
+    "Something the kit can express as a primitive — name that primitive instead."
+  ],
   "tags": [],
   "feature": "core"
 }

@@ -29,8 +29,15 @@
     "default"
   ],
   "pageKind": "kit",
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A complete detail page for ONE keyed record: an identity header with a status chip over its named fields."
+  ],
+  "whenNot": [
+    "Many records — use TablePage or CollectionPage."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "key-value"
+  ]
 }

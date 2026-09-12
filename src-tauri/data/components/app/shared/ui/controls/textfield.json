@@ -15,5 +15,11 @@
     }
   ],
   "folder": "shared/ui/controls",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A labelled single-line text input with an optional hint, trailing adornment and a skeleton while loading."
+  ],
+  "whenNot": [
+    "Multi-line input — use TextArea. A boolean — use Toggle or Checkbox."
+  ]
 }

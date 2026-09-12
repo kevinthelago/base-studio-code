@@ -20,5 +20,14 @@
       "ext": ".tsx"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The graph-sourced `@/shared/ui/charts` barrel — resolves all 17 chart exports from the record store rather than from bundled code."
+  ],
+  "whenNot": [
+    "Authoring a new chart — add it as its own record and re-export it here."
+  ],
+  "shapes": [
+    "series"
+  ]
 }
