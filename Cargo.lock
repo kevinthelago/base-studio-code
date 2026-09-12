@@ -1033,14 +1033,18 @@ dependencies = [
 name = "bsc-ear"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.0",
  "bsc-cli-util",
  "bsc-incident",
+ "bsc-secret",
+ "bsc-tunnel",
  "bsc-util",
  "cpal",
  "hound",
  "libc",
  "nnnoiseless",
  "ort",
+ "rand 0.10.2",
  "realfft",
  "serde",
  "serde_json",
