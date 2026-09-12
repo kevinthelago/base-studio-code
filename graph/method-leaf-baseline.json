@@ -154,6 +154,7 @@
   "use-project-fleet.ts": 2,
   "use-project-progress.ts": 2,
   "use-studio-viewer.ts": 2,
+  "use-warden.ts": 2,
   "viewport-cull.ts": 3,
   "viz-registry.ts": 2,
   "warden.ts": 6,
