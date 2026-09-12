@@ -28,8 +28,15 @@
     "default"
   ],
   "pageKind": "kit",
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A complete metrics board: a grid of StatCard tiles with inline Sparks, a trend and breakdown chart column, and an activity feed."
+  ],
+  "whenNot": [
+    "One record's fields — use RecordPage. A browsable table — use TablePage."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "series"
+  ]
 }

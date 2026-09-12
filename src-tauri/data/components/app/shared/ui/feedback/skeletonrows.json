@@ -9,5 +9,14 @@
     "Skeleton"
   ],
   "folder": "shared/ui/feedback",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The loading placeholder for a list or table: N evenly spaced Skeleton bars standing in for rows that have not arrived."
+  ],
+  "whenNot": [
+    "One placeholder of a bespoke size — use Skeleton directly."
+  ],
+  "shapes": [
+    "list"
+  ]
 }

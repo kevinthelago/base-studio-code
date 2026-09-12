@@ -14,5 +14,11 @@
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { IconBox } from \"./IconBox\";\r\n\r\ndescribe(\"IconBox (#1882)\", () => {\r\n  it(\"renders its child in a fixed, centered square\", () => {\r\n    render(<IconBox size={34} radius={8}><span>A</span></IconBox>);\r\n    const el = screen.getByText(\"A\").parentElement as HTMLElement;\r\n    expect(el.style.width).toBe(\"34px\");\r\n    expect(el.style.height).toBe(\"34px\");\r\n    expect(el.style.flex).toBe(\"0 0 34px\");\r\n    expect(el.style.borderRadius).toBe(\"8px\");\r\n    expect(el.style.display).toBe(\"flex\");\r\n    expect(el.style.alignItems).toBe(\"center\");\r\n    expect(el.style.justifyContent).toBe(\"center\");\r\n  });\r\n\r\n  it(\"defaults to a 30px square with a 7px radius\", () => {\r\n    render(<IconBox><span>x</span></IconBox>);\r\n    const el = screen.getByText(\"x\").parentElement as HTMLElement;\r\n    expect(el.style.width).toBe(\"30px\");\r\n    expect(el.style.flex).toBe(\"0 0 30px\");\r\n    expect(el.style.borderRadius).toBe(\"7px\");\r\n  });\r\n});\r\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A fixed-size centred square holding one glyph or icon — the leading element of a card, modal head or list row."
+  ],
+  "whenNot": [
+    "A person — use Avatar. A clickable action — use IconButton."
+  ]
 }

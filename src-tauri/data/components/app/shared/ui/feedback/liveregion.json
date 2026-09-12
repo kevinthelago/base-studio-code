@@ -14,5 +14,11 @@
       "src": "import { describe, it, expect, beforeEach } from \"vitest\";\nimport { render, cleanup, act } from \"@testing-library/react\";\nimport { LiveRegion } from \"@/shared/ui/feedback/LiveRegion\";\nimport { useAnnouncer, announce } from \"@/shared/lib/a11y/announcer\";\n\ndescribe(\"LiveRegion (#3770)\", () => {\n  beforeEach(() => {\n    cleanup();\n    useAnnouncer.setState({ polite: \"\", assertive: \"\", politeSeq: 0, assertiveSeq: 0 });\n  });\n\n  it(\"renders a polite + an assertive live region, both visually hidden\", () => {\n    const { container } = render(<LiveRegion />);\n    expect(container.querySelectorAll(\".sr-only\")).toHaveLength(2);\n    expect(container.querySelector('[aria-live=\"polite\"][aria-atomic=\"true\"]')).toBeTruthy();\n    // The assertive region is a role=alert so it interrupts.\n    expect(container.querySelector('[role=\"alert\"][aria-live=\"assertive\"]')).toBeTruthy();\n  });\n\n  it(\"reflects an announced polite message into the polite region\", () => {\n    const { container } = render(<LiveRegion />);\n    act(() => announce(\"api-stream paused and is waiting for you\"));\n    expect(container.querySelector('[aria-live=\"polite\"]')?.textContent)\n      .toContain(\"api-stream paused and is waiting for you\");\n  });\n\n  it(\"routes an assertive announcement into the alert region, not the polite one\", () => {\n    const { container } = render(<LiveRegion />);\n    act(() => announce(\"a dependency chain failed\", { assertive: true }));\n    expect(container.querySelector('[role=\"alert\"]')?.textContent).toContain(\"a dependency chain failed\");\n    expect(container.querySelector('[aria-live=\"polite\"]')?.textContent?.trim()).toBe(\"\");\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The app-wide screen-reader announcement outlet — mount once at the shell root so `useAnnouncer` has somewhere to speak."
+  ],
+  "whenNot": [
+    "A visible message — use Banner or InlineError."
+  ]
 }

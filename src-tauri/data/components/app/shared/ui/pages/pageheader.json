@@ -14,8 +14,12 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "The full-width titled bar every page composition opens with — title, hint and right-aligned controls — handed to a layout template's toolbar slot."
+  ],
+  "whenNot": [
+    "A heading inside the page body — use SectionHeader."
+  ],
   "tags": [],
   "feature": "core"
 }

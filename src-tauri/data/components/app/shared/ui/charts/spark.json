@@ -13,5 +13,14 @@
     }
   ],
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A tiny inline trend line inside a stat tile, table row or list item — no axes, no labels, no interaction."
+  ],
+  "whenNot": [
+    "A chart the user reads actual values off — use LineArea."
+  ],
+  "shapes": [
+    "series"
+  ]
 }

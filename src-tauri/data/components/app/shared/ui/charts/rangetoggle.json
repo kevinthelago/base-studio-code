@@ -12,8 +12,12 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "The time-window selector in an analytics card header (7d / 30d / 90d), sized to sit beside a chart title."
+  ],
+  "whenNot": [
+    "A general multiple-choice control — use SegmentedControl."
+  ],
   "tags": [],
   "feature": "core"
 }

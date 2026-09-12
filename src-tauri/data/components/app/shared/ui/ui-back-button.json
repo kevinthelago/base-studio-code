@@ -66,5 +66,11 @@
       "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { BackButton } from \"@/shared/ui/controls/BackButton\";\n\ndescribe(\"BackButton\", () => {\n  it(\"text variant renders the chevron SVG + label (never the '←' char) and is labelled\", () => {\n    const { container } = render(<BackButton variant=\"text\" label=\"portfolio\" onClick={() => {}} aria-label=\"Back to portfolio\" />);\n    const btn = screen.getByRole(\"button\", { name: \"Back to portfolio\" });\n    expect(btn.textContent).toContain(\"portfolio\");\n    expect(btn.textContent).not.toContain(\"←\");\n    expect(container.querySelector(\"svg polyline\")).not.toBeNull(); // chevron_left\n  });\n\n  it(\"icon variant renders the boxed chevron with no visible text\", () => {\n    const { container } = render(<BackButton variant=\"icon\" onClick={() => {}} aria-label=\"Back to Planner\" />);\n    const btn = screen.getByRole(\"button\", { name: \"Back to Planner\" });\n    expect(btn.textContent).toBe(\"\");\n    expect(container.querySelector(\"svg polyline\")).not.toBeNull();\n  });\n\n  it(\"fires onClick\", () => {\n    const onClick = vi.fn();\n    render(<BackButton label=\"fleet\" onClick={onClick} aria-label=\"Back to fleet\" />);\n    fireEvent.click(screen.getByRole(\"button\", { name: \"Back to fleet\" }));\n    expect(onClick).toHaveBeenCalledOnce();\n  });\n\n  it(\"respects disabled\", () => {\n    const onClick = vi.fn();\n    render(<BackButton label=\"back\" disabled onClick={onClick} aria-label=\"Back\" />);\n    const btn = screen.getByRole(\"button\", { name: \"Back\" });\n    expect(btn).toBeDisabled();\n    fireEvent.click(btn);\n    expect(onClick).not.toHaveBeenCalled();\n  });\n\n  it(\"passes through className (call sites keep their look)\", () => {\n    render(<BackButton label=\"back\" className=\"nav-btn\" onClick={() => {}} aria-label=\"Back\" />);\n    expect(screen.getByRole(\"button\", { name: \"Back\" })).toHaveClass(\"nav-btn\");\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A back affordance returning to the previous view — `variant=\"icon\"` for a bare chevron in dense chrome, `variant=\"text\"` for chevron plus label."
+  ],
+  "whenNot": [
+    "Dismissing a modal — use IconButton with a close glyph."
+  ]
 }

@@ -15,5 +15,11 @@
     }
   ],
   "folder": "shared/ui/controls",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A labelled multi-line text input with an optional hint under it and a skeleton while loading."
+  ],
+  "whenNot": [
+    "A single line — use TextField."
+  ]
 }

@@ -45,5 +45,11 @@
       "type": "string"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "Wrapping one page so a render failure inside it shows a retryable error card instead of blanking the whole app."
+  ],
+  "whenNot": [
+    "An expected error you can describe — use Banner or InlineError."
+  ]
 }
