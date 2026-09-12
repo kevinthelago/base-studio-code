@@ -19,7 +19,7 @@ import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "@/store/types";
-import { persistedState, migrateAutoResumeOff } from "@/store/persist";
+import { persistedState, migrateAutoResumeOff, migrateGithubCacheProvenance } from "@/store/persist";
 import { leanRepos } from "@/store/types/github";
 import { migrateRetiredWorkspace, migrateGraphPage } from "@/store/retiredWorkspaces";
 import { createSessionSlice } from "@/store/slices/session";
@@ -80,7 +80,7 @@ export const useAppStore = create<AppStore>()(
       // Typed on the PARTIALIZED shape, not `AppStore`: `partialize` is what persist actually stores,
       // so anything else would be a claim about a value that never reaches the storage.
       storage: throttledJSONStorage<ReturnType<typeof persistedState>>(persistStorage),
-      version: 2,
+      version: 3,
       // The #2548 triaged grandfather lived here and is GONE with the gate it fed (#2541 retired). It
       // backfilled a marker so that already-worked projects would not vanish from Glance on upgrade —
       // a repair for a filter that no longer exists, and nothing now hides a project for want of it.
@@ -89,6 +89,10 @@ export const useAppStore = create<AppStore>()(
         // v2 (#restart-does-not-resume-sessions): turn silent auto-resume off once. Named + exported
         // so the one-time-ness is testable on its own — see `migrateAutoResumeOff`.
         migrateAutoResumeOff(s, version);
+        // v3 (`frontend-state-7-the-github-cluster-is-an-honest-cache`): drop a cached GitHub value that
+        // predates the fetch-time fields, since nothing can say when it was loaded. It is a cache, so one
+        // reconnect restores it — and `githubConnected`/`activeRepoName` are deliberately left alone.
+        migrateGithubCacheProvenance(s as Record<string, unknown>, version);
         return s as AppStore;
       },
       // Exclude transient UI-only state — and anything a `bsc` store owns + re-hydrates at boot

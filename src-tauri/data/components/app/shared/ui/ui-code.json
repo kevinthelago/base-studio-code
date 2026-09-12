@@ -66,5 +66,11 @@
       "src": "import { describe, it, expect } from \"vitest\";\nimport { render } from \"@testing-library/react\";\nimport { Code } from \"@/shared/ui/data/Code\";\n\nfunction pre(node: HTMLElement): HTMLPreElement {\n  return node.querySelector(\"pre\") as HTMLPreElement;\n}\n\ndescribe(\"Code\", () => {\n  it(\"renders a framed mono pre with the baked defaults\", () => {\n    const { container } = render(<Code>hello world</Code>);\n    const el = pre(container);\n    expect(el.tagName).toBe(\"PRE\");\n    expect(el).toHaveTextContent(\"hello world\");\n    expect(el.style.fontFamily).toBe(\"var(--mono)\");\n    expect(el.style.fontSize).toBe(\"10px\");\n    expect(el.style.maxHeight).toBe(\"150px\");\n    expect(el.style.whiteSpace).toBe(\"pre-wrap\");\n    expect(el.style.color).toBe(\"var(--fg-muted)\");\n    expect(el.style.background).toBe(\"var(--bg-canvas)\");\n  });\n\n  it(\"applies a custom maxHeight\", () => {\n    const { container } = render(<Code maxHeight={320}>x</Code>);\n    expect(pre(container).style.maxHeight).toBe(\"320px\");\n  });\n\n  it(\"switches to a horizontal scroll when wrap is false\", () => {\n    const { container } = render(<Code wrap={false}>x</Code>);\n    expect(pre(container).style.whiteSpace).toBe(\"pre\");\n  });\n\n  it(\"resolves the tone to a foreground color token\", () => {\n    const { container } = render(<Code tone=\"danger\">x</Code>);\n    expect(pre(container).style.color).toBe(\"var(--danger)\");\n  });\n\n  it(\"passes through className and lets a style override win last\", () => {\n    const { container } = render(\n      <Code className=\"c\" style={{ fontSize: 13, marginTop: 6 }}>x</Code>,\n    );\n    const el = pre(container);\n    expect(el.classList.contains(\"c\")).toBe(true);\n    expect(el.style.fontSize).toBe(\"13px\");\n    expect(el.style.marginTop).toBe(\"6px\");\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A read-only monospace block for a command, a prompt or a snippet, framed and safe to select and copy."
+  ],
+  "whenNot": [
+    "An editable buffer — use TextArea. One inline token — use Text with `mono`."
+  ]
 }

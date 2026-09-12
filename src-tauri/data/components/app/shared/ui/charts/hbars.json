@@ -13,5 +13,14 @@
     }
   ],
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A ranked horizontal bar list: one labelled row per item with its value at the right, every bar scaled to the largest value in the set."
+  ],
+  "whenNot": [
+    "Values over a time axis — use StackedDayBars or Spark."
+  ],
+  "shapes": [
+    "list"
+  ]
 }

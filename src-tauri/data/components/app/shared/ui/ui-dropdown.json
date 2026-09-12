@@ -64,5 +64,11 @@
     }
   ],
   "srcRetired": "src/shared/ui/controls/Dropdown.tsx",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A single-select menu where each option needs its own markup — a leading colour dot, glyph or avatar — with full listbox keyboard handling and viewport-aware placement."
+  ],
+  "whenNot": [
+    "Plain text choices in a form — use SelectField. Two to four visible choices — use SegmentedControl."
+  ]
 }

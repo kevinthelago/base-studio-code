@@ -13,5 +13,11 @@
     }
   ],
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A horizontal timeline of discrete events across named lanes — one row per lane, each event placed by its start and optional end time."
+  ],
+  "whenNot": [
+    "Counts aggregated into buckets — use StackedDayBars."
+  ]
 }

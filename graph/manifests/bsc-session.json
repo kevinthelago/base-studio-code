@@ -180,6 +180,17 @@
         },
         {
           "cont": [],
+          "key": "bsc-secret",
+          "lead": [
+            "# The CREDENTIAL store (frontend-state-5a-secrets-leave-app-state): the launch resolves a",
+            "# `secretEnv` source to a value from the OS KEYCHAIN, with app-state.json as the fallback.",
+            "# The edge runs THIS WAY ONLY — bsc-secret owns storage and presence and must never learn",
+            "# about app-state.json, which is this crate's to parse."
+          ],
+          "value": "{ path = \"../bsc-secret\" }"
+        },
+        {
+          "cont": [],
           "key": "plandb",
           "lead": [],
           "value": "{ path = \"../plandb\" }"

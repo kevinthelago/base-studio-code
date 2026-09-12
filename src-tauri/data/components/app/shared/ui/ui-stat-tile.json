@@ -61,5 +61,14 @@
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { StatTile } from \"./StatTile\";\r\n\r\ndescribe(\"StatTile\", () => {\r\n  it(\"renders k/v/sub and applies the value tone\", () => {\r\n    const { container } = render(<StatTile k=\"success rate\" v=\"92%\" sub=\"of all runs\" tone=\"success\" />);\r\n    expect(screen.getByText(\"success rate\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"92%\")).toBeInTheDocument();\r\n    expect(screen.getByText(\"of all runs\")).toBeInTheDocument();\r\n    expect(container.querySelector(\".stat-tile\")).not.toBeNull();\r\n    expect(container.querySelector(\".v.success\")).not.toBeNull();\r\n  });\r\n\r\n  it(\"omits the sub when absent\", () => {\r\n    const { container } = render(<StatTile k=\"count\" v={3} />);\r\n    expect(container.querySelector(\".sub\")).toBeNull();\r\n  });\r\n});\r\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "One headline metric: a label, its value, an optional sub-caption and tone, with a skeleton while it loads."
+  ],
+  "whenNot": [
+    "Several fields of one record — use KeyValueList. A trend — add a Spark beside it."
+  ],
+  "shapes": [
+    "key-value"
+  ]
 }

@@ -42,5 +42,11 @@
       "src": "// Skeleton (#2234) — the shared loading placeholder (Box + the shimmer style atom).\r\nimport { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { Skeleton, SkeletonText } from \"./Skeleton\";\r\nimport { EmptyState } from \"./EmptyState\";\r\n\r\ndescribe(\"Skeleton (#2234)\", () => {\r\n  it(\"renders a shimmer block at the given size\", () => {\r\n    const { container } = render(<Skeleton w={80} h={16} radius={4} />);\r\n    const el = container.firstChild as HTMLElement;\r\n    expect(el.style.width).toBe(\"80px\");\r\n    expect(el.style.height).toBe(\"16px\");\r\n    expect(el.style.borderRadius).toBe(\"4px\");\r\n    expect(el.style.animation).toContain(\"skeleton-shimmer\");\r\n  });\r\n\r\n  it(\"SkeletonText renders one shimmer per line\", () => {\r\n    const { container } = render(<SkeletonText lines={3} />);\r\n    // Each line is a Skeleton (animated block).\r\n    const shimmering = [...container.querySelectorAll(\"*\")].filter(\r\n      (n) => (n as HTMLElement).style?.animation?.includes(\"skeleton-shimmer\"),\r\n    );\r\n    expect(shimmering).toHaveLength(3);\r\n  });\r\n});\r\n\r\n// EmptyState compact size (#2234) — the in-card empty footprint.\r\ndescribe(\"EmptyState size=sm (#2234)\", () => {\r\n  it(\"renders a smaller icon box than the default md\", () => {\r\n    const { rerender, container } = render(<EmptyState icon=\"○\" title=\"Empty\" />);\r\n    const md = (container.querySelector(\".mono\") as HTMLElement).style.width;\r\n    rerender(<EmptyState icon=\"○\" title=\"Empty\" size=\"sm\" />);\r\n    const sm = (container.querySelector(\".mono\") as HTMLElement).style.width;\r\n    expect(parseInt(sm)).toBeLessThan(parseInt(md));\r\n    expect(screen.getByText(\"Empty\")).toBeInTheDocument();\r\n  });\r\n});\r\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A single shimmer placeholder sized to the content it stands in for, while that content loads."
+  ],
+  "whenNot": [
+    "A list of rows — use SkeletonRows. An indefinite wait with no known shape — use a spinner."
+  ]
 }

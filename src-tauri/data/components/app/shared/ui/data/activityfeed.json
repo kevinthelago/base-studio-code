@@ -17,5 +17,14 @@
   ],
   "srcDivergence": "Deliberate, not stale — preview parameterization. The record's `ActivityFeed` defaults `items`, `hint`, `loading`, `tone`, so it renders standalone in a preview that mounts records with no props; the file's takes them as required props from its caller. Region-scoped check: the file's `ActivityFeed` holds 7 substantive line(s) the record lacks — under the 8-line threshold at which parameterization stops being a full explanation, so it is treated as explained. NOT zero, though: if this component ever gained behaviour the record missed, those 7 line(s) are where to look. Refreshing from the file would discard the parameterization. Written by scripts/reconcile-record-src.cjs --annotate.",
   "folder": "shared/ui/data",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A reverse-chronological feed of who did what and when, each entry with an avatar, an action phrase and a relative timestamp."
+  ],
+  "whenNot": [
+    "New UI — the live library serves this specifier from `ui-activity-feed`."
+  ],
+  "shapes": [
+    "list"
+  ]
 }
