@@ -21,6 +21,7 @@ pub mod classify;
 pub mod liveness;
 pub mod prosody;
 pub mod store;
+pub mod stream;
 pub mod retention;
 pub mod transcribe;
 pub mod transcript;
