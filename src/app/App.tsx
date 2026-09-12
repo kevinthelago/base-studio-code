@@ -11,17 +11,9 @@ import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "@/app/useHotkeys";
 import { useNavigateBridge } from "@/app/useNavigateBridge";
-import { useFleetWakeBridge } from "@/app/useFleetWakeBridge";
-import { usePersonaUseBridge } from "@/app/usePersonaUseBridge";
-import { usePersonaWhatamiBridge } from "@/app/usePersonaWhatamiBridge";
-import { useSystemSessionBridge } from "@/app/useSystemSessionBridge";
-import { useFleetDirectorBridge } from "@/app/useFleetDirectorBridge";
-import { useFleetStartBridge } from "@/app/useFleetStartBridge";
-import { useDebugChannel } from "@/app/useDebugChannel";
-import { useDockBack } from "@/app/useDockBack";
-import { useSurfaceCatalogPoll } from "@/app/useSurfaceCatalogPoll";
-import { useScheduler } from "@/features/automations";
-import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
+// The app-owned pumps, mounted in ONE window — see the note at the mount below.
+import { AppPumps } from "@/app/AppPumps";
+import { isAgentViewWindow } from "@/shared/lib/core/windowRole";
 // #4186: Console renders FROM THE GRAPH — the host mounts the authored `consolepage` node. The file
 // component stays exported from the barrel and is NOT going away — both copies coexist. They are no
 // longer held IDENTICAL: the record↔file parity guard was retired (see the note in
@@ -36,13 +28,6 @@ import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
-import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
-import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
-import { useWarden } from "@/shared/lib/fleet/useWarden";
-import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
-import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
-import { paneIdFor } from "@/app/console/lib/paneIdentity";
-import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
@@ -71,47 +56,11 @@ export default function App() {
   // binary, so only a rebuild moves it — which does happen mid-session, since that re-stages the
   // sidecar) and far below how long a stale set would matter. The read is on the warm-serve
   // allow-list, so it costs ~10ms and needs no project key.
-  useSurfaceCatalogPoll();
   // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
-  // external session can steer the app to a view before capturing it.
+  // external session can steer the app to a view before capturing it. EVERY window mounts this — it is
+  // how a window is driven at all, and Rust names the window each request is for, so a second window
+  // hears only what was aimed at it.
   useNavigateBridge();
-  useFleetWakeBridge();
-  usePersonaUseBridge();
-  usePersonaWhatamiBridge();
-  // #architect-starts-and-stops-system-sessions: apply `bsc session start|stop` — the architect's
-  // lever over the app-owned studios, over a closed registry it cannot extend.
-  useSystemSessionBridge();
-  // #architect-creates-a-director-with-discovery: apply `bsc fleet director new` — the architect's
-  // one create into the project tier, launched through the same fleet path a full launch uses.
-  useFleetDirectorBridge();
-  // `headless-fleet-launch-a-director-cannot-start-its-own-fleet`: apply `bsc fleet start` — the
-  // whole-fleet sibling of the above, so a director or architect can launch the fleet it planned
-  // without the planner UI. Rust settles every precondition and builds the worktrees; this places
-  // the panes, because a pane is zustand state Rust cannot touch.
-  useFleetStartBridge();
-  // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
-  // ask what is actually on screen instead of inferring it from source.
-  useDebugChannel();
-  // #3919: take a torn-off page back when its window drags the tab home. Main window ONLY — the hooks
-  // above this file's `isDetachedWindow()` early return run in BOTH windows, and a detached window must
-  // not re-dock its own page.
-  useDockBack(!isDetachedWindow());
-  useScheduler();
-  useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
-  useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
-  useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
-  useWorkerAutoEnd(paneIdFor); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
-  // Reap idle, unfocused sessions (#849). MOUNTED HERE, not in ConsoleWorkspace: its own header
-  // claimed that mount for a long time and nothing ever made it — the hook was defined, registered as
-  // a module, and never called. The Console is opt-in anyway, so a reaper living there would only run
-  // while somebody was watching the Console, which is not a reaper.
-  useIdleReaper();
-  useNotificationSounds(); // opt-in Signal-kit cues on fleet coord events (default off) (#3082)
-  useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
-  useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
-  useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
-  useCoordAnnouncer(); // announce structured coord events to the screen reader via the live region (#3770)
-  useCoordSpeaker(); // and SPEAK them via app-owned TTS when opted in (#3804, Tier 1) — sits alongside
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
@@ -178,6 +127,14 @@ export default function App() {
     // grid cells and the Glance dock — so wrapping the whole shell gives both surfaces the same host.
     <TerminalHost>
     <Box className="app">
+      {/* THE APP-OWNED PUMPS, in ONE window (`the-agent-view-is-a-window-a-session-navigates-without-moving-yours`).
+          They dispatch commands into panes, reap idle sessions, quarantine drifted workers and speak coord
+          events — actions, not rendering, so a second window running them performs each one twice. Mounted
+          below the detached early return (a tear-off never reaches here) and skipped in the agent view,
+          whose role the APP authored into its URL. Moving them into Rust is
+          `an-app-level-pump-runs-once-in-rust-not-once-per-window`; this keeps the second window honest
+          until then, and the renderer still decides nothing. */}
+      {!isAgentViewWindow() && <AppPumps />}
       <LiveRegion />
       <Achievements />
       <Titlebar workspace={titleWorkspace} />

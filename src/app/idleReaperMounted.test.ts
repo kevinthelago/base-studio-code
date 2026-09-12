@@ -36,23 +36,49 @@ function reaperSource(): string {
   throw new Error("useIdleReaper is not emitted — run `npm run emit:records`");
 }
 
+/** The app-owned pumps, as the app actually ships them (a record, emitted into `.bsc-records`).
+ *
+ *  THE REAPER MOVED, AND THE QUESTION DID NOT (`the-agent-view-is-a-window-a-session-navigates-without-moving-yours`).
+ *  It used to be called in `App.tsx`; it is now called in `AppPumps`, which the shell mounts in the
+ *  window the APP names as the owner — because every open window used to run a second reaper, a second
+ *  scheduler and a second warden. So "is it wired into the shell" is still the question; the shell now
+ *  answers it in two hops, and both are asserted below. */
+function pumpsSource(): string {
+  for (const ext of ["tsx", "ts"]) {
+    try {
+      return readFileSync(join(repoRoot, ".bsc-records", "app", `AppPumps.${ext}`), "utf8");
+    } catch {
+      /* try the other extension */
+    }
+  }
+  throw new Error("AppPumps is not emitted — run `npm run emit:records`");
+}
+
 describe("the idle reaper is actually wired up", () => {
-  it("is mounted by the shell, beside the other always-on hooks", () => {
+  it("is mounted by the pumps the shell mounts, beside the other always-on hooks", () => {
     // Not by ConsoleWorkspace, which the hook's header claimed for a long time while nothing mounted
     // it at all — and which would be the wrong home regardless, since the Console is opt-in: a reaper
     // that only runs while somebody is looking at the Console is not a reaper.
-    expect(appSrc).toMatch(/^\s*useIdleReaper\(\);/m);
+    const pumps = pumpsSource();
+    expect(pumps).toMatch(/^\s*useIdleReaper\(\);/m);
     // ...and imported, or the call above could not resolve.
-    expect(appSrc).toContain('from "@/app/console/lib/useIdleReaper"');
+    expect(pumps).toContain('from "@/app/console/lib/useIdleReaper"');
+    // And the shell mounts that component, or the call above runs in nothing.
+    expect(appSrc).toContain("<AppPumps />");
+    expect(appSrc).toContain('from "@/app/AppPumps"');
   });
 
   it("is mounted alongside the other always-on hooks, not behind a conditional", () => {
     // A reaper mounted inside a branch is a reaper that does not run, which is the failure this file
-    // exists for wearing a different hat.
-    const line = appSrc.split("\n").findIndex((l) => /^\s*useIdleReaper\(\);/.test(l));
+    // exists for wearing a different hat. The ONE branch it may sit behind is the window role: the
+    // agent view is a second window, and running a second reaper there is the bug, not the feature.
+    const pumps = pumpsSource();
+    const line = pumps.split("\n").findIndex((l) => /^\s*useIdleReaper\(\);/.test(l));
     expect(line).toBeGreaterThan(-1);
-    const neighbours = appSrc.split("\n").slice(Math.max(0, line - 6), line + 6).join("\n");
+    const neighbours = pumps.split("\n").slice(Math.max(0, line - 6), line + 6).join("\n");
     expect(neighbours).toMatch(/use(Warden|StoreProjector|WorkerAutoEnd|Scheduler)\(/);
+    // Inside AppPumps the call is unconditional — no `if`/`&&` guard smuggled around it.
+    expect(pumps.split("\n")[line]).toMatch(/^\s*useIdleReaper\(\);\s*$/);
   });
 
   it("resolves the focused pane to its IDENTITY id, never the retired positional form", () => {
