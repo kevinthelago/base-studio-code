@@ -554,6 +554,20 @@
         },
         {
           "cont": [],
+          "key": "bsc-secret",
+          "lead": [
+            "# The keychain-backed Vault the tunnel's durable pairing SEED is stored through",
+            "# (one-pairing-assigns-every-room). The app used to mint a room and psk per dial, so restarting",
+            "# it unpaired the phone BY DESIGN; pairing once requires the seed to outlive the process.",
+            "# Reached as a trait object, so the decision is testable against an in-memory fake. `keyring` is",
+            "# already a direct dependency for the sources/credentials path — this is deliberately NOT that:",
+            "# bsc-secret carries the write-then-read-back guard, and on Linux a missing Secret Service makes",
+            "# keyring accept every write and forget it, which would report a pairing as durable when it is not."
+          ],
+          "value": "{ path = \"../crates/bsc-secret\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-project",
           "lead": [
             "",

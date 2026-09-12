@@ -586,6 +586,7 @@ dependencies = [
  "bsc-resolve",
  "bsc-runtime",
  "bsc-sandbox",
+ "bsc-secret",
  "bsc-session",
  "bsc-shot",
  "bsc-storefs",
