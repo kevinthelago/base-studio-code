@@ -18,6 +18,7 @@
   "bsc-session--choices.rs": 3,
   "bsc-session--lib.rs": 9,
   "bsc-session--policy.rs": 8,
+  "bsc-session--secrets.rs": 9,
   "checkpoint.ts": 3,
   "color-hue.ts": 4,
   "commons-gate.ts": 7,
