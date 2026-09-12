@@ -1,0 +1,179 @@
+{
+  "note": "GENERATED from the live TypeScript — see coordDigest.fixtures.gen.test.ts",
+  "digests": [
+    {
+      "name": "an empty log",
+      "digest": []
+    },
+    {
+      "name": "every line unparseable",
+      "digest": []
+    },
+    {
+      "name": "blocked then satisfied wakes the waiter and leaves it awaiting a woke ack",
+      "digest": [
+        "latch:#42=satisfied",
+        "latch:contract:X=satisfied",
+        "ready:alpha:api"
+      ]
+    },
+    {
+      "name": "three waiters on one dep come back in arrival order, and a re-satisfy keeps that order",
+      "digest": [
+        "latch:#42=satisfied",
+        "ready:alpha:api",
+        "ready:mike:api",
+        "ready:zulu:api"
+      ]
+    },
+    {
+      "name": "answers and assignments are pending in arrival order too",
+      "digest": [
+        "answered:alpha:api",
+        "answered:zulu:api",
+        "assigned:alpha:api",
+        "assigned:alpha:web"
+      ]
+    },
+    {
+      "name": "the woke ack retires the pending wake",
+      "digest": [
+        "latch:#42=satisfied"
+      ]
+    },
+    {
+      "name": "satisfy BEFORE the block is the lost-wakeup case: no waiter is registered, and ingest reports no pending wake",
+      "digest": [
+        "latch:#42=satisfied"
+      ]
+    },
+    {
+      "name": "failed is not a satisfy — the dependent stays blocked",
+      "digest": [
+        "latch:#42=failed",
+        "waiter:alpha:api",
+        "waiter:alpha:api|#42"
+      ]
+    },
+    {
+      "name": "a later satisfy overwrites a failed latch and wakes the dependent",
+      "digest": [
+        "latch:#42=satisfied",
+        "ready:alpha:api"
+      ]
+    },
+    {
+      "name": "ask then answer, same project",
+      "digest": [
+        "answered:alpha:api"
+      ]
+    },
+    {
+      "name": "an answer from ANOTHER project is refused and leaves the ask outstanding",
+      "digest": [
+        "asking:alpha:api",
+        "refused:answer@beta:director@alpha:api@1788177602000"
+      ]
+    },
+    {
+      "name": "an answer to a bare, unplaceable id is allowed",
+      "digest": [
+        "answered:t0p2"
+      ]
+    },
+    {
+      "name": "an answer resumes a user-wait too, carrying its checkpoint",
+      "digest": [
+        "answered:alpha:api"
+      ]
+    },
+    {
+      "name": "ask supersedes a plain wait for the same session",
+      "digest": [
+        "asking:alpha:api"
+      ]
+    },
+    {
+      "name": "declaring a dependency leaves the manual-wait list",
+      "digest": [
+        "waiter:alpha:api",
+        "waiter:alpha:api|#42"
+      ]
+    },
+    {
+      "name": "issue then assign clears the pending issue and injects the work",
+      "digest": [
+        "assigned:alpha:api"
+      ]
+    },
+    {
+      "name": "an assign from ANOTHER project is refused and the issue stays pending",
+      "digest": [
+        "issue:iss-1",
+        "refused:assign@beta:director@alpha:api@1788177602000"
+      ]
+    },
+    {
+      "name": "an assign with no issueId leaves intake untouched",
+      "digest": [
+        "assigned:alpha:api",
+        "issue:iss-1"
+      ]
+    },
+    {
+      "name": "maintain clears a wait and an ask, and survives a woke",
+      "digest": [
+        "maintaining:alpha:api"
+      ]
+    },
+    {
+      "name": "a replayed log does not double a brief, a fork, an issue or a request",
+      "digest": [
+        "brief:alpha:planner@1788177601000",
+        "fork:alpha:director@1788177602000",
+        "issue:iss-1",
+        "request:7"
+      ]
+    },
+    {
+      "name": "request-resolved empties the open request",
+      "digest": []
+    },
+    {
+      "name": "commission then deliver stamps the artifact id",
+      "digest": [
+        "commission:alpha:designer@1788177601000",
+        "delivered:alpha:designer@1788177601000"
+      ]
+    },
+    {
+      "name": "an unmatched deliver is a no-op",
+      "digest": [
+        "commission:alpha:designer@1788177601000"
+      ]
+    },
+    {
+      "name": "a verdict moves no state",
+      "digest": []
+    },
+    {
+      "name": "two refusals for the same pair at different times are BOTH reported",
+      "digest": [
+        "asking:alpha:api",
+        "refused:answer@beta:director@alpha:api@1788177602000",
+        "refused:answer@beta:director@alpha:api@1788177603000"
+      ]
+    },
+    {
+      "name": "a mixed realistic log with unparseable lines interleaved",
+      "digest": [
+        "brief:alpha:planner@1788177607000",
+        "latch:#42=satisfied",
+        "latch:predicate:tests-pass=satisfied",
+        "maintaining:alpha:svc",
+        "ready:alpha:web",
+        "refused:answer@beta:director@alpha:web@1788177608000"
+      ]
+    }
+  ]
+}
