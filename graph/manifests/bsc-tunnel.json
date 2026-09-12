@@ -97,6 +97,18 @@
           "key": "futures-util",
           "lead": [],
           "value": "{ version = \"0.3\", default-features = false, features = [\"std\", \"sink\"] }"
+        },
+        {
+          "cont": [],
+          "key": "sha2",
+          "lead": [
+            "# Derives a per-feature room id and psk from the pairing SEED (one-pairing-assigns-every-room).",
+            "# Only SHA-256 is taken: the HMAC wrapper over it is written out here and pinned to RFC 4231's",
+            "# own vectors, because `hmac` is NOT in Cargo.lock and adding a crate to avoid fifteen lines of",
+            "# a standard construction is the worse trade. `snow` already vendors sha2 transitively, so this",
+            "# declares what is present rather than pulling anything new."
+          ],
+          "value": "\"0.10\""
         }
       ],
       "lead": [
