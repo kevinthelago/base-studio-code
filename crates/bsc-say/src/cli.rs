@@ -107,6 +107,29 @@ otherwise the OS speech service, and if you named one with --provider it is hono
 never quietly swapped for the other. `bsc say voices` reports what was found and what was not.",
     },
     CmdDoc {
+        name: "all",
+        summary: "say it on every eligible output at once — one voice, the whole room",
+        usage: "\
+bsc say all \"some text\"                # every eligible output, simultaneously
+bsc say all \"text\" --json             # which outputs opened, and which refused
+
+SYNTHESIZED ONCE, PLAYED N TIMES. The wav is rendered a single time and handed to one player per
+output, so every speaker gets the SAME audio rather than N separate synthesis runs that would drift
+against each other and cost N times the work.
+
+SIMULTANEOUS, NOT SEQUENTIAL, and that is the whole implementation. An ordinary `bsc say` waits for
+its player to exit; looping that over eight outputs would play them one after another, which is not
+what `all` means. Every child is started before any is waited on.
+
+ELIGIBLE MEANS IT OPENED, NEVER THAT ANYONE HEARD IT. There is no output-side probe — `bsc ear
+levels` has no counterpart here, because you cannot measure whether a human was in earshot. What
+this reports is which outputs the player accepted and which refused, and a refusal names the reason.
+
+The set is the same one `bsc say devices` shows without --all: the real choices, not the routing
+variants. ALSA presents one card many times over (`surround51:`, `iec958:`, `dsnoop:`), and speaking
+to all of those would be speaking to the same speaker repeatedly.",
+    },
+    CmdDoc {
         name: "devices",
         summary: "playback devices, and which one speech will actually come out of",
         usage: "\
@@ -153,7 +176,7 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
     },
 ];
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct Args {
     all: bool,
     verify: bool,
@@ -162,6 +185,13 @@ struct Args {
     ipa: bool,
     lang: Option<String>,
     device: Option<String>,
+    /// WHERE the voice comes out, as a destination rather than a sound card.
+    ///
+    /// The mirror of the ear's channel, which labels the RECORDING path: `desk` plays through the
+    /// resolved local output, `phone` streams to the paired mobile. A device name is a narrower
+    /// thing and stays on `--device`; a channel can name somewhere that is not a local device at
+    /// all, which is the whole reason it exists.
+    channel: Option<String>,
     json: bool,
     pretty: bool,
     provider: Option<String>,
@@ -181,6 +211,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--ipa" => a.ipa = true,
             "--lang" => a.lang = Some(rest.value("--lang needs an espeak language code, e.g. es or ja")?),
             "--device" => a.device = Some(rest.value("--device needs an output device name")?),
+            "--channel" => a.channel = Some(rest.value("--channel needs a destination: desk or phone")?),
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--provider" => a.provider = Some(rest.value("--provider needs 'system' or 'piper'")?),
@@ -498,6 +529,7 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("nothing to say — `bsc say \"some text\"`".into());
     }
+    check_channel(a)?;
     let platform = host_platform()?;
     let mut requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
     // Blending is a property of style vectors, which only kokoro has. Asking for one is asking for
@@ -778,6 +810,217 @@ fn cmd_devices(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// Why `--channel phone` cannot be honoured from a command-line process yet.
+///
+/// Stated in full rather than as "unsupported", because the reason is structural and a reader
+/// deserves to know it is not a missing flag: the tunnel lives in the desktop app's process, and
+/// whether a phone is paired is a `client_count` behind a mutex in its `TunnelState`. Nothing is
+/// published to disk (the only thing beside this crate's own `say-device` is nothing at all), so a
+/// separate process cannot tell a live session from none. `bsc ear` hit the identical wall on the
+/// inbound side.
+const PHONE_CHANNEL: &str = "--channel phone is not reachable from here yet. The tunnel runs inside \
+the desktop app and its session state never leaves that process, so this command cannot tell whether \
+a phone is even paired — and playing locally instead would be the wrong room. Use --channel desk (or \
+no channel at all) for local playback.";
+
+/// Which DESTINATION a name actually reaches, so aliases of one thing collapse to one entry.
+///
+/// **MEASURED, after `bsc say all` deadlocked against itself.** `aplay -L` describes `default` as
+/// "Default ALSA Output (currently PipeWire Media Server)", `pipewire` as "PipeWire Sound Server"
+/// and `sysdefault` as "Default Audio Device" — three names, ONE server. Speaking to all three asks
+/// that server to play the same wav three times concurrently, and it blocks forever waiting on
+/// itself. Twelve of fourteen children had already exited; the two that hung were both this server.
+///
+/// The same shape bit the input side first — `bsc ear` documents that ALSA "presents four physical
+/// inputs as 27 devices … routing variants of the same card, not choices". This is that lesson
+/// applied one layer up, at the sound SERVER rather than the card.
+fn destination_key(name: &str) -> String {
+    if matches!(name, "default" | "sysdefault" | "pipewire" | "pulse") {
+        return "server".into();
+    }
+    // `plughw:`, `hw:`, `hdmi:`, `front:` are ACCESS PATHS to the same CARD,DEV — the prefix picks
+    // how samples get there, not where they end up.
+    match name.split_once(':') {
+        Some((_, rest)) => rest.to_string(),
+        None => name.to_string(),
+    }
+}
+
+/// Which spelling of one destination to keep: the one most likely to accept our wav.
+///
+/// `default` over the other server aliases because it is the name a person would type, and
+/// `plughw:` over `hw:`/`hdmi:` because plughw converts format and rate, so a 24 kHz mono wav
+/// reaches a device that would refuse it raw.
+fn output_rank(name: &str) -> u8 {
+    if name == "default" {
+        0
+    } else if name.starts_with("plughw:") {
+        1
+    } else if name.starts_with("hdmi:") {
+        2
+    } else {
+        3
+    }
+}
+
+/// The outputs worth speaking to: the real choices, deduplicated by destination.
+///
+/// Pure so the filter is testable without an audio device, which matters on a machine whose outputs
+/// are mostly HDMI sinks nothing is plugged into.
+fn eligible_outputs(all: &[String]) -> Vec<String> {
+    let mut best: Vec<(String, String)> = Vec::new();
+    for n in all.iter().filter(|n| crate::voice::is_primary_output(n)) {
+        let key = destination_key(n);
+        match best.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, chosen)) => {
+                if output_rank(n) < output_rank(chosen) {
+                    *chosen = n.clone();
+                }
+            }
+            None => best.push((key, n.clone())),
+        }
+    }
+    best.into_iter().map(|(_, n)| n).collect()
+}
+
+/// Wait for a child, but never forever.
+///
+/// DEFENCE IN DEPTH, separate from the alias fix. Collapsing aliases removes the deadlock I actually
+/// hit; this removes the whole CLASS — a sink that is busy, unplugged or wedged can block `aplay`
+/// indefinitely, and one such device must not hold the whole room hostage. Polled rather than
+/// blocking because std has no waiting primitive with a deadline.
+fn wait_bounded(child: &mut std::process::Child, deadline: std::time::Instant) -> Result<bool, String> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status.success()),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("timed out — the device never finished (busy, or nothing attached)".into());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => return Err(format!("could not wait: {e}")),
+        }
+    }
+}
+
+/// How long a single output may take beyond the audio's own length before it is given up on.
+const PLAYBACK_GRACE_SECS: u64 = 10;
+
+/// Refuse a channel this build cannot honour, rather than quietly playing somewhere else.
+fn check_channel(a: &Args) -> Result<(), String> {
+    match a.channel.as_deref() {
+        None | Some("desk") => Ok(()),
+        Some("phone") => Err(PHONE_CHANNEL.into()),
+        Some(other) => Err(format!("unknown channel '{other}' — the destinations are desk and phone")),
+    }
+}
+
+/// Speak on every eligible output at once.
+fn cmd_say_all(a: &Args, text: String) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("nothing to say — `bsc say all \"some text\"`".into());
+    }
+    check_channel(a)?;
+    let platform = host_platform()?;
+
+    // SYNTHESIZE ONCE, through the ordinary speak path so provider selection, voice resolution and
+    // blending behave identically to a single-device `bsc say`. Both providers return as soon as the
+    // wav is written when `out` is set, so this renders without playing anything.
+    let tmp = std::env::temp_dir().join(format!("bsc-say-all-{}.wav", std::process::id()));
+    let mut synth = a.clone();
+    synth.out = Some(tmp.display().to_string());
+    synth.verify = false; // verification listens to ONE device; it means nothing across a fan-out
+    cmd_speak(&synth, text)?;
+
+    let targets = eligible_outputs(&list_outputs()?);
+    if targets.is_empty() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err("no eligible output — `bsc say devices --all` shows what aplay reported".into());
+    }
+    let player = ["aplay", "pw-play", "afplay"]
+        .iter()
+        .find_map(|p| on_path(p, platform).map(|_| *p))
+        .ok_or("nothing on this machine can play audio — use --out to keep the file")?;
+
+    // ONE utterance, ONE latch. The flag carries a DEADLINE derived from the wav's duration, and
+    // that duration is the same on every output, so writing it per device would be N writes of the
+    // same instant rather than anything more accurate.
+    announce_speaking(&tmp);
+
+    // START EVERY CHILD BEFORE WAITING ON ANY. `spawn` waits to completion by design, so reusing it
+    // here would serialize the room instead of filling it.
+    let wav = tmp.display().to_string();
+    // The deadline is the audio's own length plus a grace, so a long passage is not cut off while a
+    // wedged device still cannot hold the command open.
+    let secs = hound::WavReader::open(&tmp)
+        .ok()
+        .map(|r| r.duration() as f64 / r.spec().sample_rate.max(1) as f64)
+        .unwrap_or(0.0);
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs_f64(secs)
+        + std::time::Duration::from_secs(PLAYBACK_GRACE_SECS);
+
+    // Stdio is NULL here, unlike the single-device path. `aplay -q` says nothing useful, and piping
+    // N children means N buffers that must each be drained before the process they belong to can
+    // exit — which is precisely the deadlock shape this command already walked into once.
+    let mut running = Vec::new();
+    for dev in &targets {
+        let cmd = crate::voice::play_command(platform, player, &wav, Some(dev));
+        let child = std::process::Command::new(&cmd.program)
+            .args(&cmd.args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        running.push((dev.clone(), child));
+    }
+
+    let (mut opened, mut refused) = (Vec::new(), Vec::new());
+    for (dev, child) in running {
+        match child {
+            Ok(mut c) => match wait_bounded(&mut c, deadline) {
+                Ok(true) => opened.push(dev),
+                Ok(false) => refused.push((dev, format!("{player} exited non-zero"))),
+                Err(e) => refused.push((dev, e)),
+            },
+            Err(e) => refused.push((dev, format!("could not run {player}: {e}"))),
+        }
+    }
+    let _ = std::fs::remove_file(&tmp);
+
+    if a.json || a.pretty {
+        let v = json!({
+            "opened": opened,
+            "refused": refused.iter().map(|(d, e)| json!({ "device": d, "error": e })).collect::<Vec<_>>(),
+            "eligible": targets.len(),
+        });
+        let s = if a.pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", s.map_err(|e| format!("could not render: {e}"))?);
+    } else {
+        for d in &opened {
+            println!("  spoke on {d}");
+        }
+        for (d, e) in &refused {
+            println!("  {d} refused — {e}");
+        }
+        println!(
+            "\n{} of {} eligible output(s) played it. That they OPENED is all this can tell you — \
+             whether anyone heard it is not measurable from here.",
+            opened.len(),
+            targets.len()
+        );
+    }
+    // Partial success is still speech in the room, so one busy sink does not fail the command.
+    // Nothing playing anywhere is a different matter.
+    if opened.is_empty() {
+        return Err("no output accepted the audio — every eligible one refused".into());
+    }
+    Ok(())
+}
+
 fn cmd_voice(a: &Args) -> Result<(), String> {
     let path = voice_file().ok_or("no home directory, so nothing could be remembered")?;
     match a.positional.get(1) {
@@ -933,6 +1176,10 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("devices") => cmd_devices(&a),
         Some("voice") => cmd_voice(&a),
         Some("voices") => cmd_voices(&a),
+        Some("all") if a.positional.len() == 1 => {
+            Err("nothing to say — `bsc say all \"some text\"`".into())
+        }
+        Some("all") => cmd_say_all(&a, a.positional[1..].join(" ")),
         Some("speak") if a.positional.len() == 1 => Err(SPEAK_ALONE.into()),
         Some("speak") => cmd_speak(&a, a.positional[1..].join(" ")),
         // Everything else IS the text. `say` is the one CLI here whose main argument is free prose,
@@ -953,7 +1200,96 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["speak", "devices", "voice", "voices"]);
+        assert_eq!(names, vec!["speak", "all", "devices", "voice", "voices"]);
+    }
+
+    /// `all` speaks to the real choices, not to one card listed eight ways.
+    ///
+    /// ALSA presents four physical outputs as a long list of routing variants, so fanning out over
+    /// the raw listing would play the same speaker repeatedly while looking thorough. The fixture is
+    /// this machine's actual `aplay -L` output.
+    #[test]
+    fn eligible_outputs_keeps_the_real_choices_and_drops_the_routing_variants() {
+        let listed: Vec<String> = [
+            "sysdefault",
+            "pipewire",
+            "default",
+            "plughw:CARD=USB,DEV=0",
+            "hdmi:CARD=HDMI,DEV=0",
+            "plughw:CARD=Generic,DEV=0",
+            "surround51:CARD=HDMI,DEV=0",
+            "iec958:CARD=HDMI,DEV=0",
+            "dsnoop:CARD=USB,DEV=0",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let got = eligible_outputs(&listed);
+        assert!(got.contains(&"default".to_string()));
+        assert!(got.contains(&"plughw:CARD=USB,DEV=0".to_string()));
+        assert!(got.contains(&"hdmi:CARD=HDMI,DEV=0".to_string()));
+        for variant in ["surround51:CARD=HDMI,DEV=0", "iec958:CARD=HDMI,DEV=0", "dsnoop:CARD=USB,DEV=0"] {
+            assert!(!got.contains(&variant.to_string()), "{variant} is a routing variant, not a choice");
+        }
+        assert!(!got.is_empty(), "a machine with outputs must yield some");
+    }
+
+    /// THE DEADLOCK THIS EXISTS TO PREVENT, pinned as a test rather than as a memory.
+    ///
+    /// `default`, `sysdefault` and `pipewire` are three names for ONE sound server — `aplay -L` says
+    /// so itself. Speaking to all three asked that server to play the same wav concurrently and it
+    /// blocked forever waiting on itself; the command had to be killed. A regression here would hang
+    /// `bsc say all` again, silently, on any machine running PipeWire or PulseAudio.
+    #[test]
+    fn every_name_for_one_sound_server_collapses_to_a_single_destination() {
+        let listed: Vec<String> =
+            ["sysdefault", "pipewire", "default", "pulse", "plughw:CARD=USB,DEV=0"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+        let got = eligible_outputs(&listed);
+        let servers: Vec<&String> =
+            got.iter().filter(|n| matches!(n.as_str(), "default" | "sysdefault" | "pipewire" | "pulse")).collect();
+        assert_eq!(servers.len(), 1, "one server, one entry — got {got:?}");
+        assert_eq!(servers[0], "default", "`default` is the spelling a person would type");
+        assert!(got.contains(&"plughw:CARD=USB,DEV=0".to_string()), "real hardware is untouched");
+        assert_eq!(got.len(), 2, "one server + one card = two destinations, not five");
+    }
+
+    /// Two access paths to one card are one destination, and the converting one wins.
+    #[test]
+    fn access_paths_to_one_card_collapse_and_plughw_is_preferred() {
+        let listed: Vec<String> =
+            ["hdmi:CARD=HDMI,DEV=3", "plughw:CARD=HDMI,DEV=3", "plughw:CARD=Generic,DEV=0"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+        let got = eligible_outputs(&listed);
+        assert_eq!(got.len(), 2, "one HDMI device + one Generic card — got {got:?}");
+        assert!(
+            got.contains(&"plughw:CARD=HDMI,DEV=3".to_string()),
+            "plughw converts rate and format, so it accepts a wav that hdmi: would refuse: {got:?}"
+        );
+        assert!(!got.contains(&"hdmi:CARD=HDMI,DEV=3".to_string()));
+    }
+
+    /// A channel names a DESTINATION, and one of them is not reachable from a CLI process.
+    #[test]
+    fn an_unreachable_channel_refuses_with_the_reason_rather_than_playing_locally() {
+        let desk = Args { channel: Some("desk".into()), ..Args::default() };
+        assert!(check_channel(&desk).is_ok());
+        assert!(check_channel(&Args::default()).is_ok(), "no channel is the ordinary local case");
+
+        let phone = Args { channel: Some("phone".into()), ..Args::default() };
+        let e = check_channel(&phone).expect_err("phone must refuse, not fall back to the speakers");
+        assert!(e.contains("tunnel"), "the refusal must say WHY, not just that it failed: {e}");
+
+        let nonsense = Args { channel: Some("kitchen".into()), ..Args::default() };
+        let e = check_channel(&nonsense).expect_err("an unknown channel is a typo, not a default");
+        assert!(e.contains("desk") && e.contains("phone"), "name the destinations that exist: {e}");
     }
 
     #[test]
