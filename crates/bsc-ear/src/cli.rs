@@ -388,6 +388,30 @@ so no filter can pull them apart — that is target-speaker extraction, a separa
 This is the model-free clean-up that comes first.",
     },
     CmdDoc {
+        name: "room",
+        summary: "host this ear's own relay room and record what a paired phone streams into it",
+        usage: "\
+bsc ear room [--relay <url>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
+
+Listens to the PHONE instead of a local microphone. The samples arrive over the tunnel and enter
+exactly the same segmenter, retention window and per-speaker baseline that `listen` feeds, so the
+phone is just another recording path.
+
+IT WORKS WITH THE DESKTOP APP CLOSED, which is the whole reason this exists. The app mints a fresh
+tunnel identity at every launch, so a phone pinned to it is unpaired by a restart; this room uses
+the ear's OWN durable identity — the one `bsc ear pair` prints — and nothing about the app is in
+the path.
+
+--device is ignored here: the audio comes off the wire, not off a card. --channel defaults to
+`phone` and is what the baseline is keyed under, so run this ALONGSIDE `bsc ear listen --channel
+desk` to record both microphones at once without the two pooling into one habit.
+
+A LOST FRAME IS REPORTED, NEVER FILLED. Silence-filling a gap would read to the segmenter as a
+pause and corrupt the very measures this audio exists to produce; the count is printed when the
+session ends. (Closing the open segment across a gap needs a signal the sample channel does not
+yet carry — see `the-ear-hosts-its-own-room-and-hears-the-phone`.)",
+    },
+    CmdDoc {
         name: "pair",
         summary: "what a phone needs to pair with this ear — a DURABLE identity, unlike the app's",
         usage: "\
@@ -2013,6 +2037,85 @@ fn pair_payload(relay: Option<&str>, vault: &dyn bsc_secret::vault::Vault) -> Re
 ///
 /// A supplied relay URL is REMEMBERED (`--relay`, else `$BSC_RELAY_URL`), so running this again
 /// reproduces the same payload without being told twice. Remembering it never rotates the keypair.
+/// Host the ear's own relay room and record whatever a paired phone streams into it.
+///
+/// The identity is the SAME one `bsc ear pair` prints — durable, keychain-backed — so a phone
+/// paired once stays paired across a restart. Nothing about the desktop app is involved.
+fn cmd_room(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::{room, tunnel};
+    use bsc_secret::vault::Keyring;
+
+    let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
+    let identity = tunnel::load_or_create(&Keyring)?;
+    // `pairing()` is the only route to the psk — Identity exposes no accessor for it, which is
+    // what keeps the secret out of every other code path on this surface.
+    let payload = identity.pairing(relay.as_deref())?;
+    let static_priv = identity.static_priv()?;
+    let channel = a.channel.clone().unwrap_or_else(|| "phone".to_string());
+
+    std::fs::create_dir_all(&p.root).map_err(|e| format!("could not create {}: {e}", p.root.display()))?;
+    let _ = std::fs::remove_file(p.stop());
+    let stop_path = p.stop();
+    let stop = move || stop_path.exists();
+    let mut emit = |line: String| println!("{line}");
+
+    let mut cfg = capture_config(a, p, true);
+    // The device is meaningless here: the samples arrive over the wire, not from a local card.
+    cfg.device = None;
+    cfg.channel = Some(channel.clone());
+
+    let outcome = room::host_room(
+        &cfg,
+        room::RoomIdentity {
+            psk: payload.psk,
+            relay_url: payload.relay_url,
+            room: payload.room,
+            static_priv,
+            channel,
+        },
+        &stop,
+        &mut emit,
+    );
+    let _ = std::fs::remove_file(p.beat());
+    let _ = std::fs::remove_file(p.pid());
+    let _ = std::fs::remove_file(p.stop());
+    let (progress, stats) = outcome?;
+
+    println!(
+        "stopped — {} segment(s) kept, {} discarded, {} evicted",
+        progress.kept, progress.discarded, progress.evicted
+    );
+    // A SESSION THAT RECORDED NOTHING MUST SAY WHY. "no phone ever connected" and "a phone
+    // connected and sent silence" are different failures and must not read alike.
+    if stats.clients_seen == 0 {
+        println!("no phone connected — check the pairing with `bsc ear pair` and that the phone is streaming");
+    } else {
+        println!(
+            "phone audio — {} frame(s), {} sample(s) from {} connection(s)",
+            stats.frames, stats.samples, stats.clients_seen
+        );
+    }
+    if stats.lost > 0 {
+        println!(
+            "{} frame(s) LOST in transit — the audio either side of a gap is not continuous",
+            stats.lost
+        );
+    }
+    if stats.stale > 0 {
+        println!("{} frame(s) arrived out of order and were dropped rather than spliced in late", stats.stale);
+    }
+    if stats.rate_mismatch > 0 {
+        println!("{} frame(s) carried an unexpected sample rate — the phone and the ear disagree", stats.rate_mismatch);
+    }
+    if stats.undecodable > 0 {
+        println!("{} frame(s) could not be base64-decoded", stats.undecodable);
+    }
+    if stats.room_expired {
+        println!("the relay EXPIRED this room — run `bsc ear pair` and re-pair the phone");
+    }
+    Ok(())
+}
+
 fn cmd_pair(a: &Args) -> Result<(), String> {
     use crate::tunnel;
     use bsc_secret::vault::Keyring;
@@ -2069,6 +2172,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("imprint") => cmd_imprint(&a, &p),
         Some("embed") => cmd_embed(&a),
         Some("pair") => cmd_pair(&a),
+        Some("room") => cmd_room(&a, &p),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -2089,7 +2193,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "embed", "clean", "pair"
+                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair"
             ]
         );
     }

@@ -30,3 +30,4 @@ pub mod detect;
 pub mod diarize;
 pub mod imprint;
 pub mod tunnel;
+pub mod room;
