@@ -2046,18 +2046,16 @@ fn cmd_room(a: &Args, p: &Paths) -> Result<(), String> {
     use bsc_secret::vault::Keyring;
 
     let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
-    // RELAY FIRST, DELIBERATELY. Resolving the identity goes through the OS keychain, which on a
-    // locked collection BLOCKS on an unlock prompt that never arrives in a headless shell. Doing
-    // that before checking an argument we already have turns "you forgot --relay" — which
-    // `pairing()` explains perfectly well — into an unexplained hang. An argument fault must not
-    // queue behind a secret.
-    if relay.is_none() {
-        return Err(format!(
-            "no relay URL: pass `--relay <url>` or set {}. The relay is the zero-knowledge Worker \
-             both peers dial; it is not guessable, so there is no default to fall back to",
-            tunnel::RELAY_ENV
-        ));
-    }
+    // THE RELAY IS REMEMBERED, so an absent --relay is NOT an error on its own. `pairing()` falls
+    // back to the URL stored with the identity, which is the whole reason `bsc ear pair --relay`
+    // only has to be told once.
+    //
+    // An earlier revision of this function refused here when --relay was missing, to keep a
+    // forgotten flag from queueing behind a locked-keychain prompt. That traded one fault for a
+    // worse one: it made the remembered relay unreachable, so the flag had to be passed EVERY
+    // time — defeating a documented feature to improve an error message. The keychain hang is a
+    // keychain problem (see `an-always-on-ear-cannot-pair-on-a-locked-keyring`) and belongs to
+    // the vault, not to argument parsing.
     let identity = tunnel::load_or_create(&Keyring)?;
     // `pairing()` is the only route to the psk — Identity exposes no accessor for it, which is
     // what keeps the secret out of every other code path on this surface.
