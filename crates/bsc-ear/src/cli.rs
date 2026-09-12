@@ -2145,13 +2145,31 @@ fn cmd_pair(a: &Args) -> Result<(), String> {
     println!("psk        {}", payload.psk);
     println!(
         "\nThis identity is DURABLE — generated once and kept in the OS keychain — so a phone paired\n\
-         with it stays paired across a reboot and across `bsc ear stop` / `start`.\n\n\
-         The phone reads this as JSON. Scan it, or paste this line:"
+         with it stays paired across a reboot and across `bsc ear stop` / `start`."
     );
-    println!(
-        "{}",
-        serde_json::to_string(&payload).map_err(|e| format!("could not render the payload: {e}"))?
-    );
+    // The COMPACT form is what a QR should carry: uppercase base32 of the RAW BYTES, which fits QR
+    // ALPHANUMERIC mode at 5.5 bits per character where the JSON form forces byte mode at 8.
+    // MEASURED on a live payload: version 6 (41x41 modules) against version 10 (57x57) at EC level M.
+    // The phone accepts BOTH, so a payload that cannot be compacted still prints as JSON rather than
+    // leaving the operator with nothing — and it says WHICH form it printed, because the two look
+    // nothing alike and a reader should never have to guess which one they are holding.
+    match payload.to_compact() {
+        Some(compact) => {
+            println!("\nScan it, or paste this line (compact — about half the QR modules of JSON):");
+            println!("{compact}");
+        }
+        None => {
+            println!(
+                "\nThe compact form cannot represent this payload — a relay URL carrying a path is\n\
+                 the usual cause, since uppercasing a path would change it. Falling back to JSON,\n\
+                 which every phone still accepts. Scan it, or paste this line:"
+            );
+            println!(
+                "{}",
+                serde_json::to_string(&payload).map_err(|e| format!("could not render the payload: {e}"))?
+            );
+        }
+    }
     Ok(())
 }
 

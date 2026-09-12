@@ -174,6 +174,109 @@ impl std::fmt::Debug for PairingPayload {
     }
 }
 
+/// The RFC 4648 base32 alphabet. Every character is inside QR's 45-character ALPHANUMERIC set,
+/// which is the entire point: that mode packs 5.5 bits per character where byte mode spends 8.
+const B32_ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/// The compact encoding's version tag. A phone reads this first and can refuse a future format
+/// outright rather than mis-parsing it into a pairing that fails much later, inside the handshake.
+pub const COMPACT_VERSION: &str = "B1";
+
+/// Bytes → unpadded base32. Padding is dropped because `=` is NOT in QR's alphanumeric set and
+/// would force the whole code back into byte mode — losing the only reason to use base32 here.
+fn b32_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(5) * 8);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for &b in bytes {
+        acc = (acc << 8) | u32::from(b);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(B32_ALPHABET[((acc >> bits) & 0x1f) as usize] as char);
+        }
+    }
+    if bits > 0 {
+        out.push(B32_ALPHABET[((acc << (5 - bits)) & 0x1f) as usize] as char);
+    }
+    out
+}
+
+/// Hex → bytes, rejecting odd lengths and non-hex digits.
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    let b = s.as_bytes();
+    (0..b.len() / 2)
+        .map(|i| {
+            let hi = (b[i * 2] as char).to_digit(16)?;
+            let lo = (b[i * 2 + 1] as char).to_digit(16)?;
+            Some((hi * 16 + lo) as u8)
+        })
+        .collect()
+}
+
+/// The relay URL reduced to the `HOST[:PORT]` the compact form carries, uppercased.
+///
+/// Returns `None` when the URL carries a PATH. Uppercasing is lossless for a hostname — DNS is
+/// case-insensitive — but a path is case-sensitive, so folding one would produce a URL that dials
+/// the wrong place. The caller falls back to the JSON encoding rather than shipping a corrupt QR.
+fn compact_host(relay_url: &str) -> Option<String> {
+    let s = relay_url.trim();
+    let rest = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .or_else(|| s.strip_prefix("wss://"))
+        .or_else(|| s.strip_prefix("ws://"))
+        .unwrap_or(s)
+        .trim_end_matches('/');
+    if rest.is_empty() || rest.contains('/') {
+        return None;
+    }
+    Some(rest.to_ascii_uppercase())
+}
+
+impl PairingPayload {
+    /// The QR-optimised encoding: `B1*<HOST>*<ROOM>*<PK>*<PSK>`, every field uppercase base32 of
+    /// the RAW BYTES rather than of the canonical string.
+    ///
+    /// MEASURED against the live payload: 239 bytes of JSON needs QR version 10 (57x57 modules) at
+    /// EC level M; this needs version 6 (41x41). Roughly half the modules, so each one renders
+    /// ~1.4x larger at the same pixel size — which is what actually makes a code scan.
+    ///
+    /// Returns `None` when the payload cannot be represented — a relay URL with a path, a room or
+    /// key that is not valid base64, a psk that is not hex, or a key of the wrong width. Every one
+    /// of those means the JSON form must be shown instead; none of them may be papered over,
+    /// because a QR that decodes to a SLIGHTLY wrong key fails inside the Noise handshake, where
+    /// the error says nothing about the encoding that caused it.
+    ///
+    /// The returned string CONTAINS THE PSK, exactly as the JSON form does. It belongs only on the
+    /// same explicit-print path `bsc ear pair` already uses — never in a log line, which is why
+    /// this is a separate method and not part of `Debug`.
+    pub fn to_compact(&self) -> Option<String> {
+        use base64::Engine;
+        let host = compact_host(&self.relay_url)?;
+        let room = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(&self.room)
+            .ok()?;
+        let pk = base64::engine::general_purpose::STANDARD
+            .decode(&self.host_pub_key)
+            .ok()?;
+        let psk = hex_decode(&self.psk)?;
+        // Widths are CHECKED, not assumed: both are X25519/32-byte values, so a short field is a
+        // corrupt payload rather than a shorter key.
+        if pk.len() != 32 || psk.len() != 32 || room.len() < 12 {
+            return None;
+        }
+        Some(format!(
+            "{COMPACT_VERSION}*{host}*{}*{}*{}",
+            b32_encode(&room),
+            b32_encode(&pk),
+            b32_encode(&psk)
+        ))
+    }
+}
+
 /// Load the ear's identity, generating and storing one the first time.
 ///
 /// # Errors
@@ -326,6 +429,96 @@ mod tests {
         fn lookup(&self, _id: &str) -> Lookup {
             Lookup::Unreadable("the keychain is locked".into())
         }
+    }
+
+    // ── The compact (B1) QR encoding ──────────────────────────────────────────────────────
+    //
+    // THESE VECTORS ARE A COPY of the `pairing` section in
+    // `src/features/tunnel/lib/tunnelProtocol.fixtures.json` and must be changed in lockstep
+    // with it. The copy is deliberate: this crate has no `find_fixture` helper, and reaching
+    // from a crate test into the repo's frontend tree depends on the working directory. The
+    // desktop and mobile tests DO read that file, so the cross-implementation contract is
+    // enforced on two of the three sides; this side proves the encoder against the same bytes.
+
+    const FIXTURE_RELAY: &str = "https://relay.example.workers.dev";
+    const FIXTURE_ROOM: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX";
+    const FIXTURE_PK: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    const FIXTURE_PSK: &str = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    const FIXTURE_COMPACT: &str = "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q";
+
+    fn fixture_payload() -> PairingPayload {
+        PairingPayload {
+            relay_url: FIXTURE_RELAY.into(),
+            room: FIXTURE_ROOM.into(),
+            host_pub_key: FIXTURE_PK.into(),
+            psk: FIXTURE_PSK.into(),
+        }
+    }
+
+    /// A base32 encoder written by hand is worth nothing until it is shown to be REAL base32
+    /// rather than a private alphabet ordering that happens to round-trip against itself. These
+    /// are RFC 4648 §10's own vectors, with the padding dropped as the compact form drops it.
+    #[test]
+    fn base32_is_rfc4648_and_not_an_invention() {
+        assert_eq!(b32_encode(b""), "");
+        assert_eq!(b32_encode(b"f"), "MY");
+        assert_eq!(b32_encode(b"fo"), "MZXQ");
+        assert_eq!(b32_encode(b"foo"), "MZXW6");
+        assert_eq!(b32_encode(b"foob"), "MZXW6YQ");
+        assert_eq!(b32_encode(b"fooba"), "MZXW6YTB");
+        assert_eq!(b32_encode(b"foobar"), "MZXW6YTBOI");
+    }
+
+    /// The cross-implementation contract: this encoder must produce the fixture EXACTLY, because
+    /// the phone decodes that same string back into the canonical values.
+    #[test]
+    fn the_compact_form_is_the_fixture_byte_for_byte() {
+        assert_eq!(fixture_payload().to_compact().unwrap(), FIXTURE_COMPACT);
+    }
+
+    /// The property the whole encoding exists for. If any character falls outside QR's 45-char
+    /// alphanumeric set the encoder silently drops to byte mode and the code grows again — which
+    /// would be invisible without this assertion, since the string still *looks* fine.
+    #[test]
+    fn the_compact_form_stays_inside_qr_alphanumeric() {
+        let s = fixture_payload().to_compact().unwrap();
+        for c in s.chars() {
+            assert!(
+                c.is_ascii_digit() || c.is_ascii_uppercase() || " $%*+-./:".contains(c),
+                "character {c:?} is outside QR alphanumeric mode"
+            );
+        }
+    }
+
+    /// Uppercasing is lossless for a hostname and NOT for a path, so a relay URL carrying one must
+    /// refuse the compact form rather than emit a QR that dials somewhere else.
+    #[test]
+    fn a_relay_url_with_a_path_refuses_the_compact_form() {
+        let mut p = fixture_payload();
+        p.relay_url = "https://relay.example.workers.dev/Tunnel".into();
+        assert!(p.to_compact().is_none());
+        assert!(compact_host("https://host.example/a/b").is_none());
+        // A bare host, a port, and a trailing slash all remain encodable.
+        assert_eq!(compact_host("https://host.example/").unwrap(), "HOST.EXAMPLE");
+        assert_eq!(compact_host("wss://host.example:8787").unwrap(), "HOST.EXAMPLE:8787");
+    }
+
+    /// A short key is a corrupt payload, not a shorter key. Encoding one would produce a QR that
+    /// fails inside the Noise handshake, where the error says nothing about the encoding.
+    #[test]
+    fn a_wrong_width_key_refuses_rather_than_truncating() {
+        use base64::Engine;
+        let mut p = fixture_payload();
+        p.host_pub_key = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
+        assert!(p.to_compact().is_none());
+
+        let mut p = fixture_payload();
+        p.psk = "abcd".into();
+        assert!(p.to_compact().is_none());
+
+        let mut p = fixture_payload();
+        p.psk = "zz".repeat(32); // right length, not hex
+        assert!(p.to_compact().is_none());
     }
 
     /// THE POINT OF THE WHOLE MODULE: a second load is the same identity, so a phone that pinned

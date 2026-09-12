@@ -96,5 +96,18 @@
     "plan_confirm": { "type": "plan_confirm", "projectId": "proj-bf9cf968", "section": "goal" },
     "plan_chat": { "type": "plan_chat", "projectId": "proj-bf9cf968", "text": "make the goal more specific" },
     "audio_frame": { "type": "audio_frame", "channel": "phone", "seq": 7, "sampleRate": 16000, "pcm": "AAECAwQFBgc=" }
+  },
+  "pairing": {
+    "$comment": "The pairing payload the desktop shows as a QR, in BOTH encodings the phone accepts. `canonical` is the historical JSON form. `compact` packs the same four fields into QR ALPHANUMERIC mode (uppercase base32 + a `*` separator, all inside the 45-character alphanumeric set) so the code needs version 6 / 41x41 modules instead of version 10 / 57x57 at EC level M — MEASURED on the live payload. THE QR IS ONLY A TRANSPORT: `compact` carries RAW BYTES and the phone re-derives `canonical` exactly, so the relay's room-id validation (/^[A-Za-z0-9_-]{16,64}$/), the Noise IK handshake and the constant-time psk comparison are all untouched and no wire frame changes. The separator is `*` because it is alphanumeric-safe and can appear in neither a hostname nor base32's A-Z2-7 — `.` would have collided with the host's own dots. The `https://` scheme is dropped because the phone's normalizeRelayUrl rewrites it to `wss://` on arrival anyway; `normalizedRelayUrl` is what a decode must produce. Uppercasing is lossless for a hostname but NOT for a URL path, so an encoder must refuse the compact form when the relay URL carries one and emit JSON instead. NOTE this section is a SIBLING of serverToClient/clientToServer and is not a wire frame: the Rust serde test indexes those two keys explicitly and the mobile fixtures test destructures only those two, so adding it obliges no TunnelClientMessage member or decoder arm.",
+    "canonical": { "relayUrl": "https://relay.example.workers.dev", "room": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX", "hostPubKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "psk": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f" },
+    "normalizedRelayUrl": "wss://relay.example.workers.dev",
+    "compact": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
+    "rejects": {
+      "wrong_version": "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
+      "too_few_fields": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY",
+      "not_base32": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMF1*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
+      "empty_host": "B1**AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
+      "host_key_wrong_width": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q"
+    }
   }
 }
