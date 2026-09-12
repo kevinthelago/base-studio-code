@@ -42,5 +42,11 @@
     }
   ],
   "folder": "shared/ui/overlay",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A titled modal asking the user a bounded question, dismissible with Escape or a click outside."
+  ],
+  "whenNot": [
+    "A promise-returning prompt or confirm — use promptDialog, which wraps this."
+  ]
 }

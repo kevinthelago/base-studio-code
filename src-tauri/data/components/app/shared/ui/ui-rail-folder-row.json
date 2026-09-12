@@ -56,5 +56,11 @@
       "type": "string"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The folder header row inside a library rail — a disclosure caret, a folder name and a count of what it holds."
+  ],
+  "whenNot": [
+    "A leaf item in the rail — use RailRow. A group label with no folder — use RailGroupHeader."
+  ]
 }

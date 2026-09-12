@@ -20,5 +20,14 @@
   ],
   "srcDivergence": "No backing file, and none retired. `src` used to name `src/shared/ui/charts/telemetry.tsx`, which holds the telemetry PRIMITIVES (TelemetryPanel, ItemBars, SplitBar) this page demos — it was a pointer to what the gallery renders, not to an implementation of the gallery. `TelemetryGalleryPage` is defined nowhere in src/: the page was authored in the graph and never had a file. `src` is therefore null rather than re-pointed, and `srcRetired` is NOT set because that file is alive and belongs to other records. Hand-written.",
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A reference page showing every telemetry chart primitive together, for picking one by eye."
+  ],
+  "whenNot": [
+    "A real analytics page — compose TelemetryPanel with only the charts you need."
+  ],
+  "shapes": [
+    "series"
+  ]
 }

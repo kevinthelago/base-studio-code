@@ -13,5 +13,14 @@
     }
   ],
   "folder": "shared/ui/charts",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A per-day column chart stacking two aligned numeric series over a shared day axis, with a gridded value scale."
+  ],
+  "whenNot": [
+    "A single unstacked trend — use LineArea or Spark."
+  ],
+  "shapes": [
+    "series"
+  ]
 }

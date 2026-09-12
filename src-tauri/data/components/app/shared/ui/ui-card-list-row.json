@@ -94,5 +94,14 @@
       "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { CardListRow } from \"@/shared/ui/data/CardListRow\";\n\ndescribe(\"CardListRow\", () => {\n  it(\"renders lead/title/badge/subtitle/trailing and fires onClick\", () => {\n    const onClick = vi.fn();\n    render(\n      <CardListRow\n        lead={<span data-testid=\"dot\" />}\n        title=\"my-server\"\n        badge={<span>http</span>}\n        subtitle=\"node server.js\"\n        trailing={<button>toggle</button>}\n        onClick={onClick}\n      />,\n    );\n    expect(screen.getByText(\"my-server\")).toBeInTheDocument();\n    expect(screen.getByText(\"http\")).toBeInTheDocument();\n    expect(screen.getByText(\"node server.js\")).toBeInTheDocument();\n    expect(screen.getByTestId(\"dot\")).toBeInTheDocument();\n    fireEvent.click(screen.getByText(\"my-server\"));\n    expect(onClick).toHaveBeenCalledOnce();\n  });\n\n  it(\"applies selected + off state classes and omits the subtitle when absent\", () => {\n    const { container, rerender } = render(<CardListRow title=\"a\" selected />);\n    expect((container.firstChild as HTMLElement).className).toContain(\"selected\");\n    expect(container.querySelector(\".clr-desc\")).toBeNull();\n    rerender(<CardListRow title=\"a\" off />);\n    expect((container.firstChild as HTMLElement).className).toContain(\"off\");\n  });\n\n  it(\"renders titleAside + body and applies grouped/accent/clickable classes\", () => {\n    const { container } = render(\n      <CardListRow title=\"t\" titleAside={<span>aside</span>} body={<span>body-content</span>} variant=\"grouped\" accent=\"#abc\" onClick={() => {}} />,\n    );\n    expect(screen.getByText(\"aside\")).toBeInTheDocument();\n    expect(screen.getByText(\"body-content\")).toBeInTheDocument();\n    expect(container.querySelector(\".clr-body\")).not.toBeNull();\n    const el = container.firstChild as HTMLElement;\n    expect(el.className).toContain(\"grouped\");\n    expect(el.className).toContain(\"has-body\");\n    expect(el.className).toContain(\"has-accent\");\n    expect(el.className).toContain(\"clickable\");\n    expect(el.style.getPropertyValue(\"--clr-accent\")).toBe(\"#abc\");\n  });\n});\n"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "One row of a scrollable card list where each row has a leading glyph, a title with an optional badge, a subtitle, an optional body and a trailing action."
+  ],
+  "whenNot": [
+    "Aligned columns across rows — use DataTableRow. A label/value pair — use KeyValueList."
+  ],
+  "shapes": [
+    "list"
+  ]
 }

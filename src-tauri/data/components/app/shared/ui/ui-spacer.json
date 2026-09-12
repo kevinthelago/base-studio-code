@@ -33,5 +33,11 @@
       "src": "// A retired module must still resolve — the regression that took the whole app down.\n//\n// `Spacer.tsx` was deleted once its record superseded it, which made the app depend on the generated\n// `.bsc-records/` tree. Generation was wired into the `typecheck` / `test` / `build` npm scripts, so every\n// gate command regenerated the tree as its FIRST step and no gate could ever observe the tree missing.\n// `npm run dev` was not wired, so the dev server booted with the module unresolvable and died on\n// `Failed to fetch dynamically imported module: /src/app/runtime/appModules.ts`.\n//\n// Generation now lives in the vite plugin's `buildStart`, which fires for serve and build alike — and for\n// vitest, which is why this test is meaningful rather than circular: it exercises the SAME plugin path the\n// dev server uses, not the npm script.\nimport { describe, it, expect } from \"vitest\";\nimport { Spacer } from \"@/shared/ui/layout/Spacer\";\n\ndescribe(\"retired modules resolve through the record fallback\", () => {\n  it(\"imports a module whose file was deleted, from its packaged seed\", () => {\n    // If the fallback is broken this file fails to COLLECT — the import above throws before any assertion\n    // runs — which is exactly the shape of the dev-server failure.\n    expect(typeof Spacer).toBe(\"function\");\n  });\n});"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "Fixed or flexible empty space inside a Row or Stack — a fixed rung, or a flex spacer pushing what follows to the far end."
+  ],
+  "whenNot": [
+    "Padding around content — pass `pad` to the surrounding layout primitive."
+  ]
 }

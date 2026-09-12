@@ -15,5 +15,11 @@
     }
   ],
   "folder": "shared/ui/feedback",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "A short error message shown in place, framed in a danger-tinted box next to the thing that failed."
+  ],
+  "whenNot": [
+    "New UI — the live library serves this specifier from `ui-inline-error`."
+  ]
 }

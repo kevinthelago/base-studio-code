@@ -20,8 +20,15 @@
   "variants": [
     "default"
   ],
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A read-only two-column property list for one record's named fields — a detail summary, a config panel, an inspector's facts block."
+  ],
+  "whenNot": [
+    "Editable fields — use the Field controls. A single headline number — use StatTile."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "key-value"
+  ]
 }

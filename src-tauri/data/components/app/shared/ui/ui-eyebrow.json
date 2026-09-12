@@ -42,5 +42,11 @@
       "type": "CSSProperties"
     }
   ],
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The small uppercase mono label above a section heading, panel title or dock head."
+  ],
+  "whenNot": [
+    "The heading itself — use Text or SectionHeader."
+  ]
 }

@@ -27,8 +27,15 @@
     "default"
   ],
   "pageKind": "kit",
-  "whenUse": [],
-  "whenNot": [],
+  "whenUse": [
+    "A complete pipeline or workflow page for prev-to-next ordered data: a status-coloured step strip over a focused-step detail panel."
+  ],
+  "whenNot": [
+    "An unordered collection — use CollectionPage."
+  ],
   "tags": [],
-  "feature": "core"
+  "feature": "core",
+  "shapes": [
+    "linked-list"
+  ]
 }

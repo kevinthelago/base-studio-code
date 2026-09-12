@@ -13,5 +13,11 @@
     }
   ],
   "folder": "shared/ui/overlay",
-  "feature": "core"
+  "feature": "core",
+  "whenUse": [
+    "The shared footer button row for a detail pane or modal — cancel/done while drafting, remove/done once saved."
+  ],
+  "whenNot": [
+    "A destructive action needing a second click — use ConfirmButton."
+  ]
 }
