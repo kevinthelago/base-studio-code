@@ -1033,17 +1033,24 @@ dependencies = [
 name = "bsc-ear"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.0",
  "bsc-cli-util",
  "bsc-incident",
+ "bsc-secret",
+ "bsc-sqlite-util",
+ "bsc-tunnel",
  "bsc-util",
  "cpal",
  "hound",
  "libc",
  "nnnoiseless",
  "ort",
+ "rand 0.10.2",
  "realfft",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1632,9 +1639,15 @@ dependencies = [
 name = "bsc-tunnel"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.0",
+ "futures-util",
+ "log",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "snow",
+ "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

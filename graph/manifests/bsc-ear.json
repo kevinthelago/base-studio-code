@@ -26,7 +26,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"`bsc ear` — always-on local capture: segments a live microphone into speech-only audio within a retention bound it enforces rather than documents.\""
+          "value": "\"`bsc ear` \u2014 always-on local capture: segments a live microphone into speech-only audio within a retention bound it enforces rather than documents.\""
         }
       ],
       "lead": [],
@@ -64,9 +64,26 @@
           "cont": [],
           "key": "bsc-incident",
           "lead": [
-            "# The incident model — the ear raises Detections into the same ledger the network sensors use."
+            "# The incident model \u2014 the ear raises Detections into the same ledger the network sensors use."
           ],
           "value": "{ path = \"../bsc-incident\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite open + busy_timeout plumbing (the `conn` feature) \u2014 so a CLI write never races the app."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# The baseline is accumulated HABIT, so it has to outlive the invocation that measured it \u2014",
+            "# and it is keyed per (speaker, channel), which is a query rather than a file read."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
         },
         {
           "cont": [],
@@ -131,6 +148,57 @@
           "key": "realfft",
           "lead": [],
           "value": "\"3\""
+        },
+        {
+          "cont": [],
+          "key": "bsc-tunnel",
+          "lead": [
+            "# The ear's DURABLE tunnel identity uses the SAME Noise IK keypair generator the desktop app",
+            "# does, so a phone pins one kind of key whichever it paired with. This crate is Tauri-free and",
+            "# snow-only: NO relay client, no websocket stack and no async runtime enters bsc-ear with it."
+          ],
+          "value": "{ path = \"../bsc-tunnel\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-secret",
+          "lead": [
+            "# The keychain-backed vault that identity is persisted through \u2014 its `Vault` trait, injected as a",
+            "# trait object so the logic is testable against an in-memory fake. Reusing it keeps ONE secret",
+            "# store on this machine instead of minting a parallel one for the ear."
+          ],
+          "value": "{ path = \"../bsc-secret\" }"
+        },
+        {
+          "cont": [],
+          "key": "base64",
+          "lead": [
+            "# The pairing payload's encodings, matched to the app's: STANDARD (padded) for hostPubKey, which",
+            "# is what the mobile client decodes and length-checks, and URL_SAFE_NO_PAD for the room id, which",
+            "# is what the relay's validateRoomId accepts. Versions track src-tauri's so both ends agree."
+          ],
+          "value": "\"0.23\""
+        },
+        {
+          "cont": [],
+          "key": "rand",
+          "lead": [],
+          "value": "\"0.10\""
+        },
+        {
+          "cont": [],
+          "key": "tokio",
+          "lead": [
+            "# The relay client is async, so hosting a room needs a runtime. The feature set is COPIED",
+            "# from bsc-tunnel's rather than trimmed: cargo unifies features per invocation, so a",
+            "# narrower set here would still resolve to the union, and writing a different one would",
+            "# only mislead the next reader about what this crate actually compiles.",
+            "#",
+            "# This is the dependency `the-relay-client-drags-tokio-into-every-bsc-tunnel-consumer` exists",
+            "# to claw back behind a feature \u2014 declaring it directly makes the cost visible in THIS",
+            "# manifest instead of arriving invisibly through bsc-tunnel."
+          ],
+          "value": "{ version = \"1\", features = [\"sync\", \"rt-multi-thread\", \"macros\", \"time\", \"net\", \"io-util\"] }"
         }
       ],
       "lead": [

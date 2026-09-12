@@ -110,9 +110,36 @@ pub fn to_i16(s: f32) -> i16 {
     (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
 }
 
+/// The inverse of [`to_i16`], for reading PCM16 in — a wav, or a frame off the wire.
+///
+/// DIVIDES BY `i16::MAX`, not by 32768, so it is the exact inverse of [`to_i16`] rather than merely
+/// close to it. Both conventions are already in this tree — `read_wav` uses `1 << (bits - 1)` — and
+/// they differ by one part in 32768, which is inaudible but makes a round-trip test fail by a hair
+/// and sends the reader hunting for a bug that is not there.
+///
+/// The clamp exists for exactly one input: `i16::MIN` is one further from zero than `i16::MAX`, so
+/// it would otherwise return -1.000031 and put a sample outside the range everything downstream
+/// assumes.
+pub fn from_i16(s: i16) -> f32 {
+    (s as f32 / i16::MAX as f32).clamp(-1.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `from_i16` is the EXACT inverse of `to_i16`, not an approximation of it.
+    #[test]
+    fn pcm16_round_trips_without_drift() {
+        for s in [0.0f32, 0.5, -0.5, 1.0, -1.0, 0.123_45] {
+            let back = from_i16(to_i16(s));
+            assert!((back - s).abs() < 1e-4, "{s} round-tripped to {back}");
+        }
+        // The one asymmetric input: i16::MIN is further from zero than i16::MAX.
+        assert_eq!(from_i16(i16::MIN), -1.0, "the range floor must not exceed -1.0");
+        assert_eq!(from_i16(i16::MAX), 1.0);
+        assert_eq!(from_i16(0), 0.0);
+    }
 
     /// A mono source wired to one channel of a stereo interface is the ordinary case on this
     /// machine's Scarlett. Taking the first channel would return silence, and an ear that hears

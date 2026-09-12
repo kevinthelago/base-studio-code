@@ -124,7 +124,41 @@ pub struct Frame {
     /// and more high-frequency content crosses zero more often. Cheap enough to need no FFT, which
     /// keeps this module dependency-free.
     pub zcr: f32,
+    /// Harmonics-to-noise ratio in dB, or `None` when the frame is unvoiced.
+    ///
+    /// Free, and it was being thrown away: [`f0_autocorr`] already normalises its correlation and
+    /// picks a peak, and that peak IS the harmonic fraction. See [`hnr_from_peak`].
+    pub hnr_db: Option<f32>,
+    /// Cycle-to-cycle variation in PERIOD, as a fraction of the mean period. `None` when the frame
+    /// is unvoiced or holds too few glottal pulses to average over — see [`MIN_CYCLES`].
+    pub jitter: Option<f32>,
+    /// Cycle-to-cycle variation in AMPLITUDE, as a fraction of the mean pulse amplitude.
+    pub shimmer: Option<f32>,
 }
+
+/// The quietest harmonics-to-noise ratio worth reporting, in dB.
+///
+/// A frame at the voicing threshold is already most noise, and the estimator's log runs to negative
+/// infinity as the correlation approaches zero. Reporting a floor keeps the number comparable
+/// instead of letting one breathy frame dominate every mean it enters.
+pub const HNR_FLOOR_DB: f32 = -10.0;
+/// The loudest worth reporting. A real larynx does not exceed this; a frame that claims to is a
+/// synthetic tone or a numerical artefact of near-perfect correlation.
+pub const HNR_CEIL_DB: f32 = 40.0;
+
+/// The smallest number of glottal pulses that can yield a jitter figure.
+///
+/// Jitter averages the DIFFERENCES between consecutive periods, so three pulses give two periods and
+/// one difference — a single number with no spread, which is not an average. Four is the floor at
+/// which the mean means anything, and a 40 ms frame holds that many cycles from about 100 Hz up.
+pub const MIN_CYCLES: usize = 4;
+
+/// How far from its expected position the next pulse may sit, as a fraction of the period.
+///
+/// Wide enough to follow real perturbation — a disordered voice moves several percent cycle to
+/// cycle — and narrow enough that the search cannot skip to the neighbouring pulse and report a
+/// period that never happened.
+const PULSE_SEARCH: f32 = 0.25;
 
 /// Estimate the fundamental by normalised autocorrelation.
 ///
@@ -132,6 +166,142 @@ pub struct Frame {
 /// the same thing at every volume — a raw autocorrelation peak scales with energy, so a fixed
 /// threshold against it would call loud noise voiced and quiet speech silent.
 pub fn f0_autocorr(frame: &[f32], sample_rate: u32) -> Option<f32> {
+    f0_and_hnr(frame, sample_rate).map(|(f0, _)| f0)
+}
+
+/// Harmonics-to-noise ratio in dB, from the normalised autocorrelation peak.
+///
+/// Boersma's estimator. A periodic signal correlates with itself at its own period and whatever is
+/// left over is noise, so `r / (1 - r)` IS the harmonic-to-noise POWER ratio and ten times its log
+/// is the dB figure. This is not a second analysis of the frame: the peak is already computed to
+/// find the pitch, and was being discarded.
+pub fn hnr_from_peak(r: f32) -> f32 {
+    // THE LIMITS ARE THE dB CONSTANTS, and nothing else may encode them. This used to clamp `r` to
+    // 0.999 first, which caps the ratio at 10*log10(999) = 30 dB and made HNR_CEIL_DB = 40
+    // unreachable — two numbers for one limit, where raising the named one silently changed
+    // nothing. Saturating on `r` directly means the ceiling is whatever the constant says.
+    if r >= 1.0 {
+        // Perfect periodicity. The log would be infinity, and an infinity makes every later
+        // comparison quietly return false instead of failing.
+        return HNR_CEIL_DB;
+    }
+    if r <= f32::EPSILON {
+        // No correlation at all, or anti-correlation: no harmonic content to take a ratio of.
+        return HNR_FLOOR_DB;
+    }
+    (10.0 * (r / (1.0 - r)).log10()).clamp(HNR_FLOOR_DB, HNR_CEIL_DB)
+}
+
+/// Correlation at ONE lag, normalised against the energy of the OVERLAP ALONE.
+///
+/// THE SEARCH ARRAY AND THE RATIO NEED DIFFERENT NORMALISATIONS, and using one for both is what
+/// this exists to stop. The search in [`f0_and_hnr`] divides by the whole frame's energy while the
+/// sums run only to `len - lag`, so its score carries a taper that shrinks with lag. For CHOOSING a
+/// period that is harmless and mildly useful — it penalises long lags, biasing the search away from
+/// sub-harmonics. For a RATIO it is a lie: at 120 Hz in a 40 ms frame only 79% of the samples have a
+/// partner, so a perfectly periodic signal scores sqrt(0.79) = 0.89 and reports 9 dB of noise that
+/// is not in the signal. MEASURED: the synthetic vowel read 9.18 dB before this correction.
+///
+/// Praat corrects the same bias by dividing by the window's own autocorrelation. Doing it at the
+/// chosen lag only keeps every existing voicing decision — and the corpus measurements that rest on
+/// them — exactly as they were.
+fn overlap_correlation(frame: &[f32], lag: usize) -> f32 {
+    if lag >= frame.len() {
+        return 0.0;
+    }
+    let (mut num, mut den_a, mut den_b) = (0.0f32, 0.0f32, 0.0f32);
+    for i in 0..frame.len() - lag {
+        num += frame[i] * frame[i + lag];
+        den_a += frame[i] * frame[i];
+        den_b += frame[i + lag] * frame[i + lag];
+    }
+    if den_a <= f32::EPSILON || den_b <= f32::EPSILON {
+        return 0.0;
+    }
+    num / (den_a.sqrt() * den_b.sqrt())
+}
+
+/// Index of the largest sample in a slice.
+fn argmax(v: &[f32]) -> usize {
+    v.iter()
+        .enumerate()
+        .fold((0usize, f32::NEG_INFINITY), |(bi, bv), (i, &x)| if x > bv { (i, x) } else { (bi, bv) })
+        .0
+}
+
+/// Locate successive glottal pulses, seeded by the period the pitch detector already found.
+///
+/// Tracked rather than peak-picked wholesale: the expected position of the next pulse is one period
+/// on, and only a narrow window around it is searched. A global peak-picker on a harmonic-rich vowel
+/// finds the harmonics too, and the periods it then reports are fractions of the real one.
+fn pulses(frame: &[f32], period: f32) -> Vec<(usize, f32)> {
+    let p = period.round() as usize;
+    if p < 2 || frame.len() < p * 2 {
+        return vec![];
+    }
+    let w = ((period * PULSE_SEARCH).round() as usize).max(1);
+    // Start on a real peak rather than wherever the frame happened to be cut: the strongest sample
+    // in the opening period and a half.
+    let first_end = (p + p / 2).min(frame.len());
+    let mut at = argmax(&frame[..first_end]);
+    let mut out = vec![(at, frame[at])];
+    loop {
+        let expect = at + p;
+        let lo = expect.saturating_sub(w);
+        let hi = (expect + w + 1).min(frame.len());
+        if lo >= hi {
+            break;
+        }
+        let k = lo + argmax(&frame[lo..hi]);
+        if k <= at {
+            break;
+        }
+        out.push((k, frame[k]));
+        at = k;
+    }
+    out
+}
+
+/// Mean absolute difference between consecutive values, over their mean.
+///
+/// The "local" form of both jitter and shimmer, and DIMENSIONLESS — which is what makes it survive a
+/// gain change, unlike the absolute perturbation it is derived from.
+fn rel_mean_abs_diff(v: &[f32]) -> Option<f32> {
+    if v.len() < 2 {
+        return None;
+    }
+    let m = mean(v);
+    if m.abs() <= f32::EPSILON {
+        return None;
+    }
+    let diffs: Vec<f32> = v.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+    Some(mean(&diffs) / m)
+}
+
+/// Jitter and shimmer for one voiced frame, as fractions of the mean period and mean amplitude.
+///
+/// Both are reported as fractions rather than the percentages the clinical literature prints —
+/// multiply by 100 for that convention. `None` when the frame holds fewer than [`MIN_CYCLES`]
+/// pulses, because a mean over one difference is not a mean.
+pub fn jitter_shimmer(frame: &[f32], sample_rate: u32, f0: f32) -> Option<(f32, f32)> {
+    if f0 <= 0.0 {
+        return None;
+    }
+    let p = pulses(frame, sample_rate as f32 / f0);
+    if p.len() < MIN_CYCLES {
+        return None;
+    }
+    let periods: Vec<f32> = p.windows(2).map(|w| (w[1].0 - w[0].0) as f32).collect();
+    let amps: Vec<f32> = p.iter().map(|(_, a)| a.abs()).collect();
+    Some((rel_mean_abs_diff(&periods)?, rel_mean_abs_diff(&amps)?))
+}
+
+/// Estimate the fundamental AND the harmonic fraction in one pass.
+///
+/// The pair exists because they come from the same computation: the normalised autocorrelation peak
+/// that identifies the period also states how much of the frame is periodic. [`f0_autocorr`] is the
+/// pitch-only wrapper, kept because most callers want exactly that.
+pub fn f0_and_hnr(frame: &[f32], sample_rate: u32) -> Option<(f32, f32)> {
     let min_lag = (sample_rate as f32 / F0_MAX_HZ) as usize;
     let max_lag = (sample_rate as f32 / F0_MIN_HZ) as usize;
     if frame.len() <= max_lag || min_lag >= max_lag {
@@ -177,7 +347,15 @@ pub fn f0_autocorr(frame: &[f32], sample_rate: u32) -> Option<f32> {
         return None;
     }
     let best_lag = (min_lag + 1..max_lag).find(|&l| peak(l) && r[l] >= strongest * 0.85)?;
-    Some(sample_rate as f32 / best_lag as f32)
+    // The correlation AT THE CHOSEN LAG, not `strongest`. The two differ whenever the shortest
+    // qualifying peak is taken at 85% of the strongest, and the harmonic fraction belongs to the
+    // period actually reported — otherwise a frame's HNR describes a period its own f0 rejected.
+    //
+    // RECOMPUTED rather than read out of `r`, because `r` carries the search taper that
+    // [`overlap_correlation`] exists to remove. Reading `r[best_lag]` here understates every HNR by
+    // an amount that depends on the pitch, which would make a low voice look noisier than a high one
+    // for a reason that is purely an artefact of the frame length.
+    Some((sample_rate as f32 / best_lag as f32, hnr_from_peak(overlap_correlation(frame, best_lag))))
 }
 
 /// Zero crossings per sample.
@@ -202,7 +380,18 @@ pub fn frames(samples: &[f32], sample_rate: u32) -> Vec<Frame> {
         .map(|i| {
             let raw = &samples[i * hop..i * hop + flen];
             let bnd = &banded[i * hop..i * hop + flen];
-            Frame { f0: f0_autocorr(bnd, sample_rate), rms: crate::audio::rms(raw), zcr: zcr(raw) }
+            // Pitch and the harmonic fraction come from ONE pass; jitter and shimmer need the period
+            // that pass found, so they are measured on the same band-limited copy rather than the raw
+            // signal — a glottal pulse is a fundamental-band event, and the unfiltered waveform's
+            // largest sample is as often a fricative as a pulse.
+            let (f0, hnr_db) = match f0_and_hnr(bnd, sample_rate) {
+                Some((f, h)) => (Some(f), Some(h)),
+                None => (None, None),
+            };
+            let (jitter, shimmer) = f0
+                .and_then(|f| jitter_shimmer(bnd, sample_rate, f))
+                .map_or((None, None), |(j, s)| (Some(j), Some(s)));
+            Frame { f0, rms: crate::audio::rms(raw), zcr: zcr(raw), hnr_db, jitter, shimmer }
         })
         .collect()
 }
@@ -229,6 +418,19 @@ pub struct Prosody {
     /// someone is talking. Not a phonetic count and not claimed to be one.
     pub onset_rate: f32,
     pub duration_s: f32,
+    /// Median harmonics-to-noise ratio over the voiced frames, in dB. Higher is a cleaner voice;
+    /// breathiness, hoarseness and noise all pull it down.
+    ///
+    /// VOICE QUALITY, NOT AROUSAL. This and the two below are deliberately absent from
+    /// [`arousal`]'s weighted sum: that score is about how ACTIVATED a voice is, its weights were
+    /// set against measured arousal correlates, and quietly folding quality measures into it would
+    /// redefine what it means while every existing claim about it still read as true.
+    pub hnr_db: f32,
+    /// Median cycle-to-cycle PERIOD variation, as a fraction of the mean period. Multiply by 100
+    /// for the percentage the clinical literature prints.
+    pub jitter_local: f32,
+    /// Median cycle-to-cycle AMPLITUDE variation, as a fraction of the mean pulse amplitude.
+    pub shimmer_local: f32,
 }
 
 fn percentile(sorted: &[f32], p: f32) -> f32 {
@@ -272,6 +474,18 @@ pub fn measure(frames: &[Frame], sample_rate: u32) -> Prosody {
     let duration_s = (frames.len() as f32 * HOP_MS as f32) / 1000.0;
     let _ = sample_rate;
 
+    // MEDIAN, and only over the frames that actually produced a value. A frame with too few glottal
+    // pulses reports nothing rather than zero — zero is a claim of perfect periodicity, which is the
+    // opposite of "could not tell" — so folding the absent ones in as zeros would make a segment look
+    // steadier the less of it could be measured.
+    let median_of = |mut v: Vec<f32>| -> f32 {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        percentile(&v, 0.5)
+    };
+    let hnrs: Vec<f32> = frames.iter().filter_map(|f| f.hnr_db).collect();
+    let jitters: Vec<f32> = frames.iter().filter_map(|f| f.jitter).collect();
+    let shimmers: Vec<f32> = frames.iter().filter_map(|f| f.shimmer).collect();
+
     Prosody {
         f0_median: percentile(&voiced, 0.5),
         f0_range: (percentile(&voiced, 0.9) - percentile(&voiced, 0.1)).max(0.0),
@@ -281,6 +495,9 @@ pub fn measure(frames: &[Frame], sample_rate: u32) -> Prosody {
         voiced_fraction: voiced.len() as f32 / frames.len() as f32,
         onset_rate: if duration_s > 0.0 { onsets as f32 / duration_s } else { 0.0 },
         duration_s,
+        hnr_db: median_of(hnrs),
+        jitter_local: median_of(jitters),
+        shimmer_local: median_of(shimmers),
     }
 }
 
@@ -300,6 +517,18 @@ pub struct Baseline {
     rms_sd: Vec<f32>,
     zcr_mean: Vec<f32>,
     onset_rate: Vec<f32>,
+    /// The voice-QUALITY habit, accumulated alongside the arousal correlates above but scored
+    /// separately — see [`Prosody::hnr_db`] for why these stay out of [`arousal`].
+    ///
+    /// `serde(default)` because a baseline stored before these existed must still load: an absent
+    /// field reads as an empty history, which [`Baseline::z`] already treats as no information
+    /// rather than as a measurement of zero.
+    #[serde(default)]
+    hnr_db: Vec<f32>,
+    #[serde(default)]
+    jitter_local: Vec<f32>,
+    #[serde(default)]
+    shimmer_local: Vec<f32>,
 }
 
 /// Fewer samples than this and a z-score is noise dressed as a measurement.
@@ -338,6 +567,25 @@ impl Baseline {
         self.rms_sd.push(p.rms_sd);
         self.zcr_mean.push(p.zcr_mean);
         self.onset_rate.push(p.onset_rate);
+        self.hnr_db.push(p.hnr_db);
+        self.jitter_local.push(p.jitter_local);
+        self.shimmer_local.push(p.shimmer_local);
+    }
+
+    /// How far this segment's VOICE QUALITY sits from the speaker's habit, per measure.
+    ///
+    /// Separate from [`arousal`] on purpose, and it returns the parts rather than a composite: there
+    /// is no measured weighting for these the way there is for the arousal correlates, and inventing
+    /// one would be the single unarguable number this module exists to avoid. `grounded` carries the
+    /// same meaning it does there — below [`MIN_BASELINE`] the z-scores are noise dressed as
+    /// measurement.
+    pub fn quality_z(&self, p: &Prosody) -> QualityZ {
+        QualityZ {
+            z_hnr: Baseline::z(&self.hnr_db, p.hnr_db),
+            z_jitter: Baseline::z(&self.jitter_local, p.jitter_local),
+            z_shimmer: Baseline::z(&self.shimmer_local, p.shimmer_local),
+            grounded: self.ready(),
+        }
     }
 
     pub fn ready(&self) -> bool {
@@ -360,6 +608,24 @@ impl Baseline {
         }
         ((x - m) / s).clamp(-4.0, 4.0)
     }
+}
+
+/// How this segment's VOICE QUALITY compares with the speaker's habit.
+///
+/// The parts only, with no composite. The arousal weights below were set against measured arousal
+/// correlates; nothing equivalent has been measured for quality, so combining these would be an
+/// invented weighting wearing the authority of the measured one.
+///
+/// A POSITIVE jitter or shimmer z means MORE cycle-to-cycle variation than usual, and a NEGATIVE
+/// HNR z means a noisier voice than usual — so the impaired direction is not the same sign on every
+/// axis, and a reader must be told which way each one points rather than infer it.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub struct QualityZ {
+    pub z_hnr: f32,
+    pub z_jitter: f32,
+    pub z_shimmer: f32,
+    /// False when the baseline is too thin to mean anything — the same contract [`Arousal`] keeps.
+    pub grounded: bool,
 }
 
 /// How activated this sounded, against the speaker's own habit.
@@ -582,6 +848,145 @@ mod tests {
         let a = arousal(&p, &b);
         assert!(a.score.is_finite(), "score was {}", a.score);
         assert_eq!(a.score, 0.0, "identical to the baseline is exactly ordinary");
+    }
+
+    /// A clean periodic signal is nearly all harmonics; noise is nearly all noise. The estimator has
+    /// to separate those by a wide margin or it is measuring nothing.
+    #[test]
+    fn harmonics_to_noise_separates_a_tone_from_noise() {
+        let clean = measure(&frames(&voiced(120.0, 1.0, 0.3), SR), SR);
+        assert!(clean.hnr_db > 15.0, "a synthetic vowel should be strongly harmonic, got {}", clean.hnr_db);
+
+        // Noise loud enough to be analysed at all, so this tests the ESTIMATOR rather than the
+        // silence gate that would otherwise reject the frame before any correlation runs.
+        let hissy = measure(&frames(&noise(1.0, 0.05), SR), SR);
+        // WHAT THE TWO ARMS EACH ESTABLISH, stated because the aggregate alone is ambiguous: an
+        // unvoiced segment reports 0 dB (percentile of an empty vector), so "noise scores low"
+        // could mean the estimator ranked it low OR that nothing reached the estimator at all.
+        // Pinning both voiced fractions separates those, and both readings are findings worth
+        // keeping — a tone must be voiced throughout, and noise must not be read as voiced.
+        assert!(clean.voiced_fraction > 0.9, "a steady tone must be voiced, got {}", clean.voiced_fraction);
+        assert!(hissy.voiced_fraction < 0.25, "noise must not read as voiced, got {}", hissy.voiced_fraction);
+        assert!(
+            hissy.hnr_db < clean.hnr_db - 10.0,
+            "noise ({}) must sit far below a tone ({})",
+            hissy.hnr_db,
+            clean.hnr_db
+        );
+
+        // The floor and ceiling hold, so one pathological frame cannot dominate a mean it enters.
+        assert_eq!(hnr_from_peak(0.0), HNR_FLOOR_DB);
+        assert_eq!(hnr_from_peak(1.0), HNR_CEIL_DB, "perfect correlation must not report infinity");
+        assert!(hnr_from_peak(0.5).abs() < 0.001, "r = 0.5 is equal parts harmonic and noise: 0 dB");
+    }
+
+    /// A voice with a KNOWN period perturbation must read back at roughly that perturbation.
+    ///
+    /// The signal is built by emitting one cycle at a time and alternating the period by a fixed
+    /// fraction, so the mean absolute difference between consecutive periods IS that fraction — the
+    /// answer is known by construction rather than by running the code and blessing the output.
+    #[test]
+    fn jitter_recovers_a_known_period_perturbation() {
+        let steady = perturbed(120.0, 1.0, 0.3, 0.0, 0.0);
+        let jittered = perturbed(120.0, 1.0, 0.3, 0.04, 0.0);
+
+        let (a, b) = (measure(&frames(&steady, SR), SR), measure(&frames(&jittered, SR), SR));
+        assert!(
+            b.jitter_local > a.jitter_local * 2.0,
+            "4% period perturbation ({}) must read well above steady ({})",
+            b.jitter_local,
+            a.jitter_local
+        );
+        assert!(b.jitter_local < 0.25, "and must stay in the right order of magnitude: {}", b.jitter_local);
+    }
+
+    /// The amplitude twin of the test above, and it must move INDEPENDENTLY: perturbing amplitude
+    /// alone must not be reported as period instability.
+    #[test]
+    fn shimmer_recovers_an_amplitude_perturbation_without_moving_jitter() {
+        let steady = measure(&frames(&perturbed(120.0, 1.0, 0.3, 0.0, 0.0), SR), SR);
+        let shimmered = measure(&frames(&perturbed(120.0, 1.0, 0.3, 0.0, 0.20), SR), SR);
+
+        assert!(
+            shimmered.shimmer_local > steady.shimmer_local * 2.0,
+            "20% amplitude perturbation ({}) must read above steady ({})",
+            shimmered.shimmer_local,
+            steady.shimmer_local
+        );
+        assert!(
+            shimmered.jitter_local < 0.05,
+            "amplitude perturbation must not leak into jitter: {}",
+            shimmered.jitter_local
+        );
+    }
+
+    /// A mean over one difference is not a mean. Too few pulses must report NOTHING rather than a
+    /// confident zero — zero claims perfect periodicity, which is the opposite of "could not tell".
+    #[test]
+    fn too_few_cycles_reports_nothing_rather_than_perfect_periodicity() {
+        // At 60 Hz a 40 ms frame holds under three cycles, short of MIN_CYCLES.
+        let flen = (SR as usize * FRAME_MS as usize) / 1000;
+        let low = voiced(60.0, 0.2, 0.3);
+        let banded = voice_band(&low, SR);
+        assert_eq!(jitter_shimmer(&banded[..flen], SR, 60.0), None, "under {MIN_CYCLES} pulses");
+        assert_eq!(jitter_shimmer(&banded[..flen], SR, 0.0), None, "an unvoiced frame has no cycles");
+    }
+
+    /// VOICE QUALITY IS NOT AROUSAL, and this pins the decision. The quality measures are scored
+    /// separately; folding them into the arousal composite would redefine a number whose weights
+    /// were set against measured arousal correlates, while every existing claim about it still read
+    /// as true.
+    #[test]
+    fn quality_is_scored_apart_from_arousal() {
+        let mut b = Baseline::default();
+        for hz in [110.0, 115.0, 108.0, 112.0, 118.0, 105.0, 111.0] {
+            b.observe(&measure(&frames(&voiced(hz, 1.0, 0.2), SR), SR));
+        }
+        assert!(b.ready());
+
+        // A voice that is ordinary in pitch and rate but much noisier than habit.
+        let mut rough = perturbed(111.0, 1.0, 0.2, 0.06, 0.25);
+        for (i, s) in rough.iter_mut().enumerate() {
+            let t = i as f32 / SR as f32;
+            *s += 0.02 * ((i as f32 * 7.3).sin() + (t * 3000.0).cos());
+        }
+        let p = measure(&frames(&rough, SR), SR);
+
+        let q = b.quality_z(&p);
+        assert!(q.grounded, "the baseline is ready, so quality must be grounded too");
+        assert!(
+            q.z_jitter > 0.5 || q.z_shimmer > 0.5 || q.z_hnr < -0.5,
+            "a rougher voice must move at least one quality axis: {q:?}"
+        );
+        assert!(q.z_hnr.is_finite() && q.z_jitter.is_finite() && q.z_shimmer.is_finite());
+    }
+
+    /// A vowel whose period and amplitude are perturbed by KNOWN fractions, one cycle at a time.
+    ///
+    /// Built cycle-by-cycle rather than by modulating a continuous sine, because the quantity under
+    /// test is the difference between CONSECUTIVE periods — a slow vibrato would move the mean period
+    /// without producing the cycle-to-cycle difference jitter is defined as.
+    fn perturbed(hz: f32, secs: f32, amp: f32, jitter: f32, shimmer: f32) -> Vec<f32> {
+        let total = (SR as f32 * secs) as usize;
+        let base = SR as f32 / hz;
+        let mut out: Vec<f32> = Vec::with_capacity(total);
+        let mut cycle = 0usize;
+        while out.len() < total {
+            // Alternating, so every consecutive pair differs by the full fraction.
+            let sign = if cycle.is_multiple_of(2) { 1.0 } else { -1.0 };
+            let period = (base * (1.0 + sign * jitter)).max(2.0);
+            let a = amp * (1.0 + sign * shimmer);
+            let n = period.round() as usize;
+            for i in 0..n {
+                if out.len() >= total {
+                    break;
+                }
+                let w = 2.0 * std::f32::consts::PI * (i as f32 / period);
+                out.push(a * (w.sin() + 0.5 * (2.0 * w).sin() + 0.25 * (3.0 * w).sin()));
+            }
+            cycle += 1;
+        }
+        out
     }
 
     /// The direction the whole module rests on: a higher, wider, faster voice must score ABOVE the
