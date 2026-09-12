@@ -115,6 +115,30 @@ describe("the three answers stay three", () => {
     expect(tailCalls()).toHaveLength(1);
   });
 
+  it("treats an answer that is NOT A FOLD as a read that could not run", async () => {
+    // The shape that actually bit: `logs_coord` resolving to an array of raw lines. A caller cannot
+    // tell that from a fold without looking, and spreading it hands every reader `undefined` where it
+    // expects a list — which surfaces as `refused is not iterable` inside a coordination pump, a stack
+    // nowhere near the cause.
+    route({ logs_coord: [ASK_LINE, "another raw line"], logs_tail: [ASK_LINE] });
+
+    const res = await readCoordState();
+
+    expect(res?.source).toBe("renderer");
+    expect(res?.state.asking.map((a) => a.session)).toEqual(["proj:api"]);
+  });
+
+  it("never hands a reader an undefined list, even for a half-shaped answer", async () => {
+    // A fold missing its arrays is not a fold. Every consumer iterates these.
+    route({ logs_coord: { state: emptyCoordState() }, logs_tail: [ASK_LINE] });
+
+    const res = await readCoordState();
+
+    for (const list of [res?.lines, res?.woken, res?.ready, res?.answered, res?.assigned, res?.refused]) {
+      expect(Array.isArray(list)).toBe(true);
+    }
+  });
+
   it("returns null ONLY when neither implementation could read the log", async () => {
     route({ logs_coord: new Error("down"), logs_tail: new Error("down") });
     expect(await readCoordState()).toBeNull();
