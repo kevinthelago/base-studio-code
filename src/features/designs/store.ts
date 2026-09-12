@@ -19,7 +19,8 @@ import { applyStamps } from "@/features/designs/lib/seedRefresh";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "@/features/designs/lib/themes";
 import { loadComponents, loadComponentsGraph, loadKits, pushComponent, stampComponent, dropComponent, pushKit, dropKit, APP_RECONCILE_WRITER } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "@/features/designs/lib/themeBridge";
-import { loadKitUsage, pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";
+import { pushKitUsage, dropKitUsage } from "@/features/designs/lib/kitUsageBridge";
+import { readKitUsage } from "@/features/designs/lib/kitStoreRead";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, kitAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
 
 /** One observed designer activity event (#2525) — a ring entry in {@link AppStore.aiTouches}.
@@ -193,9 +194,20 @@ export interface ComponentsSlice {
   restampUnstamped: () => Promise<{ stamped: number; deferred: number }>;
 
   /** The consumer index (#2277) — which projects use which kit; the edges a kit CHANGE fans out over.
-   *  A write-through cache over the global `bsc ui usage` store. */
+   *  A write-through cache over the global `bsc ui usage` store (the `kit_usage` table of
+   *  `components.db` since `the-kit-cluster-folds-into-bsc-ui`). */
   kitUsage: KitConsumer[];
-  /** Hydrate the consumer index on boot (no-op keeping the persisted cache when unreachable). */
+  /** Whether the last hydrate could not READ the index — so {@link kitUsage} is a stale cache of unknown
+   *  age rather than what the store holds.
+   *
+   *  NOT persisted, and it exists for one reason: a consumer count of 0 taken from a failed read is a
+   *  lie in the direction of "this kit is unused", which is exactly the input someone would act on to
+   *  retire a kit. A renderer showing that count must show "unknown" while this is true. Use
+   *  `consumersOf` from `@/features/designs/lib/kitStoreRead` when reading the store directly — it
+   *  carries the same distinction in its own return shape. */
+  kitUsageUnread: boolean;
+  /** Hydrate the consumer index on boot. A read that could not RUN keeps the persisted cache and sets
+   *  {@link kitUsageUnread}; a store that answered with no edges replaces the cache with the real empty. */
   hydrateKitUsage: () => Promise<void>;
   /** Record that a project uses a kit (idempotent by (projectKey, kitId)); pushes through the bridge. */
   addKitUsage: (projectKey: string, kitId: string) => void;
@@ -474,10 +486,16 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   },
 
   kitUsage: [],
+  kitUsageUnread: false,
 
   hydrateKitUsage: async () => {
-    const loaded = await loadKitUsage();
-    if (loaded) set({ kitUsage: loaded }); // bridge unreachable → keep the persisted cache
+    const index = await readKitUsage();
+    // A FAILED READ IS NOT AN EMPTY INDEX (`the-kit-cluster-folds-into-bsc-ui`). `null` means the read
+    // could not happen, so the persisted cache is kept AND the fact that nobody knows is recorded —
+    // without that flag a consumer count silently reads as 0, which is the input someone uses to decide
+    // a kit is unused. An index that ANSWERED with no edges is a real empty and replaces the cache.
+    if (!index) { set({ kitUsageUnread: true }); return; }
+    set({ kitUsage: index.edges, kitUsageUnread: false });
   },
 
   addKitUsage: (projectKey, kitId) => {
