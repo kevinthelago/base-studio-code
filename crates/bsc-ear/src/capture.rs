@@ -94,6 +94,13 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, String> {
 pub struct CaptureConfig {
     /// A device name; `None` takes the system default.
     pub device: Option<String>,
+    /// A label for the RECORDING PATH this run is capturing through — not [`DeviceInfo::channels`],
+    /// which is the mono/stereo count.
+    ///
+    /// Explicit AT CAPTURE TIME because this is the only moment the provenance is actually known: a
+    /// wav carries no record of the microphone, gain or room that produced it, so a label recovered
+    /// afterwards is a guess. `None` falls back to the device name.
+    pub channel: Option<String>,
     pub vad: VadConfig,
     pub budget: Budget,
     /// Where segments are written.
@@ -244,6 +251,13 @@ pub fn sweep(dir: &Path, budget: &Budget, protect: Option<&str>, store: Option<&
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct LiveState {
     pub device: String,
+    /// The channel label this run was told to record under, if it was given one.
+    ///
+    /// `#[serde(default)]` IS LOAD-BEARING: state files written before this field existed are on
+    /// disk right now, and a strict parse would make every one of them unreadable — which would
+    /// silently cost the channel fallback exactly when it is needed.
+    #[serde(default)]
+    pub channel: Option<String>,
     pub noise_floor: f32,
     /// The input is delivering digital silence — muted, unplugged, or routed to nothing.
     pub input_dead: bool,
@@ -256,6 +270,7 @@ fn publish_state(cfg: &CaptureConfig, seg: &Segmenter, device: &str, p: &Progres
     let Some(path) = &cfg.state else { return };
     let st = LiveState {
         device: device.to_string(),
+        channel: cfg.channel.clone(),
         noise_floor: seg.noise_floor(),
         input_dead: seg.input_looks_dead(),
         warming: seg.is_warming(),

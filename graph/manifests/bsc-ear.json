@@ -70,6 +70,23 @@
         },
         {
           "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — so a CLI write never races the app."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# The baseline is accumulated HABIT, so it has to outlive the invocation that measured it —",
+            "# and it is keyed per (speaker, channel), which is a query rather than a file read."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
           "key": "serde",
           "lead": [],
           "value": "{ version = \"1\", features = [\"derive\"] }"

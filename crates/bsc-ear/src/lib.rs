@@ -20,6 +20,7 @@ pub mod embed;
 pub mod classify;
 pub mod liveness;
 pub mod prosody;
+pub mod store;
 pub mod retention;
 pub mod transcribe;
 pub mod transcript;

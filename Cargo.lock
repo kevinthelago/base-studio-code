@@ -1035,6 +1035,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-incident",
+ "bsc-sqlite-util",
  "bsc-util",
  "cpal",
  "hound",
@@ -1042,6 +1043,7 @@ dependencies = [
  "nnnoiseless",
  "ort",
  "realfft",
+ "rusqlite",
  "serde",
  "serde_json",
 ]

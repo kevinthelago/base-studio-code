@@ -187,7 +187,7 @@ needed no model.",
     CmdDoc {
         name: "prosody",
         usage: "\
-bsc ear prosody [<wav>...] [--dir <path>] [--json|--pretty]
+bsc ear prosody [<wav>...] [--dir <path>] [--speaker <who>] [--channel <label>] [--no-learn] [--json|--pretty]
 
 Measures HOW something was said, and scores arousal against the speaker's own habit.
 
@@ -204,7 +204,21 @@ at, and the transcript carries it far better than the waveform does.
 THE SCORE IS RELATIVE TO THE SPEAKER. A quiet person at their most animated may never reach a loud
 person's resting level, so an absolute number describes the larynx and the preamp rather than the
 moment. With fewer than six segments to compare against, the score is reported as NOT GROUNDED
-rather than quietly presented as if it meant something.",
+rather than quietly presented as if it meant something.
+
+THE HABIT PERSISTS, AND IT IS KEYED PER MICROPHONE. Every measurement is recorded in the ear's own
+store (`~/.base-studio-code/ear.db`) under a (speaker, channel) pair, and the baseline is rebuilt
+from everything ever heard on that channel — not from the files named on this command line. That is
+what lets the score mean anything: a handful of clips can never reach six on their own, and scoring
+a segment against whichever siblings happened to be passed made every number depend on the argument
+list.
+
+A CHANNEL IS THE RECORDING PATH, not the mono/stereo count. Absolute pitch, loudness and
+harmonics-to-noise describe the microphone, the gain and the room at least as much as the voice, so
+a desk mic and a phone are SEPARATE habits — pooling them would make the z-scores track which device
+was used rather than how the speaker sounded. `--channel` labels it explicitly; without one the ear
+falls back to the device it last captured on and PRINTS the channel it chose, because a wav carries
+no record of where it came from. `--no-learn` measures without adding anything to the habit.",
         summary: "how something was said: pitch, loudness, effort, rate — and arousal against the speaker's own habit",
     },
     CmdDoc {
@@ -377,6 +391,9 @@ struct Args {
     json: bool,
     pretty: bool,
     device: Option<String>,
+    speaker: Option<String>,
+    channel: Option<String>,
+    no_learn: bool,
     dir: Option<String>,
     window_min: Option<u64>,
     positional: Vec<String>,
@@ -393,6 +410,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--device" => a.device = Some(rest.value("--device needs a device name")?),
+            "--speaker" => a.speaker = Some(rest.value("--speaker needs a name")?),
+            "--channel" => a.channel = Some(rest.value("--channel needs a label, e.g. the microphone it was recorded on")?),
+            "--no-learn" => a.no_learn = true,
             "--dir" => a.dir = Some(rest.value("--dir needs a path")?),
             "--limit" => {
                 a.limit = Some(
@@ -508,6 +528,7 @@ fn budget(window_min: Option<u64>) -> Budget {
 fn capture_config(a: &Args, p: &Paths, heartbeat: bool) -> CaptureConfig {
     CaptureConfig {
         device: a.device.clone(),
+        channel: a.channel.clone(),
         vad: VadConfig::default(),
         budget: budget(a.window_min),
         dir: p.audio(),
@@ -595,6 +616,12 @@ fn cmd_start(a: &Args, p: &Paths) -> Result<(), String> {
     cmd.arg("ear").arg("listen").arg("--dir").arg(&p.root);
     if let Some(d) = &a.device {
         cmd.arg("--device").arg(d);
+    }
+    // Carried into the daemon so the channel is recorded WHERE IT IS KNOWN — the listener publishes
+    // it into ear.state, and `prosody` reads it back rather than guessing from whatever device
+    // happens to be current when the analysis runs.
+    if let Some(c) = &a.channel {
+        cmd.arg("--channel").arg(c);
     }
     if let Some(w) = a.window_min {
         cmd.arg("--window").arg(w.to_string());
@@ -736,8 +763,60 @@ fn cmd_levels(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// Read a wav as mono f32 at its own rate.
+/// What a phone actually produces, and so what is accepted besides wav.
+const CONVERTIBLE: &[&str] = &["m4a", "aac", "mp4", "mp3"];
+
+/// Convert a non-wav recording to 16 kHz mono wav in a temp file.
+///
+/// **AT THE DOOR, AND WITH NO NEW CRATE DEPENDENCY.** A phone records m4a/aac, and `hound` reads wav
+/// and nothing else — deliberately. The alternative to converting here is a decoder dependency for
+/// every container a phone might hand over. ffmpeg is a subprocess, exactly as `arecord`, `aplay`
+/// and whisper already are in this crate.
+///
+/// 16 kHz MONO because that is the shape everything downstream already assumes, so a phone recording
+/// and a desk recording differ in their CHANNEL — the recording path, which is the point — rather
+/// than in their sample format.
+///
+/// A MISSING CONVERTER NAMES THE FIX. Left to `hound` this surfaces as "invalid wav header", which
+/// is a useless thing to tell someone who just handed over a voice memo.
+fn convert_to_wav(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("clip");
+    let out = std::env::temp_dir().join(format!("bsc-ear-{}-{}.wav", std::process::id(), stem));
+    let st = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(path)
+        .args(["-ar", "16000", "-ac", "1"])
+        .arg(&out)
+        .status()
+        .map_err(|e| {
+            format!(
+                "{} is not a wav and ffmpeg could not be run to convert it ({e}).\n\
+                 Install ffmpeg (`sudo apt install ffmpeg` on Debian/Ubuntu, `brew install ffmpeg` on macOS),\n\
+                 or convert the file to 16 kHz mono wav yourself and pass that.",
+                path.display()
+            )
+        })?;
+    if !st.success() {
+        return Err(format!("ffmpeg could not decode {} — is it really audio?", path.display()));
+    }
+    Ok(out)
+}
+
+/// Read an audio file as mono f32 at its own rate, converting at the door when it is not a wav.
 fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if CONVERTIBLE.contains(&ext.as_str()) {
+        let tmp = convert_to_wav(path)?;
+        let read = read_wav_direct(&tmp);
+        // The temp file is ours alone; a failed read still cleans up after itself.
+        let _ = std::fs::remove_file(&tmp);
+        return read;
+    }
+    read_wav_direct(path)
+}
+
+/// Read a wav as mono f32 at its own rate.
+fn read_wav_direct(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
     let mut r = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let spec = r.spec();
     let samples: Vec<f32> = match spec.sample_format {
@@ -1612,6 +1691,21 @@ fn fmt_ms(ms: u64) -> String {
     format!("{m}:{s:04.1}")
 }
 
+/// The channel the ear was last capturing under, if it published a state file.
+///
+/// The channel DEFAULT, and deliberately a weak one: a wav does not carry its own provenance, so
+/// measuring last night's phone recording today would otherwise label it with whatever device
+/// happens to be current and pool two channels into one habit. That is the exact contamination the
+/// key exists to prevent, so the resolved channel is always PRINTED — pass `--channel` when the
+/// recording did not come from the device the ear is using now.
+fn last_capture_channel(p: &Paths) -> Option<String> {
+    let raw = std::fs::read_to_string(p.state()).ok()?;
+    let st: crate::capture::LiveState = serde_json::from_str(&raw).ok()?;
+    // An explicit capture-time label wins over the raw device string: it is what the person
+    // recording actually meant by "where this came from".
+    st.channel.filter(|c| !c.trim().is_empty()).or(Some(st.device))
+}
+
 fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
     use crate::prosody;
     let files: Vec<std::path::PathBuf> = if a.positional.len() > 1 {
@@ -1621,13 +1715,20 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
             .map_err(|e| format!("could not read {}: {e}", p.audio().display()))?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|f| f.extension().is_some_and(|x| x == "wav"))
+            .filter(|f| {
+                f.extension().and_then(|x| x.to_str()).is_some_and(|x| {
+                    let x = x.to_ascii_lowercase();
+                    x == "wav" || CONVERTIBLE.contains(&x.as_str())
+                })
+            })
             .collect();
         v.sort();
         v
     };
     if files.is_empty() {
-        return Err("no wavs to measure — pass paths, or --dir a capture directory".into());
+        return Err(
+            "nothing to measure — pass paths, or --dir a capture directory (wav, m4a, aac, mp4 or mp3)".into()
+        );
     }
 
     // TWO PASSES, and it has to be two: the baseline IS the other segments, so nothing can be
@@ -1638,10 +1739,35 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
         let pr = prosody::measure(&prosody::frames(&samples, sr), sr);
         measured.push((f.clone(), pr));
     }
-    let mut base = prosody::Baseline::default();
-    for (_, pr) in &measured {
-        base.observe(pr);
+    // THE BASELINE IS ACCUMULATED HABIT, NOT THIS INVOCATION'S SIBLINGS. Building it from whatever
+    // files were on the command line made every z-score depend on the argument list, and a handful
+    // of clips can never reach MIN_BASELINE. The store keys habit per (speaker, channel) so it
+    // outlives the process and two microphones never pool into one.
+    use crate::store;
+    let speaker = a.speaker.clone().unwrap_or_else(|| store::DEFAULT_SPEAKER.to_string());
+    let channel = a
+        .channel
+        .clone()
+        .or_else(|| a.device.clone())
+        .or_else(|| last_capture_channel(p))
+        .unwrap_or_else(|| store::UNKNOWN_CHANNEL.to_string());
+
+    let db_path =
+        store::Store::default_path().ok_or("no home directory, so the ear store could not be resolved")?;
+    let db = store::Store::open(&db_path).map_err(|e| format!("open {}: {e}", db_path.display()))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let mut learned = 0usize;
+    if !a.no_learn {
+        for (_, pr) in &measured {
+            if db.observe(&speaker, &channel, pr, now).map_err(|e| e.to_string())? {
+                learned += 1;
+            }
+        }
     }
+    let base = db.baseline(&speaker, &channel).map_err(|e| e.to_string())?;
     let (speech, silent): (Vec<_>, Vec<_>) = measured.iter().partition(|(_, pr)| pr.has_speech());
     let mut scored: Vec<_> =
         speech.iter().map(|(f, pr)| (f.clone(), *pr, prosody::arousal(pr, &base))).collect();
@@ -1687,7 +1813,16 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
         }
         println!("  (not low arousal — no speech. Cross-check these against what ASR claimed they said.)");
     }
-    println!("\narousal is a z-score against these same segments — 0 is this speaker's ordinary.");
+    println!(
+        "\narousal is a z-score against {}'s accumulated habit on channel '{}' ({} observation(s)) \
+         — 0 is this speaker's ordinary.",
+        speaker, channel, base.n
+    );
+    if a.no_learn {
+        println!("--no-learn: nothing measured here was added to that habit.");
+    } else {
+        println!("learned {learned} new observation(s) into it.");
+    }
     Ok(())
 }
 
@@ -1880,6 +2015,76 @@ mod tests {
         assert!(run(vec!["help".into()], "bsc ear").is_ok());
         let e = run(vec!["nope".into()], "bsc ear").unwrap_err();
         assert!(e.contains("nope"), "the error should name what was typed: {e}");
+    }
+
+    /// m4a is what a phone records, so it has to come in the front door rather than be rejected as
+    /// a malformed wav.
+    ///
+    /// SKIPS LOUDLY when ffmpeg is absent rather than passing quietly — a converter test that
+    /// silently becomes a no-op is precisely the green-that-checks-nothing this repo keeps being
+    /// caught by.
+    #[test]
+    fn phone_audio_is_converted_at_the_door_to_16k_mono() {
+        if std::process::Command::new("ffmpeg").arg("-version").output().is_err() {
+            eprintln!("SKIPPED: ffmpeg is not installed, so the conversion door was not exercised");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("bsc-ear-door-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("tone.wav");
+
+        // 44.1 kHz STEREO, so the conversion has both a rate and a channel count to change.
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+        for i in 0..44_100 {
+            let t = i as f32 / 44_100.0;
+            let s = ((2.0 * std::f32::consts::PI * 200.0 * t).sin() * 16_000.0) as i16;
+            w.write_sample(s).unwrap();
+            w.write_sample(s).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let m4a = dir.join("tone.m4a");
+        let built = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-i"])
+            .arg(&wav)
+            .arg(&m4a)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(built, "could not build the m4a fixture to test against");
+
+        let (samples, sr) = read_wav(&m4a).expect("an m4a must be readable through the door");
+        assert_eq!(sr, 16_000, "the door converts to 16 kHz");
+        assert!(!samples.is_empty(), "the conversion produced no audio");
+
+        // A wav must NOT take the subprocess path — it is read directly.
+        assert!(!CONVERTIBLE.contains(&"wav"), "wav must never be routed through ffmpeg");
+        let (direct, direct_sr) = read_wav(&wav).expect("a wav still reads directly");
+        assert_eq!(direct_sr, 44_100, "a wav keeps its own rate");
+        assert!(!direct.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An `ear.state` written before the channel field existed must still parse.
+    ///
+    /// THE GUARD FOR A NAMED INVARIANT: `LiveState.channel` carries `#[serde(default)]` because real
+    /// state files without it are on disk right now. A strict parse would make `last_capture_channel`
+    /// fail silently and fall back to "unknown" on exactly the machines that have been recording.
+    #[test]
+    fn a_state_file_written_before_channels_existed_still_parses() {
+        let old = r#"{"device":"plughw:CARD=USB,DEV=0","noise_floor":0.0012,"input_dead":false,
+                      "warming":false,"kept":4363,"discarded":2828}"#;
+        let st: crate::capture::LiveState =
+            serde_json::from_str(old).expect("an old state file must still read");
+        assert_eq!(st.channel, None, "an absent channel is None, not a parse failure");
+        assert_eq!(st.device, "plughw:CARD=USB,DEV=0");
     }
 
     #[test]
