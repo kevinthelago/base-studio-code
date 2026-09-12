@@ -45,13 +45,67 @@
           "key": "snow",
           "lead": [],
           "value": "\"0.10\""
+        },
+        {
+          "cont": [],
+          "key": "base64",
+          "lead": [
+            "# …and what the RELAY CLIENT needs, moved here with it. Copied verbatim from src-tauri's",
+            "# manifest so the two cannot resolve different feature sets: `tokio` runs the client,",
+            "# `tokio-tungstenite` dials the relay over real (CA-signed) TLS via rustls + webpki roots,",
+            "# `base64` mints the room id, `rand` the room id + PSK bytes.",
+            "#",
+            "# NOTE rustls is deliberately NOT a dependency here. rustls 0.23 will not auto-select a",
+            "# CryptoProvider, so the first TLS handshake panics unless one is installed as the process",
+            "# default — and that is the EMBEDDER's job, not the client's (src-tauri does it in lib.rs",
+            "# `run`). A second host must do the same before it dials."
+          ],
+          "value": "\"0.23\""
+        },
+        {
+          "cont": [],
+          "key": "rand",
+          "lead": [],
+          "value": "\"0.10\""
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "log",
+          "lead": [],
+          "value": "\"0.4\""
+        },
+        {
+          "cont": [],
+          "key": "tokio",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"sync\", \"rt-multi-thread\", \"macros\", \"time\", \"net\", \"io-util\"] }"
+        },
+        {
+          "cont": [],
+          "key": "tokio-tungstenite",
+          "lead": [],
+          "value": "{ version = \"0.30\", default-features = false, features = [\"connect\", \"rustls-tls-webpki-roots\"] }"
+        },
+        {
+          "cont": [],
+          "key": "futures-util",
+          "lead": [],
+          "value": "{ version = \"0.3\", default-features = false, features = [\"std\", \"sink\"] }"
         }
       ],
       "lead": [
         "",
         "# The mobile-tunnel wire contract + Noise IK crypto, extracted Tauri-free (#1919) so the byte-exact",
-        "# protocol (shared with mobile-studio-code) and the handshake live in one shareable crate. The",
-        "# desktop bus / transport / commands / FCM push stay in src-tauri and depend on this crate.",
+        "# protocol (shared with mobile-studio-code) and the handshake live in one shareable crate — and,",
+        "# since `the-relay-client-moves-into-the-shared-tunnel-crate`, the relay CLIENT that speaks them.",
+        "# The desktop bus / Tauri commands / FCM push stay in src-tauri, which now depends on this crate",
+        "# for the client too and supplies the application half as a `relay::TunnelHost`.",
         ""
       ],
       "name": "[dependencies]"

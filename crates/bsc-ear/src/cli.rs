@@ -29,9 +29,13 @@ missing from the list is indistinguishable from an input that is not plugged in.
         name: "start",
         summary: "begin listening in the background",
         usage: "\
-bsc ear start [--device <name>] [--window <minutes>] [--dir <path>]
+bsc ear start [--device <name>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
 
 Detaches and listens until `bsc ear stop`. Output goes to the log beside the audio.
+
+--channel and --speaker are forwarded to the detached listener and mean what they mean for
+`bsc ear listen`: the baseline is keyed per (speaker, channel), so label the recording path or two
+microphones pool into one habit and every absolute measure describes the mix rather than the voice.
 
 IT IS ALWAYS-ON BY DESIGN, which is the whole point of the feature and also the reason the retention
 bound is a function rather than a promise: --window (default 120 minutes) is enforced after every
@@ -65,10 +69,15 @@ off. The daemon touches a heartbeat every few seconds and anything older than 20
         name: "listen",
         summary: "listen in the foreground, printing every boundary as it happens",
         usage: "\
-bsc ear listen [--device <name>] [--window <minutes>] [--dir <path>]
+bsc ear listen [--device <name>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
 
 The same capture as `start`, in your terminal, printing the noise floor once it has learned the room
 and a line per segment. This is how you check a threshold against a real microphone.
+
+--channel LABELS THE RECORDING PATH — this desk mic, that phone — and it is not decoration. The
+baseline is keyed per (speaker, channel), so two microphones sharing one label pool into a single
+habit, and every absolute measure (loudness, effort) then describes two rooms and two preamps mixed
+together rather than a voice. --speaker names who is talking, defaulting to `me`.
 
 IT IS DEAF FOR THE FIRST SECOND, deliberately. A detector that can trigger before it knows how loud
 the room is will trigger on the room.",
@@ -187,7 +196,7 @@ needed no model.",
     CmdDoc {
         name: "prosody",
         usage: "\
-bsc ear prosody [<wav>...] [--dir <path>] [--json|--pretty]
+bsc ear prosody [<wav>...] [--dir <path>] [--speaker <who>] [--channel <label>] [--no-learn] [--json|--pretty]
 
 Measures HOW something was said, and scores arousal against the speaker's own habit.
 
@@ -204,7 +213,21 @@ at, and the transcript carries it far better than the waveform does.
 THE SCORE IS RELATIVE TO THE SPEAKER. A quiet person at their most animated may never reach a loud
 person's resting level, so an absolute number describes the larynx and the preamp rather than the
 moment. With fewer than six segments to compare against, the score is reported as NOT GROUNDED
-rather than quietly presented as if it meant something.",
+rather than quietly presented as if it meant something.
+
+THE HABIT PERSISTS, AND IT IS KEYED PER MICROPHONE. Every measurement is recorded in the ear's own
+store (`~/.base-studio-code/ear.db`) under a (speaker, channel) pair, and the baseline is rebuilt
+from everything ever heard on that channel — not from the files named on this command line. That is
+what lets the score mean anything: a handful of clips can never reach six on their own, and scoring
+a segment against whichever siblings happened to be passed made every number depend on the argument
+list.
+
+A CHANNEL IS THE RECORDING PATH, not the mono/stereo count. Absolute pitch, loudness and
+harmonics-to-noise describe the microphone, the gain and the room at least as much as the voice, so
+a desk mic and a phone are SEPARATE habits — pooling them would make the z-scores track which device
+was used rather than how the speaker sounded. `--channel` labels it explicitly; without one the ear
+falls back to the device it last captured on and PRINTS the channel it chose, because a wav carries
+no record of where it came from. `--no-learn` measures without adding anything to the habit.",
         summary: "how something was said: pitch, loudness, effort, rate — and arousal against the speaker's own habit",
     },
     CmdDoc {
@@ -364,6 +387,51 @@ IT DOES NOT SEPARATE OVERLAPPING SPEAKERS. Two voices share the same frequencies
 so no filter can pull them apart — that is target-speaker extraction, a separate model-driven step.
 This is the model-free clean-up that comes first.",
     },
+    CmdDoc {
+        name: "room",
+        summary: "host this ear's own relay room and record what a paired phone streams into it",
+        usage: "\
+bsc ear room [--relay <url>] [--channel <label>] [--speaker <name>] [--window <minutes>] [--dir <path>]
+
+Listens to the PHONE instead of a local microphone. The samples arrive over the tunnel and enter
+exactly the same segmenter, retention window and per-speaker baseline that `listen` feeds, so the
+phone is just another recording path.
+
+IT WORKS WITH THE DESKTOP APP CLOSED, which is the whole reason this exists. The app mints a fresh
+tunnel identity at every launch, so a phone pinned to it is unpaired by a restart; this room uses
+the ear's OWN durable identity — the one `bsc ear pair` prints — and nothing about the app is in
+the path.
+
+--device is ignored here: the audio comes off the wire, not off a card. --channel defaults to
+`phone` and is what the baseline is keyed under, so run this ALONGSIDE `bsc ear listen --channel
+desk` to record both microphones at once without the two pooling into one habit.
+
+A LOST FRAME IS REPORTED, NEVER FILLED. Silence-filling a gap would read to the segmenter as a
+pause and corrupt the very measures this audio exists to produce; the count is printed when the
+session ends. (Closing the open segment across a gap needs a signal the sample channel does not
+yet carry — see `the-ear-hosts-its-own-room-and-hears-the-phone`.)",
+    },
+    CmdDoc {
+        name: "pair",
+        summary: "what a phone needs to pair with this ear — a DURABLE identity, unlike the app's",
+        usage: "\
+bsc ear pair [--relay <url>] [--json|--pretty]
+
+Prints { relayUrl, room, hostPubKey, psk } — the payload the mobile client scans or accepts pasted.
+
+THE IDENTITY IS GENERATED ONCE AND KEPT. The desktop app mints a fresh Noise keypair, room and psk
+at every launch, so restarting it unpairs the phone that had pinned the old key. That is fine for an
+app you pair at the machine and fatal for an ear, whose whole job is to be always listening — so
+this identity is generated on first use, stored in the OS keychain, and loaded unchanged thereafter.
+A reboot, or `bsc ear stop` and `start`, leaves the pairing intact.
+
+THE RELAY IS REMEMBERED, so pairing again reproduces the same payload without being told twice.
+Supply it once with --relay (or $BSC_RELAY_URL); there is no default, because the relay is the
+zero-knowledge Worker you deployed and is not guessable.
+
+THIS IS THE ONE VERB THAT PRINTS A SECRET, deliberately: the psk is what the phone echoes back to
+authenticate. Nothing else on this surface reads it, and it reaches no log line.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -377,8 +445,12 @@ struct Args {
     json: bool,
     pretty: bool,
     device: Option<String>,
+    speaker: Option<String>,
+    channel: Option<String>,
+    no_learn: bool,
     dir: Option<String>,
     window_min: Option<u64>,
+    relay: Option<String>,
     positional: Vec<String>,
 }
 
@@ -393,6 +465,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--device" => a.device = Some(rest.value("--device needs a device name")?),
+            "--speaker" => a.speaker = Some(rest.value("--speaker needs a name")?),
+            "--channel" => a.channel = Some(rest.value("--channel needs a label, e.g. the microphone it was recorded on")?),
+            "--no-learn" => a.no_learn = true,
             "--dir" => a.dir = Some(rest.value("--dir needs a path")?),
             "--limit" => {
                 a.limit = Some(
@@ -408,6 +483,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                         .map_err(|_| "--window needs a whole number of minutes".to_string())?,
                 );
             }
+            "--relay" => a.relay = Some(rest.value("--relay needs the relay URL to pair through")?),
             _ => return Ok(false),
         }
         Ok(true)
@@ -508,6 +584,7 @@ fn budget(window_min: Option<u64>) -> Budget {
 fn capture_config(a: &Args, p: &Paths, heartbeat: bool) -> CaptureConfig {
     CaptureConfig {
         device: a.device.clone(),
+        channel: a.channel.clone(),
         vad: VadConfig::default(),
         budget: budget(a.window_min),
         dir: p.audio(),
@@ -595,6 +672,12 @@ fn cmd_start(a: &Args, p: &Paths) -> Result<(), String> {
     cmd.arg("ear").arg("listen").arg("--dir").arg(&p.root);
     if let Some(d) = &a.device {
         cmd.arg("--device").arg(d);
+    }
+    // Carried into the daemon so the channel is recorded WHERE IT IS KNOWN — the listener publishes
+    // it into ear.state, and `prosody` reads it back rather than guessing from whatever device
+    // happens to be current when the analysis runs.
+    if let Some(c) = &a.channel {
+        cmd.arg("--channel").arg(c);
     }
     if let Some(w) = a.window_min {
         cmd.arg("--window").arg(w.to_string());
@@ -736,8 +819,60 @@ fn cmd_levels(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// Read a wav as mono f32 at its own rate.
+/// What a phone actually produces, and so what is accepted besides wav.
+const CONVERTIBLE: &[&str] = &["m4a", "aac", "mp4", "mp3"];
+
+/// Convert a non-wav recording to 16 kHz mono wav in a temp file.
+///
+/// **AT THE DOOR, AND WITH NO NEW CRATE DEPENDENCY.** A phone records m4a/aac, and `hound` reads wav
+/// and nothing else — deliberately. The alternative to converting here is a decoder dependency for
+/// every container a phone might hand over. ffmpeg is a subprocess, exactly as `arecord`, `aplay`
+/// and whisper already are in this crate.
+///
+/// 16 kHz MONO because that is the shape everything downstream already assumes, so a phone recording
+/// and a desk recording differ in their CHANNEL — the recording path, which is the point — rather
+/// than in their sample format.
+///
+/// A MISSING CONVERTER NAMES THE FIX. Left to `hound` this surfaces as "invalid wav header", which
+/// is a useless thing to tell someone who just handed over a voice memo.
+fn convert_to_wav(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("clip");
+    let out = std::env::temp_dir().join(format!("bsc-ear-{}-{}.wav", std::process::id(), stem));
+    let st = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(path)
+        .args(["-ar", "16000", "-ac", "1"])
+        .arg(&out)
+        .status()
+        .map_err(|e| {
+            format!(
+                "{} is not a wav and ffmpeg could not be run to convert it ({e}).\n\
+                 Install ffmpeg (`sudo apt install ffmpeg` on Debian/Ubuntu, `brew install ffmpeg` on macOS),\n\
+                 or convert the file to 16 kHz mono wav yourself and pass that.",
+                path.display()
+            )
+        })?;
+    if !st.success() {
+        return Err(format!("ffmpeg could not decode {} — is it really audio?", path.display()));
+    }
+    Ok(out)
+}
+
+/// Read an audio file as mono f32 at its own rate, converting at the door when it is not a wav.
 fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if CONVERTIBLE.contains(&ext.as_str()) {
+        let tmp = convert_to_wav(path)?;
+        let read = read_wav_direct(&tmp);
+        // The temp file is ours alone; a failed read still cleans up after itself.
+        let _ = std::fs::remove_file(&tmp);
+        return read;
+    }
+    read_wav_direct(path)
+}
+
+/// Read a wav as mono f32 at its own rate.
+fn read_wav_direct(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
     let mut r = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let spec = r.spec();
     let samples: Vec<f32> = match spec.sample_format {
@@ -1612,6 +1747,21 @@ fn fmt_ms(ms: u64) -> String {
     format!("{m}:{s:04.1}")
 }
 
+/// The channel the ear was last capturing under, if it published a state file.
+///
+/// The channel DEFAULT, and deliberately a weak one: a wav does not carry its own provenance, so
+/// measuring last night's phone recording today would otherwise label it with whatever device
+/// happens to be current and pool two channels into one habit. That is the exact contamination the
+/// key exists to prevent, so the resolved channel is always PRINTED — pass `--channel` when the
+/// recording did not come from the device the ear is using now.
+fn last_capture_channel(p: &Paths) -> Option<String> {
+    let raw = std::fs::read_to_string(p.state()).ok()?;
+    let st: crate::capture::LiveState = serde_json::from_str(&raw).ok()?;
+    // An explicit capture-time label wins over the raw device string: it is what the person
+    // recording actually meant by "where this came from".
+    st.channel.filter(|c| !c.trim().is_empty()).or(Some(st.device))
+}
+
 fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
     use crate::prosody;
     let files: Vec<std::path::PathBuf> = if a.positional.len() > 1 {
@@ -1621,13 +1771,20 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
             .map_err(|e| format!("could not read {}: {e}", p.audio().display()))?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|f| f.extension().is_some_and(|x| x == "wav"))
+            .filter(|f| {
+                f.extension().and_then(|x| x.to_str()).is_some_and(|x| {
+                    let x = x.to_ascii_lowercase();
+                    x == "wav" || CONVERTIBLE.contains(&x.as_str())
+                })
+            })
             .collect();
         v.sort();
         v
     };
     if files.is_empty() {
-        return Err("no wavs to measure — pass paths, or --dir a capture directory".into());
+        return Err(
+            "nothing to measure — pass paths, or --dir a capture directory (wav, m4a, aac, mp4 or mp3)".into()
+        );
     }
 
     // TWO PASSES, and it has to be two: the baseline IS the other segments, so nothing can be
@@ -1638,10 +1795,35 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
         let pr = prosody::measure(&prosody::frames(&samples, sr), sr);
         measured.push((f.clone(), pr));
     }
-    let mut base = prosody::Baseline::default();
-    for (_, pr) in &measured {
-        base.observe(pr);
+    // THE BASELINE IS ACCUMULATED HABIT, NOT THIS INVOCATION'S SIBLINGS. Building it from whatever
+    // files were on the command line made every z-score depend on the argument list, and a handful
+    // of clips can never reach MIN_BASELINE. The store keys habit per (speaker, channel) so it
+    // outlives the process and two microphones never pool into one.
+    use crate::store;
+    let speaker = a.speaker.clone().unwrap_or_else(|| store::DEFAULT_SPEAKER.to_string());
+    let channel = a
+        .channel
+        .clone()
+        .or_else(|| a.device.clone())
+        .or_else(|| last_capture_channel(p))
+        .unwrap_or_else(|| store::UNKNOWN_CHANNEL.to_string());
+
+    let db_path =
+        store::Store::default_path().ok_or("no home directory, so the ear store could not be resolved")?;
+    let db = store::Store::open(&db_path).map_err(|e| format!("open {}: {e}", db_path.display()))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let mut learned = 0usize;
+    if !a.no_learn {
+        for (_, pr) in &measured {
+            if db.observe(&speaker, &channel, pr, now).map_err(|e| e.to_string())? {
+                learned += 1;
+            }
+        }
     }
+    let base = db.baseline(&speaker, &channel).map_err(|e| e.to_string())?;
     let (speech, silent): (Vec<_>, Vec<_>) = measured.iter().partition(|(_, pr)| pr.has_speech());
     let mut scored: Vec<_> =
         speech.iter().map(|(f, pr)| (f.clone(), *pr, prosody::arousal(pr, &base))).collect();
@@ -1687,7 +1869,16 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
         }
         println!("  (not low arousal — no speech. Cross-check these against what ASR claimed they said.)");
     }
-    println!("\narousal is a z-score against these same segments — 0 is this speaker's ordinary.");
+    println!(
+        "\narousal is a z-score against {}'s accumulated habit on channel '{}' ({} observation(s)) \
+         — 0 is this speaker's ordinary.",
+        speaker, channel, base.n
+    );
+    if a.no_learn {
+        println!("--no-learn: nothing measured here was added to that habit.");
+    } else {
+        println!("learned {learned} new observation(s) into it.");
+    }
     Ok(())
 }
 
@@ -1824,6 +2015,164 @@ fn cmd_segments(a: &Args, p: &Paths) -> Result<(), String> {
     Ok(())
 }
 
+/// Load (or first-time create) the ear's identity in `vault`, remember `relay` when one is supplied,
+/// and assemble the payload the phone parses.
+///
+/// The vault is a parameter for the same reason `bsc secret`'s `run_with` takes one: a real keychain
+/// is unavailable in exactly the environments the tests run in, and a test that wrote to the
+/// developer's login keychain would mutate their machine.
+fn pair_payload(relay: Option<&str>, vault: &dyn bsc_secret::vault::Vault) -> Result<crate::tunnel::PairingPayload, String> {
+    let mut identity = crate::tunnel::load_or_create(vault)?;
+    if let Some(url) = relay {
+        identity.remember_relay(url, vault)?;
+    }
+    identity.pairing(None)
+}
+
+/// `bsc ear pair` — print what a phone needs to pair with this ear.
+///
+/// THE ONLY VERB ON THIS SURFACE THAT PRINTS A SECRET, and that is its entire purpose: the psk is
+/// what the phone echoes back inside the Noise session. Nothing else here reads the identity, and
+/// `tunnel::Identity` exposes no accessor for either secret, so the payload is the only way out.
+///
+/// A supplied relay URL is REMEMBERED (`--relay`, else `$BSC_RELAY_URL`), so running this again
+/// reproduces the same payload without being told twice. Remembering it never rotates the keypair.
+/// Host the ear's own relay room and record whatever a paired phone streams into it.
+///
+/// The identity is the SAME one `bsc ear pair` prints — durable, keychain-backed — so a phone
+/// paired once stays paired across a restart. Nothing about the desktop app is involved.
+fn cmd_room(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::{room, tunnel};
+    use bsc_secret::vault::Keyring;
+
+    let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
+    // THE RELAY IS REMEMBERED, so an absent --relay is NOT an error on its own. `pairing()` falls
+    // back to the URL stored with the identity, which is the whole reason `bsc ear pair --relay`
+    // only has to be told once.
+    //
+    // An earlier revision of this function refused here when --relay was missing, to keep a
+    // forgotten flag from queueing behind a locked-keychain prompt. That traded one fault for a
+    // worse one: it made the remembered relay unreachable, so the flag had to be passed EVERY
+    // time — defeating a documented feature to improve an error message. The keychain hang is a
+    // keychain problem (see `an-always-on-ear-cannot-pair-on-a-locked-keyring`) and belongs to
+    // the vault, not to argument parsing.
+    let identity = tunnel::load_or_create(&Keyring)?;
+    // `pairing()` is the only route to the psk — Identity exposes no accessor for it, which is
+    // what keeps the secret out of every other code path on this surface.
+    let payload = identity.pairing(relay.as_deref())?;
+    let static_priv = identity.static_priv()?;
+    let channel = a.channel.clone().unwrap_or_else(|| "phone".to_string());
+
+    std::fs::create_dir_all(&p.root).map_err(|e| format!("could not create {}: {e}", p.root.display()))?;
+    let _ = std::fs::remove_file(p.stop());
+    let stop_path = p.stop();
+    let stop = move || stop_path.exists();
+    let mut emit = |line: String| println!("{line}");
+
+    let mut cfg = capture_config(a, p, true);
+    // The device is meaningless here: the samples arrive over the wire, not from a local card.
+    cfg.device = None;
+    cfg.channel = Some(channel.clone());
+
+    let outcome = room::host_room(
+        &cfg,
+        room::RoomIdentity {
+            psk: payload.psk,
+            relay_url: payload.relay_url,
+            room: payload.room,
+            static_priv,
+            channel,
+        },
+        &stop,
+        &mut emit,
+    );
+    let _ = std::fs::remove_file(p.beat());
+    let _ = std::fs::remove_file(p.pid());
+    let _ = std::fs::remove_file(p.stop());
+    let (progress, stats) = outcome?;
+
+    println!(
+        "stopped — {} segment(s) kept, {} discarded, {} evicted",
+        progress.kept, progress.discarded, progress.evicted
+    );
+    // A SESSION THAT RECORDED NOTHING MUST SAY WHY. "no phone ever connected" and "a phone
+    // connected and sent silence" are different failures and must not read alike.
+    if stats.clients_seen == 0 {
+        println!("no phone connected — check the pairing with `bsc ear pair` and that the phone is streaming");
+    } else {
+        println!(
+            "phone audio — {} frame(s), {} sample(s) from {} connection(s)",
+            stats.frames, stats.samples, stats.clients_seen
+        );
+    }
+    if stats.lost > 0 {
+        println!(
+            "{} frame(s) LOST in transit — the audio either side of a gap is not continuous",
+            stats.lost
+        );
+    }
+    if stats.stale > 0 {
+        println!("{} frame(s) arrived out of order and were dropped rather than spliced in late", stats.stale);
+    }
+    if stats.rate_mismatch > 0 {
+        println!("{} frame(s) carried an unexpected sample rate — the phone and the ear disagree", stats.rate_mismatch);
+    }
+    if stats.undecodable > 0 {
+        println!("{} frame(s) could not be base64-decoded", stats.undecodable);
+    }
+    if stats.room_expired {
+        println!("the relay EXPIRED this room — run `bsc ear pair` and re-pair the phone");
+    }
+    Ok(())
+}
+
+fn cmd_pair(a: &Args) -> Result<(), String> {
+    use crate::tunnel;
+    use bsc_secret::vault::Keyring;
+
+    // The env fallback is resolved HERE rather than inside `pair_payload`, so the assembly below is
+    // a pure function of its arguments and can be tested against a fake vault on any machine —
+    // including one that happens to have $BSC_RELAY_URL set.
+    let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
+    let payload = pair_payload(relay.as_deref(), &Keyring)?;
+
+    if a.json || a.pretty {
+        return print_json(&payload, a.pretty);
+    }
+    println!("relay      {}", payload.relay_url);
+    println!("room       {}", payload.room);
+    println!("host key   {}", payload.host_pub_key);
+    println!("psk        {}", payload.psk);
+    println!(
+        "\nThis identity is DURABLE — generated once and kept in the OS keychain — so a phone paired\n\
+         with it stays paired across a reboot and across `bsc ear stop` / `start`."
+    );
+    // The COMPACT form is what a QR should carry: uppercase base32 of the RAW BYTES, which fits QR
+    // ALPHANUMERIC mode at 5.5 bits per character where the JSON form forces byte mode at 8.
+    // MEASURED on a live payload: version 6 (41x41 modules) against version 10 (57x57) at EC level M.
+    // The phone accepts BOTH, so a payload that cannot be compacted still prints as JSON rather than
+    // leaving the operator with nothing — and it says WHICH form it printed, because the two look
+    // nothing alike and a reader should never have to guess which one they are holding.
+    match payload.to_compact() {
+        Some(compact) => {
+            println!("\nScan it, or paste this line (compact — about half the QR modules of JSON):");
+            println!("{compact}");
+        }
+        None => {
+            println!(
+                "\nThe compact form cannot represent this payload — a relay URL carrying a path is\n\
+                 the usual cause, since uppercasing a path would change it. Falling back to JSON,\n\
+                 which every phone still accepts. Scan it, or paste this line:"
+            );
+            println!(
+                "{}",
+                serde_json::to_string(&payload).map_err(|e| format!("could not render the payload: {e}"))?
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     let a = parse_args(argv)?;
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &a.positional) {
@@ -1850,6 +2199,8 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("attribute") => cmd_attribute(&a, &p),
         Some("imprint") => cmd_imprint(&a, &p),
         Some("embed") => cmd_embed(&a),
+        Some("pair") => cmd_pair(&a),
+        Some("room") => cmd_room(&a, &p),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -1870,7 +2221,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "embed", "clean"
+                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair"
             ]
         );
     }
@@ -1880,6 +2231,76 @@ mod tests {
         assert!(run(vec!["help".into()], "bsc ear").is_ok());
         let e = run(vec!["nope".into()], "bsc ear").unwrap_err();
         assert!(e.contains("nope"), "the error should name what was typed: {e}");
+    }
+
+    /// m4a is what a phone records, so it has to come in the front door rather than be rejected as
+    /// a malformed wav.
+    ///
+    /// SKIPS LOUDLY when ffmpeg is absent rather than passing quietly — a converter test that
+    /// silently becomes a no-op is precisely the green-that-checks-nothing this repo keeps being
+    /// caught by.
+    #[test]
+    fn phone_audio_is_converted_at_the_door_to_16k_mono() {
+        if std::process::Command::new("ffmpeg").arg("-version").output().is_err() {
+            eprintln!("SKIPPED: ffmpeg is not installed, so the conversion door was not exercised");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("bsc-ear-door-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("tone.wav");
+
+        // 44.1 kHz STEREO, so the conversion has both a rate and a channel count to change.
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+        for i in 0..44_100 {
+            let t = i as f32 / 44_100.0;
+            let s = ((2.0 * std::f32::consts::PI * 200.0 * t).sin() * 16_000.0) as i16;
+            w.write_sample(s).unwrap();
+            w.write_sample(s).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let m4a = dir.join("tone.m4a");
+        let built = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-i"])
+            .arg(&wav)
+            .arg(&m4a)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(built, "could not build the m4a fixture to test against");
+
+        let (samples, sr) = read_wav(&m4a).expect("an m4a must be readable through the door");
+        assert_eq!(sr, 16_000, "the door converts to 16 kHz");
+        assert!(!samples.is_empty(), "the conversion produced no audio");
+
+        // A wav must NOT take the subprocess path — it is read directly.
+        assert!(!CONVERTIBLE.contains(&"wav"), "wav must never be routed through ffmpeg");
+        let (direct, direct_sr) = read_wav(&wav).expect("a wav still reads directly");
+        assert_eq!(direct_sr, 44_100, "a wav keeps its own rate");
+        assert!(!direct.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An `ear.state` written before the channel field existed must still parse.
+    ///
+    /// THE GUARD FOR A NAMED INVARIANT: `LiveState.channel` carries `#[serde(default)]` because real
+    /// state files without it are on disk right now. A strict parse would make `last_capture_channel`
+    /// fail silently and fall back to "unknown" on exactly the machines that have been recording.
+    #[test]
+    fn a_state_file_written_before_channels_existed_still_parses() {
+        let old = r#"{"device":"plughw:CARD=USB,DEV=0","noise_floor":0.0012,"input_dead":false,
+                      "warming":false,"kept":4363,"discarded":2828}"#;
+        let st: crate::capture::LiveState =
+            serde_json::from_str(old).expect("an old state file must still read");
+        assert_eq!(st.channel, None, "an absent channel is None, not a parse failure");
+        assert_eq!(st.device, "plughw:CARD=USB,DEV=0");
     }
 
     #[test]
@@ -1931,6 +2352,41 @@ mod tests {
         let d = Paths::resolve(None).unwrap();
         assert!(d.root.ends_with("ear"), "{:?}", d.root);
         assert!(d.root.to_string_lossy().contains(".base-studio-code"), "{:?}", d.root);
+    }
+
+    /// THE PROMISE OF THE VERB: pairing again later reproduces the SAME payload, because the
+    /// identity was stored the first time rather than minted afresh. A phone that pinned
+    /// `hostPubKey` yesterday is therefore still paired today.
+    #[test]
+    fn pairing_twice_reproduces_the_same_payload_and_remembers_the_relay() {
+        use bsc_secret::vault::{MapVault, Vault};
+        let vault = MapVault::default();
+
+        let first = pair_payload(Some("https://relay.example/"), &vault).unwrap();
+        assert_eq!(first.relay_url, "https://relay.example", "trailing slash trimmed as the app does");
+        assert!(vault.has(crate::tunnel::IDENTITY_ID), "the identity must have been persisted");
+
+        // No --relay this time: the remembered one carries it, so the phone is handed one payload.
+        let again = pair_payload(None, &vault).unwrap();
+        assert_eq!(again.room, first.room);
+        assert_eq!(again.host_pub_key, first.host_pub_key);
+        assert_eq!(again.psk, first.psk);
+        assert_eq!(again.relay_url, first.relay_url);
+    }
+
+    /// With nothing remembered and no `--relay`, the verb must say how to supply one rather than
+    /// inventing a relay — there is no default, and a wrong one fails silently at pairing time.
+    #[test]
+    fn pairing_with_no_relay_anywhere_refuses_and_says_how() {
+        use bsc_secret::vault::MapVault;
+        let e = pair_payload(None, &MapVault::default()).unwrap_err();
+        assert!(e.contains("--relay"), "{e}");
+    }
+
+    #[test]
+    fn the_relay_flag_needs_a_value_and_says_which_flag() {
+        let e = parse_args(vec!["pair".into(), "--relay".into()]).unwrap_err();
+        assert!(e.contains("--relay"), "{e}");
     }
 
     #[test]
