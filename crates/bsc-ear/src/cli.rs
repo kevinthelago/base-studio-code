@@ -2046,6 +2046,18 @@ fn cmd_room(a: &Args, p: &Paths) -> Result<(), String> {
     use bsc_secret::vault::Keyring;
 
     let relay = a.relay.clone().or_else(|| std::env::var(tunnel::RELAY_ENV).ok());
+    // RELAY FIRST, DELIBERATELY. Resolving the identity goes through the OS keychain, which on a
+    // locked collection BLOCKS on an unlock prompt that never arrives in a headless shell. Doing
+    // that before checking an argument we already have turns "you forgot --relay" — which
+    // `pairing()` explains perfectly well — into an unexplained hang. An argument fault must not
+    // queue behind a secret.
+    if relay.is_none() {
+        return Err(format!(
+            "no relay URL: pass `--relay <url>` or set {}. The relay is the zero-knowledge Worker \
+             both peers dial; it is not guessable, so there is no default to fall back to",
+            tunnel::RELAY_ENV
+        ));
+    }
     let identity = tunnel::load_or_create(&Keyring)?;
     // `pairing()` is the only route to the psk — Identity exposes no accessor for it, which is
     // what keeps the secret out of every other code path on this surface.
