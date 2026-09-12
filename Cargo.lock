@@ -1530,6 +1530,7 @@ dependencies = [
  "bsc-request",
  "bsc-resolve",
  "bsc-sandbox",
+ "bsc-secret",
  "bsc-sqlite-util",
  "bsc-util",
  "plandb",
