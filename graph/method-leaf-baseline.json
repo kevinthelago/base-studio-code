@@ -4,7 +4,7 @@
   "app--detached-window.ts": 2,
   "app-state.ts": 5,
   "audit-log.ts": 2,
-  "audit-rows.ts": 2,
+  "audit-rows.ts": 3,
   "auto-spawn.ts": 3,
   "automation-control.ts": 3,
   "automations-format.ts": 2,
