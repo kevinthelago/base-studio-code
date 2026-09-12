@@ -43,6 +43,11 @@ const RESET_STATE = {
   githubUser: null,
   githubRepos: [],
   activeRepoName: "",
+  // The provenance beside each cached value (`frontend-state-7-…`) — reset with it, or a stamp left over
+  // from a previous test makes the next one's cache read `fresh` when nothing in it was fetched.
+  githubReposFetchedAt: null,
+  githubUserFetchedAt: null,
+  githubCheckedAt: null,
   projectsView: "list" as "list" | "planning",
   activeProjectId: null as string | null,
   activeProjectName: "",
