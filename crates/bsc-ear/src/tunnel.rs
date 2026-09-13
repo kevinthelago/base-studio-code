@@ -29,10 +29,18 @@
 use bsc_secret::vault::Vault;
 use serde::{Deserialize, Serialize};
 
-/// The keychain account the ear's identity is stored under. The service namespace is
-/// [`bsc_secret::KEYCHAIN_SERVICE`], shared with `bsc secret`, so this identity lives beside the
-/// user's other credentials rather than in a store of its own.
-pub const IDENTITY_ID: &str = "ear-tunnel-identity";
+/// The keychain account the identity is stored under — the MACHINE's, shared with the desktop app.
+///
+/// IT USED TO BE THE EAR'S OWN (`ear-tunnel-identity`), and that was the bug that stopped the stream
+/// working. The app held a different keypair and a different seed, so a phone scanning the app's QR
+/// derived `room("ear")` from the APP's seed while `bsc ear room` hosted `room("ear")` derived from
+/// the EAR's — different seeds name different rooms, and the phone joined one nobody was hosting.
+/// The B2 QR also carries exactly ONE host public key, which two processes with two keypairs cannot
+/// both be authenticated by. One pairing reaching every room therefore requires ONE identity.
+///
+/// The old account is still read and PROMOTED on first load, so an ear that was already paired stays
+/// paired — see [`bsc_secret::vault::load_or_create_machine_identity`].
+pub const IDENTITY_ID: &str = bsc_secret::vault::MACHINE_IDENTITY_ID;
 
 /// The environment variable consulted when `--relay` is not given and none has been remembered.
 pub const RELAY_ENV: &str = "BSC_RELAY_URL";
@@ -43,54 +51,80 @@ pub const RELAY_ENV: &str = "BSC_RELAY_URL";
 /// no accessor for the psk or the private key. A caller can therefore render a pairing payload (the
 /// one place a secret is meant to be shown) and cannot accidentally print either secret anywhere
 /// else. [`std::fmt::Debug`] is hand-written for the same reason.
+/// THE FIELDS MOVED, NOT THE MEANING. The stored shape is now
+/// [`bsc_secret::vault::MachineIdentity`] — the same camelCase keys this struct used to declare
+/// itself, so an entry written by either version deserializes through the other. It is `transparent`
+/// for exactly that reason: the wrapper adds the EAR's reading of a shared value (derive for
+/// `FEATURE_EAR`), and must add nothing to the JSON.
+///
+/// What used to live here and now does not: the validator, the writer, the read-back guard and the
+/// minting. All four are the SAME in the app and in the ear, and keeping two copies is how the two
+/// hosts drifted onto two identities in the first place.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Identity {
-    /// Standard padded base64 of the X25519 PRIVATE key. Never printed, never logged.
-    static_priv: String,
-    /// Standard padded base64 of the 32-byte X25519 public key — what the phone pins as the Noise
-    /// IK remote static key. Encoded exactly as `TunnelState::host_pub_key_b64` encodes the app's:
-    /// STANDARD (padded) base64, because the mobile client decodes it that way and warns when the
-    /// result is not 32 bytes.
-    host_pub_key: String,
-    /// The relay room id, in the relay's `validateRoomId` shape.
-    room: String,
-    /// The pairing secret the phone echoes inside the Noise session. 64 lowercase hex chars.
-    psk: String,
-    /// The relay this ear pairs through, remembered so `bsc ear pair` reproduces the same payload
-    /// without being told again. `None` until one is supplied.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    relay_url: Option<String>,
-}
+#[serde(transparent)]
+pub struct Identity(bsc_secret::vault::MachineIdentity);
 
 impl std::fmt::Debug for Identity {
-    /// Redacts both secrets. A durable identity is exactly the kind of value that ends up in a
-    /// `{:?}` inside an error message someone later logs.
+    /// DELEGATES, deliberately. `MachineIdentity`'s own `Debug` redacts the private key, the seed and
+    /// the psk while showing the public half; re-stating that here would be a second place for a
+    /// redaction to be forgotten — and the seed is the widest secret of the three, since every
+    /// feature's psk derives from it.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Identity")
-            .field("staticPriv", &"<redacted>")
-            .field("hostPubKey", &self.host_pub_key)
-            .field("room", &self.room)
-            .field("psk", &"<redacted>")
-            .field("relayUrl", &self.relay_url)
-            .finish()
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
 impl Identity {
-    /// The relay room id.
-    pub fn room(&self) -> &str {
-        &self.room
+    /// The relay room id this ear hosts.
+    ///
+    /// Returns an owned `String` rather than a borrow because the value is DERIVED when a seed is
+    /// present — there is no stored field to lend out. Nothing outside this module's own tests
+    /// calls it, so that signature change ripples nowhere: `cli.rs` and `room.rs` both reach the
+    /// room through [`Identity::pairing`].
+    ///
+    /// The feature is always [`FEATURE_EAR`]: this identity IS the ear's, and deriving the console's
+    /// room here would hand a phone the app's room while the ear hosted nothing — the precise
+    /// confusion `one-pairing-assigns-every-room` exists to remove.
+    pub fn room(&self) -> String {
+        match self.seed_bytes() {
+            Some(seed) => bsc_tunnel::relay::derive_room(&seed, bsc_tunnel::relay::FEATURE_EAR),
+            // A pre-seed identity is pinned to the ONE room it was minted with, and that is the whole
+            // of what it can reach. `unwrap_or_default` cannot be hit in practice: an identity with
+            // neither a seed nor a stored room is refused at load.
+            None => self.0.legacy_room().unwrap_or_default().to_string(),
+        }
+    }
+
+    /// The pairing secret, derived from the seed when there is one.
+    ///
+    /// PRIVATE on purpose, and the struct's promise is unchanged: there is still no *public* way to
+    /// read the psk, so [`Identity::pairing`] remains the only route out of the type for it.
+    fn psk(&self) -> String {
+        match self.seed_bytes() {
+            Some(seed) => bsc_tunnel::relay::derive_psk(&seed, bsc_tunnel::relay::FEATURE_EAR),
+            None => self.0.legacy_psk().unwrap_or_default().to_string(),
+        }
+    }
+
+    /// The seed as raw bytes, or `None` when this identity predates seeds.
+    ///
+    /// A present-but-unparseable seed also answers `None` here, but it cannot reach this point:
+    /// [`load_or_create`] refuses that identity outright rather than letting it fall back to a
+    /// stored room, because silently pairing into the wrong room is the failure this whole item is
+    /// about. [`Identity::validate`] is the guard, and a test pins it.
+    fn seed_bytes(&self) -> Option<Vec<u8>> {
+        let bytes = hex_decode(self.0.seed()?)?;
+        (bytes.len() == SEED_BYTES).then_some(bytes)
     }
 
     /// Standard padded base64 of the static public key — the value the phone pins.
     pub fn host_pub_key(&self) -> &str {
-        &self.host_pub_key
+        self.0.host_pub_key()
     }
 
     /// The remembered relay URL, if one has been supplied.
     pub fn relay_url(&self) -> Option<&str> {
-        self.relay_url.as_deref()
+        self.0.relay_url()
     }
 
     /// The raw X25519 private key, for the eventual relay client (`noise::responder` takes bytes).
@@ -100,7 +134,7 @@ impl Identity {
     pub fn static_priv(&self) -> Result<Vec<u8>, String> {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
-            .decode(&self.static_priv)
+            .decode(self.0.static_priv())
             .map_err(|e| format!("the stored private key is not valid base64: {e}"))
     }
 
@@ -112,12 +146,9 @@ impl Identity {
     /// # Errors
     /// If the URL is empty, or the vault cannot durably store the updated identity.
     pub fn remember_relay(&mut self, relay_url: &str, vault: &dyn Vault) -> Result<(), String> {
-        let normalized = normalize_relay(relay_url)?;
-        if self.relay_url.as_deref() == Some(normalized.as_str()) {
-            return Ok(());
-        }
-        self.relay_url = Some(normalized);
-        save(self, vault)
+        // Delegated: the trim, the no-op-when-unchanged and the read-back all live with the storage
+        // now, and the app's tunnel reaches the same code for the same account.
+        self.0.remember_relay(relay_url, vault)
     }
 
     /// The payload the phone parses — `{ relayUrl, room, hostPubKey, psk }`, and nothing else.
@@ -130,8 +161,9 @@ impl Identity {
         let relay = match relay_override {
             Some(r) => normalize_relay(r)?,
             None => self
-                .relay_url
-                .clone()
+                .0
+                .relay_url()
+                .map(str::to_string)
                 .ok_or_else(|| format!(
                     "no relay URL: pass `--relay <url>` or set {RELAY_ENV}. The relay is the \
                      zero-knowledge Worker both peers dial; it is not guessable, so there is no \
@@ -140,9 +172,9 @@ impl Identity {
         };
         Ok(PairingPayload {
             relay_url: relay,
-            room: self.room.clone(),
-            host_pub_key: self.host_pub_key.clone(),
-            psk: self.psk.clone(),
+            room: self.room(),
+            host_pub_key: self.0.host_pub_key().to_string(),
+            psk: self.psk(),
         })
     }
 }
@@ -216,6 +248,16 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// A pairing seed is 32 bytes — the width [`bsc_tunnel::relay::generate_seed`] produces and the
+/// width the HMAC derivation keys on. Named rather than inlined so the validator and the encoder
+/// cannot disagree about it.
+const SEED_BYTES: usize = 32;
+
+/// Bytes → lowercase hex, the shape the seed is stored in and the shape a psk is compared in.
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// The relay URL reduced to the `HOST[:PORT]` the compact form carries, uppercased.
 ///
 /// Returns `None` when the URL carries a PATH. Uppercasing is lossless for a hostname — DNS is
@@ -277,71 +319,36 @@ impl PairingPayload {
     }
 }
 
-/// Load the ear's identity, generating and storing one the first time.
+/// Load the MACHINE's tunnel identity — the same one the desktop app loads — minting one the first
+/// time and promoting `bsc ear`'s own older entry if that is all there is.
+///
+/// THE EAR NO LONGER HAS AN IDENTITY OF ITS OWN, and that is the fix rather than a simplification.
+/// Two hosts with two seeds derive two different `room("ear")` values, so a phone paired from the
+/// app's QR dialed a room `bsc ear room` was not hosting; and the QR carries ONE host public key,
+/// which two keypairs cannot both satisfy. Sharing one identity is what makes a single pairing reach
+/// both rooms.
+///
+/// The storage, the load order, the legacy promotion and the write-then-read-back guard all live in
+/// [`bsc_secret::vault`] now — the app reached the same code for the same account, and keeping two
+/// copies of it is how the two hosts drifted apart in the first place. What stays here is the ear's
+/// READING of that shared value: derive for [`bsc_tunnel::relay::FEATURE_EAR`].
 ///
 /// # Errors
-///
-/// Three distinct failures, all of which must be loud rather than papered over with a fresh
-/// identity — a silent regeneration is precisely the bug this module exists to remove:
-///
-/// * the vault cannot be written (no keyring daemon, a locked keychain);
-/// * the write did not survive a read-back (keyring's fallback `mock` store accepts every write and
-///   is empty in the next process, which is how a credential silently vanishes — see the Linux
-///   backend note in `crates/bsc-secret`'s manifest);
-/// * a stored value exists but does not parse.
+/// If the keychain cannot be read (never treated as an absence — minting then would hand out a
+/// second identity and unpair every phone that pinned the first), if a stored entry does not parse or
+/// cannot name a room, or if a freshly minted identity does not survive a read-back.
 pub fn load_or_create(vault: &dyn Vault) -> Result<Identity, String> {
-    if let Some(raw) = vault.get(IDENTITY_ID) {
-        return serde_json::from_str(&raw).map_err(|e| {
-            format!(
-                "the stored tunnel identity ({IDENTITY_ID}) could not be read: {e}. It is NOT being \
-                 replaced — minting a new one would silently unpair every phone. Inspect or remove \
-                 the keychain entry deliberately"
-            )
-        });
-    }
-    let fresh = mint()?;
-    save(&fresh, vault)?;
-    Ok(fresh)
-}
-
-/// A brand-new identity: a fresh X25519 static keypair plus a fresh room and psk.
-fn mint() -> Result<Identity, String> {
-    use base64::Engine;
-    let kp = bsc_tunnel::noise::generate_keypair()
-        .map_err(|e| format!("could not generate a Noise keypair: {e}"))?;
-    Ok(Identity {
-        static_priv: base64::engine::general_purpose::STANDARD.encode(&kp.private),
-        host_pub_key: base64::engine::general_purpose::STANDARD.encode(&kp.public),
-        room: generate_room_id(),
-        psk: generate_psk(),
-        relay_url: None,
+    bsc_secret::vault::load_or_create_machine_identity(vault, || {
+        use base64::Engine;
+        let kp = bsc_tunnel::noise::generate_keypair()
+            .map_err(|e| format!("could not generate a Noise keypair: {e}"))?;
+        Ok(bsc_secret::vault::Minted {
+            static_priv: base64::engine::general_purpose::STANDARD.encode(&kp.private),
+            host_pub_key: base64::engine::general_purpose::STANDARD.encode(&kp.public),
+            seed: hex_encode(&bsc_tunnel::relay::generate_seed()),
+        })
     })
-}
-
-/// Write `id` to the vault and CONFIRM it by reading it back.
-///
-/// The read-back is not belt-and-braces. `keyring` falls back to an in-process `mock` store when no
-/// platform backend is compiled or reachable; it reports every write as successful and holds nothing
-/// in the next process. An identity that fails that way looks durable and is not, which is the one
-/// failure mode this whole module is here to prevent — so it is checked at the moment of writing
-/// rather than discovered by a phone that has silently stopped pairing.
-fn save(id: &Identity, vault: &dyn Vault) -> Result<(), String> {
-    let raw = serde_json::to_string(id).map_err(|e| format!("could not render the identity: {e}"))?;
-    vault.put(IDENTITY_ID, &raw).map_err(|e| {
-        format!("could not store the tunnel identity in the keychain: {e}")
-    })?;
-    match vault.get(IDENTITY_ID) {
-        Some(back) if back == raw => Ok(()),
-        Some(_) => Err(format!(
-            "the keychain accepted the tunnel identity but read back something else ({IDENTITY_ID}) \
-             — refusing to report a pairing as durable when it is not"
-        )),
-        None => Err(format!(
-            "the keychain accepted the tunnel identity and then had no record of it ({IDENTITY_ID}). \
-             On Linux that is the signature of no reachable Secret Service (gnome-keyring / \
-             KWallet); the pairing would be lost at the next restart"
-        )),
-    }
+    .map(Identity)
 }
 
 /// Trim a relay URL the way `tunnel_start` does — whitespace, then trailing slashes.
@@ -356,26 +363,14 @@ fn normalize_relay(url: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-/// A high-entropy, URL-safe room id matching the relay's `validateRoomId` (`[A-Za-z0-9_-]{16,64}`)
-/// — 24 random bytes → 32 base64url chars.
-///
-/// DUPLICATED FROM `transport::generate_room_id` deliberately. That function lives in
-/// `src-tauri/src/mobile/tunnel/transport.rs`, in a module that pulls Tauri, tokio and a websocket
-/// stack — none of which may enter this crate. The shape, not the code, is the contract (the relay
-/// validates it and the phone treats it as opaque), and `the_room_id_is_in_the_shape_the_relay_accepts`
-/// pins it here. When the relay client moves into `bsc-tunnel`, this is the caller to point at it.
-fn generate_room_id() -> String {
-    use base64::Engine;
-    let bytes: [u8; 24] = rand::random();
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-}
-
-/// A pre-shared pairing secret: hex of 32 random bytes, which the phone echoes back inside the
-/// Noise session as its `auth` token. Same duplication note as [`generate_room_id`].
-fn generate_psk() -> String {
-    let bytes: [u8; 32] = rand::random();
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
+// The two private generators that used to live here — `generate_room_id` and `generate_psk`, copies
+// of `transport::`'s — ARE GONE. They existed only because the relay client was trapped in a Tauri
+// module this crate could not depend on, and their own comment named this as the moment to retire
+// them once it moved. `mint` now calls `bsc_tunnel::relay`'s derivation, so the ear and the desktop
+// compute a room from ONE implementation instead of two shapes kept equal by hand.
+//
+// The shared `relay::generate_room_id` / `generate_psk` survive there: the B1 compact path still
+// rolls a random room, and the desktop's own tests pin them.
 
 #[cfg(test)]
 mod tests {
@@ -581,6 +576,176 @@ mod tests {
         assert!(psk.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)), "{psk}");
     }
 
+    // ── The seed, and the identity that predates it ───────────────────────────────────────
+    //
+    // The keychain on the maintainer's machine holds an identity minted BEFORE seeds existed, and a
+    // phone has pinned its `hostPubKey`. Migration is therefore not a nicety: an upgrade that
+    // changed which room that identity names would unpair a working phone, and would do it silently.
+
+    /// A pre-seed identity, in exactly the shape the keychain holds one today — no `seed` key at all.
+    const LEGACY_IDENTITY_JSON: &str = concat!(
+        r#"{"staticPriv":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=","#,
+        r#""hostPubKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=","#,
+        r#""room":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYX","#,
+        r#""psk":"202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f","#,
+        r#""relayUrl":"wss://legacy.example"}"#
+    );
+
+    /// The same identity WITH a seed. `room` and `psk` deliberately keep the legacy values, which
+    /// disagree with what the seed derives — that is what makes "the seed wins" observable.
+    fn identity_json_with_seed(seed_hex: &str) -> String {
+        format!(
+            r#"{{"staticPriv":"{pk}","hostPubKey":"{pk}","room":"{room}","psk":"{psk}","seed":"{seed_hex}","relayUrl":"wss://r.example"}}"#,
+            pk = FIXTURE_PK,
+            room = FIXTURE_ROOM,
+            psk = FIXTURE_PSK,
+        )
+    }
+
+    /// A PRE-SEED ENTRY AT THE SHARED ACCOUNT keeps the room and psk it already had, so a phone that
+    /// paired against it yesterday is still paired today.
+    ///
+    /// NOTE WHICH ACCOUNT THIS COVERS. `IDENTITY_ID` is the SHARED one now, so this exercises
+    /// "found, parsed, returned without a re-save" — not the promotion of `bsc ear`'s own older
+    /// entry. That migration is a different path and has its own test below; this one used to cover
+    /// both only because the ear's account and the account it reads were the same string.
+    #[test]
+    fn an_identity_stored_without_a_seed_keeps_its_original_room_and_psk() {
+        let vault = MapVault::default();
+        vault.put(IDENTITY_ID, LEGACY_IDENTITY_JSON).unwrap();
+
+        let id = load_or_create(&vault).unwrap();
+        assert_eq!(id.room(), FIXTURE_ROOM, "a seedless identity must keep the room the phone pinned");
+
+        let payload = id.pairing(None).unwrap();
+        assert_eq!(payload.room, FIXTURE_ROOM);
+        assert_eq!(payload.psk, FIXTURE_PSK, "and the secret it echoes back");
+
+        // A LOAD MUST NOT UPGRADE IT IN PLACE. Writing a seed here would change the room this
+        // identity names from the next load onward — the same silent unpairing, one release later.
+        assert_eq!(
+            vault.get(IDENTITY_ID).as_deref(),
+            Some(LEGACY_IDENTITY_JSON),
+            "loading a legacy identity must not rewrite it"
+        );
+    }
+
+    /// The cross-implementation pin at the EAR's level. `bsc-tunnel` proves the derivation matches
+    /// `pairingV2`; this proves the ear asks it for the EAR's feature. A `FEATURE_CONSOLE` here would
+    /// pass every shape assertion in this file and hand the phone the app's room.
+    #[test]
+    fn the_ear_derives_the_fixtures_ear_room_and_not_the_consoles() {
+        // pairingV2.seedHex — 000102…1f, chosen so a reader can check it by eye.
+        let seed_hex = hex_encode(&(0u8..=31).collect::<Vec<u8>>());
+        let id: Identity = serde_json::from_str(&identity_json_with_seed(&seed_hex)).unwrap();
+
+        assert_eq!(
+            id.room(),
+            "NmX5pb7cs2Vn9SsGtOLRbEx7SSWsLkBw",
+            "pairingV2.features.ear.room"
+        );
+        assert_eq!(
+            id.pairing(None).unwrap().psk,
+            "d59994408599a34fbd3fd2adcf9668ad07dcbc147915d20ced8df0979feec996",
+            "pairingV2.features.ear.psk"
+        );
+        assert_ne!(
+            id.room(),
+            "X3nsvjcpmyYsFxCvWdrhWB5_5zthMDr9",
+            "that is the CONSOLE's room — the ear must not host it"
+        );
+        // And the seed beats the stored legacy values rather than the other way round.
+        assert_ne!(id.room(), FIXTURE_ROOM, "a present seed is authoritative over the stored room");
+    }
+
+    // THE STORED room/psk MIRROR IS GONE, and it was removed on purpose — do not re-add it.
+    //
+    // A test used to assert that a freshly minted identity ALSO wrote the derived `room` and `psk`,
+    // so an older `bsc` binary reading the ear's private entry still found the right room. There is
+    // no private entry any more: the identity is the MACHINE's, shared with the app, and a fresh one
+    // stores only the seed. A second copy of a derived value is exactly the kind of mirror that
+    // drifts, and the drift it enabled here — two hosts, two seeds, two different `room("ear")` —
+    // is the bug this whole change exists to remove. `legacy_room`/`legacy_psk` are read ONLY when a
+    // pre-seed entry has no seed to derive from, which `an_identity_stored_without_a_seed_...` pins.
+
+    /// THE MIGRATION THAT KEEPS AN ALREADY-PAIRED EAR PAIRED. Before the identity was shared, the ear
+    /// stored its own under `ear-tunnel-identity`, and a phone may have pinned that keypair. Loading
+    /// must PROMOTE that entry to the shared account rather than mint a fresh one: minting would
+    /// change both the room this ear hosts and the key the phone pins, unpairing it in silence.
+    ///
+    /// `bsc-secret` pins the promotion at the STORAGE level. This pins the half that is the ear's own:
+    /// that it reads the promoted identity and derives ITS feature's room from the promoted seed.
+    #[test]
+    fn an_identity_under_the_legacy_ear_account_is_promoted_and_read() {
+        let vault = MapVault::default();
+        let seed_hex = hex_encode(&(0u8..=31).collect::<Vec<u8>>());
+        vault
+            .put(bsc_secret::vault::LEGACY_EAR_IDENTITY_ID, &identity_json_with_seed(&seed_hex))
+            .unwrap();
+
+        let id = load_or_create(&vault).unwrap();
+        // pairingV2.features.ear.room — derived from the PROMOTED seed, for the ear's feature.
+        assert_eq!(id.room(), "NmX5pb7cs2Vn9SsGtOLRbEx7SSWsLkBw");
+        assert_eq!(id.host_pub_key(), FIXTURE_PK, "the key the phone pinned survives the promotion");
+
+        assert!(vault.has(IDENTITY_ID), "it is promoted to the shared account");
+        assert!(
+            vault.has(bsc_secret::vault::LEGACY_EAR_IDENTITY_ID),
+            "and the legacy entry is NOT deleted, so an older bsc ear binary keeps working"
+        );
+
+        // A second load reads the shared account: no promotion, and above all no minting.
+        let again = load_or_create(&vault).unwrap();
+        assert_eq!(again.room(), id.room());
+        assert_eq!(again.host_pub_key(), id.host_pub_key());
+    }
+
+    /// A seed that is present and malformed must be REFUSED, never quietly ignored in favour of the
+    /// stored room — that would host one room while the phone dialed another, which is the exact
+    /// silent failure `one-pairing-assigns-every-room` was written from.
+    #[test]
+    fn a_present_but_malformed_seed_is_refused_rather_than_falling_back() {
+        for bad in ["zz".repeat(32), "00010203".into(), String::new()] {
+            let vault = MapVault::default();
+            vault.put(IDENTITY_ID, &identity_json_with_seed(&bad)).unwrap();
+            let e = load_or_create(&vault).unwrap_err();
+            assert!(e.contains(IDENTITY_ID), "the error should name the entry: {e}");
+            assert!(
+                !e.is_empty() && (e.contains("seed") || e.contains("hex")),
+                "and should say the seed is the problem: {e}"
+            );
+        }
+    }
+
+    /// An identity that can name no room at all is corrupt, and saying so beats returning an empty
+    /// room id that the relay would reject much later with an unrelated-looking error.
+    #[test]
+    fn an_identity_with_neither_a_seed_nor_a_room_is_refused() {
+        let vault = MapVault::default();
+        vault
+            .put(
+                IDENTITY_ID,
+                r#"{"staticPriv":"AA==","hostPubKey":"AA==","room":"","psk":""}"#,
+            )
+            .unwrap();
+        let e = load_or_create(&vault).unwrap_err();
+        assert!(e.contains("cannot name a room"), "{e}");
+    }
+
+    /// The seed is a WIDER secret than the psk — it derives every feature's — so it must never reach
+    /// a `{:?}`, which is where values end up inside logged errors.
+    #[test]
+    fn debug_redacts_the_seed_as_well() {
+        let vault = MapVault::default();
+        let id = load_or_create(&vault).unwrap();
+        let stored: serde_json::Value = serde_json::from_str(&vault.get(IDENTITY_ID).unwrap()).unwrap();
+        let seed = stored["seed"].as_str().unwrap();
+
+        let rendered = format!("{id:?}");
+        assert!(!rendered.contains(seed), "the seed leaked: {rendered}");
+        assert!(rendered.contains("seed"), "but the field is still named, so its absence is visible");
+    }
+
     /// The phone's parser requires exactly these four non-empty strings and reads nothing else.
     #[test]
     fn the_pairing_payload_is_exactly_the_four_fields_the_phone_parses() {
@@ -613,7 +778,7 @@ mod tests {
         let vault = MapVault::default();
         let mut id = load_or_create(&vault).unwrap();
         let before = id.host_pub_key().to_string();
-        let room = id.room().to_string();
+        let room = id.room();
         id.remember_relay("wss://relay.example/", &vault).unwrap();
 
         let reloaded = load_or_create(&vault).unwrap();

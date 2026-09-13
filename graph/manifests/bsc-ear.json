@@ -181,12 +181,6 @@
         },
         {
           "cont": [],
-          "key": "rand",
-          "lead": [],
-          "value": "\"0.10\""
-        },
-        {
-          "cont": [],
           "key": "tokio",
           "lead": [
             "# The relay client is async, so hosting a room needs a runtime. The feature set is COPIED",
