@@ -864,9 +864,11 @@ dependencies = [
  "mcp-rpc",
  "plandb",
  "research",
+ "rusqlite",
  "serde",
  "serde_json",
  "skilldb",
+ "sysinfo",
  "usagedb",
 ]
 

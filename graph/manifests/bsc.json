@@ -539,6 +539,23 @@
             "# main to develop at the repo root), rebuild, release, hooks."
           ],
           "value": "{ path = \"../bsc-app\" }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# `bsc project rename` rewrites the pane ids and project keys stored in stores owned by crates that already",
+            "# depend on bsc-project, so it lives here, above them, and edits those tables directly."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "sysinfo",
+          "lead": [
+            "# `bsc project rename --apply` refuses while the desktop app runs: the app writes app-state.json back on exit."
+          ],
+          "value": "{ version = \"0.39\", default-features = false, features = [\"system\"] }"
         }
       ],
       "lead": [
