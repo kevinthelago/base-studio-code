@@ -533,6 +533,36 @@ impl Paths {
     }
 }
 
+/// How large `ear.log` may be before a NEW run rolls it aside.
+///
+/// **A CAP AT START, NOT A ROTATION**, and the asymmetry is forced rather than chosen. [`cmd_start`]
+/// hands the log's descriptor to the child as BOTH stdout and stderr, so renaming or truncating it
+/// under a running listener leaves that listener appending at its old offset — the bytes come straight
+/// back as a sparse file. The only moment nothing holds the descriptor is just before the spawn, which
+/// is where this lives. What bounds a listener that is ALREADY running is coalescing in
+/// [`crate::capture::CaptureErrors`]; the two are complements, and neither substitutes for the other.
+const MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Should a log this big be rolled aside before a new run appends to it?
+///
+/// Pure, so the boundary is pinned by a test rather than by whatever a directory happened to hold.
+fn log_needs_roll(bytes: u64) -> bool {
+    bytes > MAX_LOG_BYTES
+}
+
+/// Roll an oversized log aside, keeping ONE generation. Returns whether it moved anything.
+///
+/// Moved, never truncated and never deleted: the previous run's log is usually the only evidence of
+/// why the previous run ended. One generation, because an unbounded pile of `ear.log.N` is the same
+/// disk problem wearing a different hat.
+fn roll_log_if_oversized(p: &Paths) -> bool {
+    let Ok(md) = std::fs::metadata(p.log()) else { return false };
+    if !log_needs_roll(md.len()) {
+        return false;
+    }
+    std::fs::rename(p.log(), p.log().with_extension("log.1")).is_ok()
+}
+
 /// Read the maintainer's imprint if one has been learned; an absent or unreadable one is simply
 /// "nobody imprinted yet", not an error — attribution just leaves every voice anonymous.
 /// The speaker-embedding ONNX, if it has been downloaded. Its presence is what switches recognition
@@ -661,6 +691,8 @@ fn cmd_start(a: &Args, p: &Paths) -> Result<(), String> {
     std::fs::create_dir_all(&p.root).map_err(|e| format!("could not create {}: {e}", p.root.display()))?;
     let _ = std::fs::remove_file(p.stop());
     let exe = std::env::current_exe().map_err(|e| format!("could not find my own binary: {e}"))?;
+    // BEFORE the spawn, while no process holds the descriptor — see `roll_log_if_oversized`.
+    roll_log_if_oversized(p);
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -2395,6 +2427,48 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let p = Paths { root: root.clone() };
         assert!(cmd_stop(&p).is_ok(), "stop must be idempotent");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// MEASURED 2026-09-12: `ear.log` reached 161 GB. The cap stops a new run inheriting a log that is
+    /// already enormous; coalescing in `capture` stops it growing in the first place.
+    #[test]
+    fn an_oversized_log_rolls_and_an_ordinary_one_does_not() {
+        assert!(!log_needs_roll(0), "an empty log is left alone");
+        assert!(!log_needs_roll(MAX_LOG_BYTES), "exactly at the cap is still fine");
+        assert!(log_needs_roll(MAX_LOG_BYTES + 1), "one byte over rolls");
+        assert!(log_needs_roll(161 * 1024 * 1024 * 1024), "and the size actually measured certainly does");
+    }
+
+    /// Through the REAL function, not a copy of its body — a test that re-implements the rename would
+    /// pass with the shipped path broken, which is this repo's signature failure.
+    #[test]
+    fn rolling_moves_the_old_log_aside_and_keeps_its_bytes() {
+        let root = std::env::temp_dir()
+            .join(format!("bsc-ear-roll-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let p = Paths { root: root.clone() };
+
+        // Nothing there at all must be a no-op, not a panic and not a stray file.
+        assert!(!roll_log_if_oversized(&p), "an absent log rolls nothing");
+
+        // A small log is left exactly where it is.
+        std::fs::write(p.log(), b"a few lines").unwrap();
+        assert!(!roll_log_if_oversized(&p), "a small log is left alone");
+        assert!(p.log().exists(), "and is still there");
+
+        // An oversized one is moved aside, with its content intact.
+        std::fs::write(p.log(), vec![b'x'; (MAX_LOG_BYTES + 1) as usize]).unwrap();
+        assert!(roll_log_if_oversized(&p), "an oversized log rolls");
+        assert!(!p.log().exists(), "the oversized log is out of the way");
+        let rolled = p.log().with_extension("log.1");
+        assert!(rolled.exists(), "and kept as {rolled:?} rather than deleted");
+        assert!(
+            std::fs::metadata(&rolled).unwrap().len() > MAX_LOG_BYTES,
+            "with its bytes intact — the previous run's log is why the previous run ended"
+        );
+
         std::fs::remove_dir_all(&root).ok();
     }
 }
