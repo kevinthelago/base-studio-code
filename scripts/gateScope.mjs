@@ -154,6 +154,15 @@ export const FORCE_FULL = [
   "tsconfig.json",
   "package.json",
   "rust-toolchain.toml",
+  // `.config/nextest.toml` decides how EVERY Rust test in the workspace is run, so a change to it can
+  // change the verdict for tests in crates the diff never touches. It now carries
+  // `slow-timeout = { period = "60s", terminate-after = 2 }`, which is exactly that kind of setting:
+  // it converts a test that merely runs long into a test that gets KILLED. MEASURED 2026-09-12, the
+  // six `atlasdb` tests took 139s each inside a full `--workspace` run while PASSING — under that cap
+  // they would instead have been terminated. So editing this file while running only the scoped gate
+  // could land a change that reddens crates the scope never compiled, which is this repo's signature
+  // failure: a gate that passes while covering less than the reader assumes.
+  ".config/nextest.toml",
 ];
 
 /**

@@ -13,3 +13,35 @@
 # extra flag — a flag the gate forgets to pass is a silent return to excusing everything.
 [profile.default.junit]
 path = "junit.xml"
+
+# A WEDGED TEST CANNOT HOLD THE GATE OPEN FOREVER.
+#
+# MEASURED 2026-09-12. A hung test in this leg does not fail the gate — it stops it existing. The run
+# produces an EMPTY log, records NO legs, and holds one of only two cross-worktree gate slots until a
+# human notices and kills it. Two lanes lost ~40 minutes each to that in one night, and one wedged
+# process was still parked after 6,800 seconds having burned 0.16s of CPU. An infinite wait is the
+# worst possible failure mode here precisely because it reports nothing: a red leg names its offender
+# and moves on, a wedge is indistinguishable from a slow machine right up until someone gives up.
+#
+# `terminate-after` converts that into a bounded run that NAMES the tests it killed. The whole
+# workspace then completes and reports, instead of hanging past two hours.
+#
+# WHY A PROFILE AND NOT A FLAG: `--slow-timeout` is NOT a command-line option in cargo-nextest
+# 0.9.143 — `cargo nextest run --help` does not list it, and only `--config-file <PATH>` is
+# available. So this is necessarily a committed config change rather than something a caller can pass
+# ad hoc, and putting it on the DEFAULT profile is what makes every run bounded rather than only the
+# runs that remember a flag.
+#
+# THE PERIOD IS A WARNING, THE TERMINATION IS THE BOUND. At 60s nextest marks a test SLOW and keeps
+# going; it is killed only after `terminate-after` periods, i.e. 120s. That two-stage shape is
+# deliberate — a legitimately slow test surfaces as a visible SLOW line long before anything is
+# killed, so this buys the bound without silently converting slowness into failure. Six of this
+# workspace's tests currently sit in that SLOW band under load and pass; none of them approaches 120s
+# when the machine is not saturated.
+#
+# THIS BOUNDS THE SYMPTOM AND FIXES NOTHING. A test killed here is still a broken test, and the
+# timeout must never be read as the defect being resolved — see
+# `bsc-session-every-advertised-verb-dispatches-deadlocks-the-nextest-leg`, whose own acceptance
+# criteria separate "the leg is bounded" from "the tests terminate on their own".
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 2 }
