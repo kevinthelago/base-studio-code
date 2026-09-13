@@ -153,6 +153,22 @@
       "entries": [
         {
           "cont": [],
+          "key": "libc",
+          "lead": [],
+          "value": "\"0.2\""
+        }
+      ],
+      "lead": [
+        "",
+        "# Ctrl+O expands tool calls (agent::expand): termios, to read keys mid-turn while Ctrl+C stays a",
+        "# signal and output keeps its newlines. Unix only; elsewhere the prompt reads lines as before."
+      ],
+      "name": "[target.'cfg(unix)'.dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
           "key": "serde_json",
           "lead": [
             "# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs."
