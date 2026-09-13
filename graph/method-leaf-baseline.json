@@ -15,6 +15,7 @@
   "blueprint-skills.ts": 5,
   "blueprint-stages.ts": 22,
   "bridge.ts": 3,
+  "bsc-agent--main.rs": 12,
   "bsc-session--choices.rs": 3,
   "bsc-session--lib.rs": 9,
   "bsc-session--policy.rs": 8,
