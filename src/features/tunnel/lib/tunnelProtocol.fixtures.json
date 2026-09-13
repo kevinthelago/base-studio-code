@@ -1,20 +1,63 @@
 {
   "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2; v3 adds audio_frame). Shared BYTE-IDENTICALLY by base-studio-code (Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name; PLUS the TS test carried on the `tunnel.ts` RECORD, which the gate emits to .bsc-records/features/tunnel/lib/tunnel.test.tsx and runs there — it is NOT a file under src/, so `ls` and a grep scoped to src/ will both report it missing when it is in fact live) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts, which decodes EVERY case and throws on an unmodelled type — so adding a case here obliges a matching TunnelClientMessage member and decoder arm in that repo, in the same change). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes. #2511 rides WITHIN v2 (additive, no version bump): auth_ok.inputGranted (always serialized by the current desktop; optional for mobile — auth_ok_pre_grant pins the pre-#2511 shape) + the input_grant_changed broadcast. #3757 also rides within v2 (additive): store_state_chunk fragments an over-cap store_state domain across Noise messages (each chunk a raw UTF-8 slice of the json, seq 0..total), which mobile reassembles by (domain, rev) and applies as a store_state — an older mobile ignores the unknown type.",
   "serverToClient": {
-    "auth_ok": { "type": "auth_ok", "protocolVersion": 3, "inputGranted": false },
-    "auth_ok_pre_grant": { "type": "auth_ok", "protocolVersion": 2 },
-    "input_grant_changed": { "type": "input_grant_changed", "granted": true },
+    "auth_ok": {
+      "type": "auth_ok",
+      "protocolVersion": 3,
+      "inputGranted": false
+    },
+    "auth_ok_pre_grant": {
+      "type": "auth_ok",
+      "protocolVersion": 2
+    },
+    "input_grant_changed": {
+      "type": "input_grant_changed",
+      "granted": true
+    },
     "pane_list": {
       "type": "pane_list",
       "panes": [
-        { "id": "t0p0", "cwd": "/home/dev/api", "name": "api", "status": "running", "kind": "console" },
-        { "id": "t0p1", "cwd": "/home/dev/web", "name": "web", "status": "idle" },
-        { "id": "proj:api-core", "cwd": "/worktrees/proj/api--api-core", "name": "api-core", "status": "running", "kind": "worker" },
-        { "id": "planning_proj", "cwd": "/hub/proj", "name": "Planner — proj", "status": "running", "kind": "planner" }
+        {
+          "id": "t0p0",
+          "cwd": "/home/dev/api",
+          "name": "api",
+          "status": "running",
+          "kind": "console"
+        },
+        {
+          "id": "t0p1",
+          "cwd": "/home/dev/web",
+          "name": "web",
+          "status": "idle"
+        },
+        {
+          "id": "proj:api-core",
+          "cwd": "/worktrees/proj/api--api-core",
+          "name": "api-core",
+          "status": "running",
+          "kind": "worker"
+        },
+        {
+          "id": "planning_proj",
+          "cwd": "/hub/proj",
+          "name": "Planner — proj",
+          "status": "running",
+          "kind": "planner"
+        }
       ]
     },
-    "pane_output": { "type": "pane_output", "paneId": "t0p0", "data": "$ ls\r\n", "coarse": false },
-    "pane_size": { "type": "pane_size", "paneId": "t0p0", "cols": 80, "rows": 24 },
+    "pane_output": {
+      "type": "pane_output",
+      "paneId": "t0p0",
+      "data": "$ ls\r\n",
+      "coarse": false
+    },
+    "pane_size": {
+      "type": "pane_size",
+      "paneId": "t0p0",
+      "cols": 80,
+      "rows": 24
+    },
     "session_state": {
       "type": "session_state",
       "paneId": "t0p0",
@@ -23,28 +66,74 @@
       "lastActivity": "2026-05-29T00:00:00.000Z",
       "prompt": "Apply this change? (y/n)"
     },
-    "user_request": { "type": "user_request", "paneId": "t0p0", "prompt": "Apply this change? (y/n)" },
-    "store_state": { "type": "store_state", "domain": "plan", "rev": 3, "json": "{\"projects\":[]}" },
-    "store_state_chunk": { "type": "store_state_chunk", "domain": "components", "rev": 7, "seq": 0, "total": 2, "chunk": "{\"kits\":[{\"id\":\"react-ui\"" },
+    "user_request": {
+      "type": "user_request",
+      "paneId": "t0p0",
+      "prompt": "Apply this change? (y/n)"
+    },
+    "store_state": {
+      "type": "store_state",
+      "domain": "plan",
+      "rev": 3,
+      "json": "{\"projects\":[]}"
+    },
+    "store_state_chunk": {
+      "type": "store_state_chunk",
+      "domain": "components",
+      "rev": 7,
+      "seq": 0,
+      "total": 2,
+      "chunk": "{\"kits\":[{\"id\":\"react-ui\""
+    },
     "plan_sync_manifest": {
       "type": "plan_sync_manifest",
       "projectId": "proj-bf9cf968",
-      "files": { "goal.md": "bf9cf968" }
+      "files": {
+        "goal.md": "bf9cf968"
+      }
     },
     "plan_sync_files": {
       "type": "plan_sync_files",
       "projectId": "proj-bf9cf968",
-      "files": [{ "relpath": "goal.md", "content": "foobar" }]
+      "files": [
+        {
+          "relpath": "goal.md",
+          "content": "foobar"
+        }
+      ]
     },
-    "plan_sync_ack": { "type": "plan_sync_ack", "projectId": "proj-bf9cf968", "applied": true },
+    "plan_sync_ack": {
+      "type": "plan_sync_ack",
+      "projectId": "proj-bf9cf968",
+      "applied": true
+    },
     "plan_state": {
       "type": "plan_state",
       "projectId": "proj-bf9cf968",
       "currentStage": "goal",
-      "confirmedSections": ["goal"],
-      "files": [{ "relpath": "goal.md", "content": "# Goal\nShip it." }],
-      "messages": [{ "role": "assistant", "text": "Here's the goal.", "at": 1748476800000 }],
-      "pipelineRuns": [{ "id": "build", "stage": "test", "status": "running" }]
+      "confirmedSections": [
+        "goal"
+      ],
+      "files": [
+        {
+          "relpath": "goal.md",
+          "content": "# Goal\nShip it."
+        }
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "text": "Here's the goal.",
+          "at": 1748476800000
+        }
+      ],
+      "pipelineRuns": [
+        {
+          "id": "build",
+          "stage": "test",
+          "status": "running"
+        }
+      ]
     },
     "plan_event": {
       "type": "plan_event",
@@ -67,39 +156,119 @@
         "allows": 4,
         "allowRate": 80,
         "daily": [
-          { "day": "2026-05-28", "allows": 2, "blocks": 0 },
-          { "day": "2026-05-29", "allows": 3, "blocks": 1 }
+          {
+            "day": "2026-05-28",
+            "allows": 2,
+            "blocks": 0
+          },
+          {
+            "day": "2026-05-29",
+            "allows": 3,
+            "blocks": 1
+          }
         ],
         "perHook": [
-          { "hook": "bsc-deny", "event": "PreToolUse", "fires": 5 },
-          { "hook": "bsc-audit", "event": "PostToolUse", "fires": 1 }
+          {
+            "hook": "bsc-deny",
+            "event": "PreToolUse",
+            "fires": 5
+          },
+          {
+            "hook": "bsc-audit",
+            "event": "PostToolUse",
+            "fires": 1
+          }
         ]
       }
     }
   },
   "clientToServer": {
-    "auth": { "type": "auth", "token": "0123456789abcdef", "fcmToken": "fcm-token-xyz", "protocolVersion": 3 },
-    "auth_no_fcm": { "type": "auth", "token": "0123456789abcdef" },
-    "set_fcm_token": { "type": "set_fcm_token", "fcmToken": "fcm-token-xyz" },
-    "pane_set_state": { "type": "pane_set_state", "paneId": "t0p0", "state": "streaming" },
-    "pane_focus": { "type": "pane_focus", "paneId": "t0p0" },
-    "pane_input": { "type": "pane_input", "paneId": "t0p0", "data": "ls\n" },
-    "pane_resize": { "type": "pane_resize", "paneId": "t0p0", "cols": 80, "rows": 24 },
-    "plan_sync_manifest_request": { "type": "plan_sync_manifest_request", "projectId": "proj-bf9cf968" },
-    "plan_sync_pull": { "type": "plan_sync_pull", "projectId": "proj-bf9cf968", "paths": ["goal.md"] },
+    "auth": {
+      "type": "auth",
+      "token": "0123456789abcdef",
+      "fcmToken": "fcm-token-xyz",
+      "protocolVersion": 3
+    },
+    "auth_no_fcm": {
+      "type": "auth",
+      "token": "0123456789abcdef"
+    },
+    "set_fcm_token": {
+      "type": "set_fcm_token",
+      "fcmToken": "fcm-token-xyz"
+    },
+    "pane_set_state": {
+      "type": "pane_set_state",
+      "paneId": "t0p0",
+      "state": "streaming"
+    },
+    "pane_focus": {
+      "type": "pane_focus",
+      "paneId": "t0p0"
+    },
+    "pane_input": {
+      "type": "pane_input",
+      "paneId": "t0p0",
+      "data": "ls\n"
+    },
+    "pane_resize": {
+      "type": "pane_resize",
+      "paneId": "t0p0",
+      "cols": 80,
+      "rows": 24
+    },
+    "plan_sync_manifest_request": {
+      "type": "plan_sync_manifest_request",
+      "projectId": "proj-bf9cf968"
+    },
+    "plan_sync_pull": {
+      "type": "plan_sync_pull",
+      "projectId": "proj-bf9cf968",
+      "paths": [
+        "goal.md"
+      ]
+    },
     "plan_sync_push": {
       "type": "plan_sync_push",
       "projectId": "proj-bf9cf968",
-      "files": [{ "relpath": "goal.md", "content": "foobar" }]
+      "files": [
+        {
+          "relpath": "goal.md",
+          "content": "foobar"
+        }
+      ]
     },
-    "plan_advance": { "type": "plan_advance", "projectId": "proj-bf9cf968", "stageKey": "scope" },
-    "plan_confirm": { "type": "plan_confirm", "projectId": "proj-bf9cf968", "section": "goal" },
-    "plan_chat": { "type": "plan_chat", "projectId": "proj-bf9cf968", "text": "make the goal more specific" },
-    "audio_frame": { "type": "audio_frame", "channel": "phone", "seq": 7, "sampleRate": 16000, "pcm": "AAECAwQFBgc=" }
+    "plan_advance": {
+      "type": "plan_advance",
+      "projectId": "proj-bf9cf968",
+      "stageKey": "scope"
+    },
+    "plan_confirm": {
+      "type": "plan_confirm",
+      "projectId": "proj-bf9cf968",
+      "section": "goal"
+    },
+    "plan_chat": {
+      "type": "plan_chat",
+      "projectId": "proj-bf9cf968",
+      "text": "make the goal more specific"
+    },
+    "audio_frame": {
+      "type": "audio_frame",
+      "channel": "phone",
+      "seq": 7,
+      "sampleRate": 16000,
+      "pcm": "AAECAwQFBgc="
+    }
   },
   "pairing": {
     "$comment": "The pairing payload the desktop shows as a QR, in BOTH encodings the phone accepts. `canonical` is the historical JSON form. `compact` packs the same four fields into QR ALPHANUMERIC mode (uppercase base32 + a `*` separator, all inside the 45-character alphanumeric set) so the code needs version 6 / 41x41 modules instead of version 10 / 57x57 at EC level M — MEASURED on the live payload. THE QR IS ONLY A TRANSPORT: `compact` carries RAW BYTES and the phone re-derives `canonical` exactly, so the relay's room-id validation (/^[A-Za-z0-9_-]{16,64}$/), the Noise IK handshake and the constant-time psk comparison are all untouched and no wire frame changes. The separator is `*` because it is alphanumeric-safe and can appear in neither a hostname nor base32's A-Z2-7 — `.` would have collided with the host's own dots. The `https://` scheme is dropped because the phone's normalizeRelayUrl rewrites it to `wss://` on arrival anyway; `normalizedRelayUrl` is what a decode must produce. Uppercasing is lossless for a hostname but NOT for a URL path, so an encoder must refuse the compact form when the relay URL carries one and emit JSON instead. NOTE this section is a SIBLING of serverToClient/clientToServer and is not a wire frame: the Rust serde test indexes those two keys explicitly and the mobile fixtures test destructures only those two, so adding it obliges no TunnelClientMessage member or decoder arm.",
-    "canonical": { "relayUrl": "https://relay.example.workers.dev", "room": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX", "hostPubKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "psk": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f" },
+    "canonical": {
+      "relayUrl": "https://relay.example.workers.dev",
+      "room": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+      "hostPubKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "psk": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+    },
     "normalizedRelayUrl": "wss://relay.example.workers.dev",
     "compact": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
     "rejects": {
@@ -108,6 +277,23 @@
       "not_base32": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMF1*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
       "empty_host": "B1**AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q",
       "host_key_wrong_width": "B1*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFY*EAQSEIZEEUTCOKBJFIVSYLJOF4YDCMRTGQ2TMNZYHE5DWPB5HY7Q"
+    }
+  },
+  "pairingV2": {
+    "$comment": "ONE PAIRING, EVERY ROOM (one-pairing-assigns-every-room). The QR carries a SEED instead of a room id and a psk; each host derives its own pair from it, so pairing once reaches every feature and adding a feature later costs nothing on the wire and no re-pairing. room(f) = base64url(HMAC-SHA256(seed, 'room:'+f)[0..24]) — 32 chars, satisfying the relay's ^[A-Za-z0-9_-]{16,64}$ and identical in shape to a rolled id. psk(f) = hex(HMAC-SHA256(seed, 'psk:'+f)) — 64 lowercase hex, the exact shape the desktop's constant-time comparison expects. The `room:` / `psk:` prefixes are DOMAIN SEPARATION: without them a feature's room and secret would be two views of one digest. FEATURE NAMES ARE WIRE CONSTANTS and map to HOSTS, not message types — the relay allows one host per room, which is why rooms exist at all rather than one multiplexed channel. The compact line is B2*<HOST>*<PK>*<SEED>, 150 chars against B1's 190 — QR version 5 (37x37) instead of 6 (41x41), MEASURED. B1 and the JSON form stay accepted: an un-updated desktop must still pair.",
+    "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "seedBase32": "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+    "hostPubKeyBase32": "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+    "compact": "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+    "features": {
+      "console": {
+        "room": "X3nsvjcpmyYsFxCvWdrhWB5_5zthMDr9",
+        "psk": "cbef4dbdd0ed24cee556fd06d346c829131dc3d47261c431f77c2ab1273920dd"
+      },
+      "ear": {
+        "room": "NmX5pb7cs2Vn9SsGtOLRbEx7SSWsLkBw",
+        "psk": "d59994408599a34fbd3fd2adcf9668ad07dcbc147915d20ced8df0979feec996"
+      }
     }
   }
 }
