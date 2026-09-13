@@ -260,8 +260,8 @@ bsc cost growth --session <id>             # a live session's RSS slope — the 
 
 Measurements are per-leg and keyed on a stable id, so a **scoped** run and a **full** run of the same
 leg share one history rather than splitting into two that can never be compared. Peak RSS is the
-maximum over time of the SUMMED tree RSS — the same definition as the `jobs = 4 → 8.04 GB` figures
-above, so the numbers are comparable to the ones already written down here rather than a second
+maximum over time of the SUMMED tree RSS — the same definition used by the hand-measured jobs/RAM
+figures in `bsc memory read build-cost-measurements`, so the two are comparable rather than a second
 incompatible metric.
 
 **Every hand-measured figure in this file is now reproducible rather than remembered.** They were
@@ -322,65 +322,20 @@ base-studio-code/
 │                            #   with an editor. build.rs calls `graph_materialize::emit_when_adopted()`
 │                            #   as a fifth job (a package gets exactly ONE build script, and this one
 │                            #   was taken), which writes `$OUT_DIR/crate.rs` for lib.rs to `include!`.
-│       ├── main.rs          #   binary entry → app::run()
-│       ├── lib.rs           #   crate root: module decls + the leaf-helper prelude (#1918; no module aliases)
-│       ├── prelude.rs        #   the crate's named leaf-helper prelude (paths/git/shell/fs/…), `use crate::prelude::*`
-│       ├── tests.rs         #   cross-cutting test module (+ testutil.rs)
-│       ├── platform/        #   OS primitives: paths, git, shell, process, fsx, docstore
-│       ├── app/             #   Tauri shell: run(), state, recovery, dialog
-│       ├── console/         #   interactive PTY surface: pty, ledger, discovery, shell_rc
-│       ├── session/         #   session launch/config/permissioning: harness, launch, claude_config, settings, llm
-│       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, files, dead_code, ui_skeleton
-│       ├── planner/         #   planning session: prompts, directives, workspace
-│       ├── fleet/           #   worker fleet: worktree, director, staging
-│       ├── github/          #   GitHub integration: api, oauth, repos, readiness, git_hooks
-│       ├── sources/         #   migration data sources: data, oauth, credentials
-│       ├── extensions/      #   MCP servers, hooks, skills, cfg
-│       ├── observability/   #   logs, perf, tokens, audit
-│       └── mobile/          #   paired companion: push + tunnel/{state,transport,commands} (wire protocol + Noise → crates/bsc-tunnel)
-├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
-│   ├── data/                #   canonical Data Model (DuckDB) + connectors (pkg bsc-data, bsc data CLI)
-│   ├── plandb/              #   per-project plan store (SQLite) + bsc plan CLI
-│   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc skill CLI
-│   ├── logs/                #   unified log/perf/cost engine + bsc logs CLI (#1607)
-│   ├── compliance/          #   compliance-standards store + bsc compliance CLI & bsc mcp compliance server
-│   ├── bsc-security/        #   the SECURITY surface (bsc security), widened from `cve`: vulnerable dependencies
-│   │                        #   (OSV.dev) + leaked credentials (working tree AND git history), emitted as ONE
-│   │                        #   normalized Finding so detectors rank against each other. A secret is redacted at
-│   │                        #   construction and NEVER stored raw — findings reach append-only plan notes. `bsc cve`
-│   │                        #   is a deprecated alias whose exit-code contract still gates CI and the install hook.
-│   ├── research/            #   literature research + bsc mcp research server
-│   ├── bsc-news/            #   LOW-TRUST news layer (bsc news): poll a fixed outlet roster over RSS/news-sitemaps,
-│   │                        #   retain EVERY fetched version (so a stealth edit stays observable), compute the framing
-│   │                        #   signals. Deliberately NOT `research`: an article is a CLAIM to be corroborated, a paper is
-│   │                        #   a citable source, and no verb converts one into the other. Every number is computed and
-│   │                        #   carries the span that produced it — no model runs in this crate. `find` filters by
-│   │                        #   PERSON / PLACE / CIRCUMSTANCE (gazetteer places match demonyms + cities; a circumstance
-│   │                        #   FAMILY expands to its members), and `entities` ranks what is in the store so a filter is
-│   │                        #   reachable without already knowing the name.
-│   ├── bsc-say/             #   SPEECH OUT (bsc say): a provider trait over Kokoro-82M (neural, ONNX via `ort`,
-│   │                        #   Apache-2.0, 55 voices), piper, and the OS speech service as an always-present floor.
-│   │                        #   Resolution is CAPABILITY-PROBED, never configured — the best engine that actually
-│   │                        #   resolves wins, and an explicit `--provider` is honoured or refused but never silently
-│   │                        #   swapped. Kokoro takes PHONEMES, not text, so the crate owns the whole chain:
-│   │                        #   text → IPA (espeak-ng, 133 languages) → token ids → ONNX → 24kHz. `--ipa` hands it
-│   │                        #   phonemes directly, which is the `<phoneme>` capability Amazon's SSML sells.
-│   ├── bsc-ear/             #   SPEECH IN (bsc ear): always-on capture — NOT push-to-talk and NOT wake-word, because
-│   │                        #   the value is catching the half-formed thought you did not know to record. cpal →
-│   │                        #   voiced-segment detection → bounded wav segments. Everything that DECIDES anything is
-│   │                        #   pure and needs no microphone to test: `segment` (hysteresis, hangover, pre-roll, a
-│   │                        #   noise floor frozen while recording), `retention` (the window is a FUNCTION, not a
-│   │                        #   README paragraph) and `prosody` (pitch/effort/rate → arousal as a z-score against the
-│   │                        #   SPEAKER's own habit; it deliberately does not classify emotion).
-│   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
-│   ├── bsc-agent/           #   model-agnostic agent runtime
-│   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI
-│   ├── bsc-persona/         #   user persona store (agent identities) + bsc persona CLI (#2094)
-│   ├── bsc-teams/           #   user teams store: persona-relationship graph (positions + relationships) + bsc teams CLI (#2193/#2700; `bsc org` deprecated alias; on-disk store dir stays orgs/)
-│   ├── bsc-project/         #   project-hub list/published store + bsc project CLI
+│       ├── main.rs · lib.rs · prelude.rs · tests.rs   #   the FOUR files actually on disk
+│       └── platform/ · app/ · console/ · session/ · project/ · planner/ · fleet/ · github/
+│                            #   · sources/ · extensions/ · observability/ · mobile/
+│                            #   What each subsystem owns: `bsc memory read crate-roster`
+├── crates/                  # workspace crates (Tauri-free, CLI-spawnable) — ONE crate per `bsc` noun.
+│                            #   Like src-tauri/src, 76 of these are RECORDS: the dir may not exist on
+│                            #   disk. What each crate owns: `bsc memory read crate-roster`.
+│   ├── data/ · plandb/ · skilldb/ · logs/ · compliance/ · bsc-security/ · research/ · bsc-news/
+│   ├── bsc-say/ · bsc-ear/         #   the voice loop — `bsc memory read voice`
+│   ├── llm/ · bsc-agent/           #   model-agnostic LlmProvider + agent runtime
+│   ├── bsc-blueprint/ · bsc-persona/ · bsc-teams/ · bsc-project/   #   the user stores
 │   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
-│   ├── bsc-tunnel/          #   mobile-tunnel wire contract + Noise IK crypto (Tauri-free; shared with mobile-studio-code)
-│   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs (paths, SQLite, CLI arg parsing)
+│   ├── bsc-tunnel/          #   mobile-tunnel wire contract + Noise IK (shared with mobile-studio-code)
+│   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs
 ├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). MOST OF
 │   │                        #   THIS IS RECORDS, NOT FILES (#3604) — see docs/records.md. The four
 │   │                        #   top-level dirs ARE the architecture; imports use `@/…` → src (no
@@ -613,90 +568,47 @@ through `bsc plan`. The sections below describe the plan MODEL — stages, bluep
 which is intact and agent-driven; where they mention a screen, a pane or a card, that surface is gone
 and the same data is reached with `bsc plan`.
 
-### The right pane — focused plan view (#652)
-The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
+### Blueprints — the library that seeds a plan
+A **blueprint** is the reusable template that seeds a project's plan: ordered stages, each with a prompt
+module, pipelines, a declarative gate, and attached skills. It is a curated **route for a domain**
+(Default · CRM · ERP · Helpdesk/ITSM · HR/HCM · Project Management), and `projectBlueprintId` is
+**frozen at creation** — there is no in-place switching. Reached with `bsc blueprint`.
 
-### Blueprints — the lifecycle library (#609 / #645 / #636 / #647 / #3785)
-A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`. **The library UI is gone** with the rest of the planner screen (`delete-the-planner-ui-keep-the-planner`) — `list/ProjectsList.tsx` and `list/BlueprintCard.tsx` no longer exist, and neither do the import/update modals. Blueprints are reached with `bsc blueprint`; the one surviving in-app surface is the `blueprintpicker` component record.
-- **Goal/domain routes, not lifecycle selectors (#645/#3785):** a blueprint is a curated planning **route for a domain**, carrying a `mode` (`create` vs `operate`, which selects the planner intro), its own `icon`/`h` for the card tile, and a curated feature list. Packaged set: **Default** (the blank/general route) + the domain routes **CRM · ERP · Helpdesk/ITSM · HR/HCM · Project Management**. The Library searches by free text (`filterBlueprints`).
-  The lifecycle `category` field is **gone** (#3785) — it had degenerated to the same `greenfield` on every packaged blueprint, so it coloured every card identically and never varied a weight table. **Lifecycle is discovered per PROJECT** at discovery (`ClassifyConfig.lifecycle`, #3784) and is what Glance's project-node colouring and the Market rubric's weight table now read. `mode` (not the old category) decides whether a built-in auto-pins the packaged UI kit.
-- **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills** — the Skills library (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`).
-- **Locked at creation + promotion (#3785):** `projectBlueprintId` records which blueprint seeded a project and is **frozen at creation** — there is no in-place blueprint switching (the old reset/keep/export switch AND the from-scratch blueprint *author* are removed). At bind time the blueprint's captured feature list is seeded into the new project's Features stage (`PublishedHeader`). Conversely, a completed **and triaged** project is **promoted** into a new reusable blueprint via the **Generate Blueprint** button (`generateBlueprint` — captures the project's enabled stages + feature list); that promotion is the replacement for the old author flow.
+> `bsc memory read project-planning-model` — blueprints, the frozen key, the hub layout, the workflow,
+> per-agent permissions, and the planner-spec leak.
 
-### The project key
-`effectiveProjectId = planningSessionKey || activeProjectId || planningTitle || planningPitch` (Planning.tsx). In practice `planningSessionKey` wins. `sanitize_project_key` (`platform/fsx.rs`) slugifies it: keep `[A-Za-z0-9-]`, everything else to `_`, cap 80 chars (the backend treats the key as fully **opaque**).
+### The project key and the hub
+A project's key is **`projectSlug(name)`** — lowercase `[a-z0-9-]`, capped 60 — and it is **frozen at
+creation**. That one value names `projects/<key>/`, the plan store at `plans/<key>.db`,
+`worktrees/<key>/…`, the pane ids and every app-state map key. Renaming is **display-only**; the folder
+keeps its birth-slug.
 
-**One name-derived key (#2409, supersedes the minted id #1741).** A project's key is **`projectSlug(name)`** (`shared/lib/core/projectPaths.ts` — lowercase `[a-z0-9-]`, capped 60, slug-safe so `sanitize_project_key` is a no-op), **frozen at creation**. That one value names everything — `projects/<key>/`, its plan store at `plans/<key>.db`, `worktrees/<key>/…`, the session skill group, the pane ids (`<key>:director` / `<key>:<stream>` / `<key>:<repo>:triage`), every app-state map key, and (1:1) the GitHub project via `slug(github.name)`. **Recovery is derivation, not lookup**: reopening from the board derives the hub as `projectSlug(title)` — the `projectKeyAlias`/`resolveProjectKey`/`canonicalProjectKey` bridge and `mintProjectId` are **deleted**. Renaming stays **display-only** (the folder keeps its birth-slug). Edge cases are **modals, not machinery**: a create whose slug already exists opens the **collision modal** (open existing / pick a different name, `PublishedHeader`); a board project whose slug has no local hub opens the **reopen-mismatch modal** (`ReopenProjectModal`) — *Link to an existing local project* performs the one-time on-disk move (`relink_project_hub`: hub + worktrees + `git worktree repair`) plus the store rekey (`rekeyProjectData`), or *Start fresh* scaffolds under the slug.
+**The asymmetry to remember: plans are CENTRAL, telemetry is PER-HUB.** The plan store is *not* in the
+hub — it is `~/.base-studio-code/plans/<key>.db`, reached as `$BSC_PLAN_DB` / `bsc plan`, and it is the
+**sole fleet store** (#1805). But `error.db` and `usage.db` *are* hub-local. Fleet worktrees live
+**outside** the hub (#844) so the planner `CLAUDE.md` is not their ancestor.
 
-**Grandfathering.** Existing legacy-keyed hubs (minted `p-…` ids or title-sanitized keys) are **untouched on disk** — no startup migration. Drafts reopen by their frozen key as before; a legacy project reopened **from the board** hits the reopen-mismatch modal once (its legacy hub is the pre-selected link candidate) and linking migrates it onto its name-slug permanently.
+### The planner is plan-only, and its spec leaks downward
+Role gate #219: `git: read`, `github: read`, `code: none` — it reads for context and writes plan files,
+but cannot edit project code, commit, push, or open PRs.
 
-### Workspace layout
-`setup_workspaces` creates the project hub at `~/.base-studio-code/projects/<key>/`:
-- `CLAUDE.md` — *currently* the planner spec (see "Session roles + the CLAUDE.md model")
-- `.claude/settings.json` — planner permissions (read/write md + WebFetch + git/gh)
-- plan **section files**, flat: `goal.md`, `scope.md`, `stack.md`, `architecture.md`, …
-- `phases.json` (milestones). **The plan store is NOT in the hub** — it lives centrally at
-  `~/.base-studio-code/plans/<key>.db`, reached as `$BSC_PLAN_DB` / `bsc plan`. (Measured across all
-  30 hubs: none has a local `plan.db`.) It is the per-project SQLite working store holding the
-  granular issues, fleet streams + per-stream permissions, and the context required-set. #1805 made
-  it the **sole fleet store** (the legacy `fleet.json`/`issues.json` files are no longer authored —
-  `issues.json` is a projection rendered from it; any stray `fleet.json` is migrated in once by
-  `migrate_stray_fleet_json`)
-- `error.db` — the project's runtime fault store (`bsc errors`), and `usage.db` once analytics run.
-  These two ARE hub-local, which is the asymmetry to remember: **plans are central, telemetry is
-  per-hub.**
-- `prompts/` — kickoff scripts the planner authors (`<stream>-kickoff.md`, `director-kickoff.md`)
-- `automations.md`, `github_context.md`
-- linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees live **outside** the hub at `~/.base-studio-code/worktrees/<key>/<repo>--<slug>/` (#844, so the planner `CLAUDE.md` is not their ancestor — `worktrees_dir` in `platform/paths.rs`)
+**A known trap worth knowing before you touch the hub:** the planner spec is written to
+`projects/<key>/CLAUDE.md`, which is the **ancestor of every execution session**, since the director and
+workers run under `projects/<key>/`. Claude Code loads `CLAUDE.md` from the cwd and every parent, so the
+planner spec **leaks** into those sessions and pulls them toward planning. A `READ FIRST` scope guard is
+the interim band-aid (#320/#331). Converge on the intended split when touching `setup_workspaces`, the
+planning launch, or `fleetStartProject`.
 
-### The planner is plan-only
-Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
-
-### The planning workflow (driven by the planner CLAUDE.md template in `planner/prompts.rs` + `planner/directives.rs`)
-1. Link repositories.
-2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
-3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.
-4. **Granular, agent-ready issues** (#311, in `plan.db`): each `PlanIssue` carries acceptance criteria, owned files, dependencies, labels, milestone, owning stream — enough that an agent finishes without asking.
-5. **Plan the agent fleet** (`plan.db` `fleet_stream` rows): non-overlapping streams (owns globs, issues, dependsOn), recommended session count, optional director.
-6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
-
-### Per-agent configuration set during planning
-- **Permissions** (`rename-the-profile-to-permissions-on-the-persona`, was "profiles" #289): ONE object on
-  the persona answers *what may this agent do*, and it lives in `personas.db` (`bsc persona`). It carries
-  the access axes + write scope it always did (`github`/`git`/`code`/`net`/`ui`/`graph`, `writeGlobs`,
-  `allow`, `surfaces`, `harvestRoots`) plus the six fields that used to sit in a **separate** store as an
-  `AgentProfile`: `mode`, `tools`, `commands`, `allowGlobs`, `denyGlobs`, `netAllow`.
-  It was two names for one thing, in two stores, both applied at every launch — and only one of them was
-  reachable from `bsc persona set`, which is why a role's capability could not actually be edited.
-  The **narrow-only clamp** (`crates/bsc-persona/src/permissions/`) now covers all of it: a write may only
-  ever NARROW what it derives from. Three scales, and conflating them is the trap — an ACCESS TIER is
-  `none < read < write`, a POSTURE (`mode`, `tools`) is `deny < ask < allow`, and `denyGlobs` is INVERTED
-  (dropping an entry un-denies a path, so a SHORTER list is the widening).
-  `src-tauri/data/roles/*.json` still holds the five packaged **profiles**, and the launch still resolves a
-  pane's settings through `paneProfiles` → `agentProfiles`. That is deliberate, not a leftover: a pane with
-  NO profile assigned is a real state — it is how a confined studio session stays confined, since a
-  profile's `allowedCommands` are prepended to the role's `restrictedAllow` surface. Every persona now
-  carries what its role's profile carried (`permissionsMatchTheProfile.test.ts` proves the two resolve
-  identically, per role), so the remaining swap is mechanical — but it must first answer what replaces
-  "unassigned".
-- **Flows** (#297, `@/features/planner/fleet/agentFlow` — a record): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
-
-### Session roles + the CLAUDE.md model (and a known issue)
-Three kinds of session live around a project, each needing **different** context:
-- **Planner** — the planning spec; plan-only.
-- **Orchestrator / director** — coordinates the fleet (review/merge PRs, resolve logged decisions, keep the board current); never plans or writes feature code.
-- **Agents / workers / triage** — execute their assigned issue in a worktree, guided by their repo `CLAUDE.md` + `CLAUDE.local.md` (the plan) + their kickoff.
-
-**Current state:** the planner spec is written to `projects/<key>/CLAUDE.md`, which is the **ancestor of every execution session** (director + workers run under `projects/<key>/`). Claude Code loads `CLAUDE.md` from the cwd and every parent, so the planner spec leaks into those sessions and they get pulled toward planning. A `READ FIRST` scope guard at the top of the planner CLAUDE.md is the interim band-aid (#320/#331).
-
-**Intended architecture (in progress):** the planning session is **isolated in its own tree** (not an ancestor of the repos), `projects/<key>/CLAUDE.md` becomes the **orchestrator** spec, and the planner **generates** the orchestrator + agent context files as deliverables. Converge on this when touching `setup_workspaces` / the planning launch / `fleetStartProject`.
+> The six-step planning workflow, per-agent permissions (three scales — and `denyGlobs` is INVERTED),
+> flows, and the intended architecture: **`bsc memory read project-planning-model`**.
 
 ## Console — the execution surface
 
 Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty/` (dir-module: `mod.rs` + `job.rs`); launch wiring: `src/app/console/panes/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
 
 ### Session roles + the role gate (#219, `src/shared/lib/session/sessionRoles.ts`)
-Every session has a role bounding its capabilities (least privilege), applied at launch via `ensure_session_settings` to `.claude/settings.json`:
+Every session has a role bounding its capabilities (least privilege), applied at launch via
+`ensure_session_settings` to `.claude/settings.json`. Claude Code precedence is **deny > ask > allow**.
 
 | Role | git | github | code |
 |---|---|---|---|
@@ -710,61 +622,22 @@ Every session has a role bounding its capabilities (least privilege), applied at
 | documentor | read | read | none (prose docs only) |
 | designer | none | none | none (UI kits via `bsc ui` only) |
 
+> What each role is *for*, the permission postures (allow-list default vs bypass), and the opt-in WSL2
+> OS sandbox with per-agent Linux users: **`bsc memory read console-and-fleet`**.
+
 (`tester`/`reviewer` are the pipeline-stage roles, #220; `issuer` is intake-only — shapes a request into a GitHub issue and hands off, #376; `juror` independently judges a landing against its acceptance criteria, #394; `documentor` is the post-refactor lifecycle actor that reconciles the project's PROSE docs — CLAUDE.md structure tree, architecture docs, README — after a change lands, #1555. Like the director's commons carve-out (#851) it keeps `code: none` yet writes EXACTLY its `DOC_GLOBS` (markdown + `docs/**`) and is hard-blocked on every code path; push/PR are flow-governed. `designer` (#2471) is the Design Studio's UI-kit session — `none` on every axis, launched with `restrictedAllow` so the baseline command tiers are suppressed and its whole auto-runnable surface is `bsc ui` + the deprecated `bsc component` alias.) `roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**. (**Permission postures** (#1916/#2050): the PreToolUse hooks — `bsc-deny` (dangerous floor + role/user denies), `bsc-confine` (FS confinement), `bsc-scope` (write-scope) — are the always-on floor, firing **and blocking under BOTH postures** (even bypass, where `permissions.deny` is ignored). The **default is the ALLOW-LIST** (#2050): Claude's `default` mode auto-runs the broad `base.json` allow-list (git/gh + the read-only inspection set + the mainstream build/test toolchains) and prompts for anything else — low-friction but safe. **Bypass** (sessions auto-run everything, hooks-only gating) is the opt-in power **posture toggle** (Settings → Security). On top, an opt-in **model-agnostic OS sandbox** (#1988): a session runs inside a **sealed WSL2 distro** (`bsc-agent-sandbox` — no `/mnt/c` mount, no Windows interop, baked into `/etc/wsl.conf`), so the cage is the *environment* and confines whatever LLM drives the session, not just Claude (`pty_create`'s opt-in `wsl_distro`; provision + readiness in Settings → Security; a Settings → Agents toggle launches consoles inside it). The rootfs bakes in **every** harness — Node + Claude Code (the default) and `gh` alongside `bsc-agent` (#4260) — so the cage isn't limited to the non-default harness. **Per-agent isolation via Linux users** is built (#1994/#4260): each sandboxed fleet session (worker + director) runs as its own `bsc-<slug>-<hash>` user with a `700` home holding its **own worktree**, created by that user off a group-shared clone; the hub, `plan.db`, `coord.log` and the global `bsc` stores live in one setgid `bsc-agents` dir (`/srv/bsc-shared`) that every agent home reaches via a `~/.base-studio-code` symlink — private code, shared agreement. The sandbox is **still opt-in**; making it the sole posture is #4260, gated on bundling the rootfs tarball with the installer.)
 
-### A node's PERSONA — four assignment paths, three that cannot resolve
+### A node's PERSONA — the field is `persona`, and it holds a library id
 
-The Glance fleet drill gives every node a persona, and `buildOrgFleetData` resolves it against the
-persona library: `personaById.get(pos.personaId)`. **Three of the four ways a node gets its
-`personaId` produce an id that is not in that library**, so they miss and fall through to
-`fallbackRole` / `fallbackPersona`:
+**Writing `profile` instead is SILENT** — the stream simply has no persona, and no tier to read. That
+cost a full round-trip once, when a coordinator column could not work because its stream had no persona
+at all. Only the fleet-STREAM path supplies a real library id; the director, the planner and system
+sessions are given bare names that miss and fall through to `fallbackRole` / `SYSTEM_SESSION_ROLES`,
+which are a compensation layer for an id-space mismatch, not a feature.
 
-| node kind | `personaId` it is given | in `personas.db`? |
-|---|---|---|
-| a fleet STREAM | its `persona` field, e.g. `persona-lexicographer` | **yes** |
-| the DIRECTOR | `"director"` — a bare role name | no |
-| the PLANNER | `"planner"` — a bare role name | no |
-| a SYSTEM SESSION | its own node id, e.g. `designer-react` | no |
-
-Every persona in the library is `persona-*` prefixed, so only the stream path resolves. That is what
-`SYSTEM_SESSION_ROLES` and `fallbackRole` exist for — `fallbackRole`'s own comment says so ("the
-fixed-id agents are known by their id — without this a planner falls through to `worker` and renders
-in the BUILD colour"). They are a compensation layer for an id-space mismatch, not a feature.
-
-**And the data they hardcode already exists.** MEASURED: a real persona is present, with exactly the
-role the map asserts, for every one of the eight fallbacks — `persona-director`, `persona-planner`,
-`persona-designer`, `persona-librarian`, `persona-architect`, `persona-sound-designer`,
-`persona-integrator`, `persona-debugger`. So `SYSTEM_SESSION_ROLES` is a hand-maintained duplicate of
-`personas.db`.
-
-The simplification, when someone takes it: assign LIBRARY ids on all four paths, and `fallbackRole`,
-`fallbackPersona` and `SYSTEM_SESSION_ROLES` mostly stop having a job. Filed rather than done here
-because it changes what the canvas renders.
-
-**Until then, the rule to remember: a node's persona field is `persona`, and it holds a library id.**
-Writing `profile` instead is silent — the stream simply has no persona, and no tier to read. That cost
-a full round-trip on `a-coordinator-is-a-peer-of-the-director`, where the coordinator column could not
-work because the lexicographer had no persona at all.
-
-### The COORDINATOR tier — a peer of the director, not a report
-
-A stream whose persona carries the **`director` role** is a coordinator: `persona-lexicographer` is
-one. Placement in the drill is derived from ARCHETYPES, never set as coordinates ("the arrangement is
-a consequence of the archetype, not a layout rule"), so the tier is expressed as three relationships:
-
-- every system session `serves` every coordinator → system sessions sit LEFT of the whole column
-- the director does NOT `manage` a coordinator → it keeps the director's own depth, same column
-- each coordinator `manages` the remaining streams → workers and noun sessions sit RIGHT, ordered
-  among themselves by dependency
-
-`coordinatorIds` is ONE exported definition used by both placers — `fleetToOrg` for the column,
-`withStreamRepos` for the repo band — because a coordinator that was a peer in one and a lane in the
-other renders as half cross-repo and half not.
-
-**A coordinator belongs to NO repository band.** studio-code spans two repos (`base-studio-code` and
-`mobile-studio-code`; its director's role is literally "async integrator across two repos"), and the
-drill bands workers by repository so the halves read apart. A cross-repo role sits ungrouped, where the
-director and the architect already sit.
+> That mismatch, the eight hardcoded fallbacks that duplicate `personas.db`, and the COORDINATOR tier
+> (a peer of the director, derived from archetypes, belonging to no repo band):
+> **`bsc memory read console-and-fleet`**.
 
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
@@ -780,70 +653,37 @@ One click fills a build tab:
 - **Workers** each in their own **git worktree** (`~/.base-studio-code/worktrees/<key>/<repo>--<slug>/`, outside the hub per #844) on a **branch named after the stream id**, seeded with `CLAUDE.local.md` (the plan, copied in by `ensure_worktree`) and the stream's kickoff (`prompts/<id>-kickoff.md`, else `buildStreamPrompt`). Per-agent profile + flow applied.
 
 ### Per-agent flow at launch (#297)
-Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a hard push-confirm gate) vs deny; the autonomy + push paragraph in the kickoff; and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the **authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly those two (#304) — so an `auto-pr` worker can open its own PR while `gh pr merge` / repo-delete stay role-denied.
+Drives which git/gh writes auto-approve vs **prompt** vs deny, the autonomy + push paragraph in the
+kickoff, and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the
+**authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly
+those two (#304) — so an `auto-pr` worker opens its own PR while `gh pr merge` stays role-denied.
 
-### Coordination (#199, `@/shared/lib/fleet/coordination` — a record)
-Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for the user, #297), the worker↔director Q&A pair `bsc-ask`/`bsc-answer`, the `bsc-issue`/`bsc-assign` capture-and-route emitters, the planner→director/issuer `bsc-brief` channel (#2377 — the planner's runtime voice, pushing a mid-build plan update into the running fleet; folds into `CoordState.briefs` and the director pump surfaces it, once per pane, to reconcile + route onward via `bsc-assign`), and the completion emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) surfaces paused / blocked-on-a-question / ready sessions for the user. **Runtime dependency-wait was removed (#1039):** there is no `bsc-blocked --on` and no coordinator auto-wake — `dependsOn` is a *planning-time* sequencing hint only; at run time workers build against the planned contracts in parallel and never park on an upstream, and the director owns contracts + integration.
+### Coordination + the runtime `bsc` surface
+Agents emit structured events to an app-wide `coord.log` (`bsc-wait`, `bsc-ask`/`bsc-answer`,
+`bsc-issue`/`bsc-assign`, `bsc-brief`, and the `bsc-landed/merged/closed/failed` completions), and the
+**Coordination inbox** surfaces paused / blocked / ready sessions. **Runtime dependency-wait was removed
+(#1039)** — `dependsOn` is a *planning-time* hint only; workers never park on an upstream.
 
-### bsc-* shell helpers + the runtime state-CLI surface (#1325)
-Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc/`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
+The pure-shell helpers are installed into every session via `BASH_ENV` to `bsc-env.sh`. **WARNING: each
+rc constant must end with a trailing newline**, or the concatenated shell functions glue together and
+the whole rc breaks with a syntax error (#296) — `full_bsc_rc_is_syntactically_valid_bash` guards it.
 
-**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), `bsc say` (speech OUT — the neural voice, an output device it remembers, and `--ipa` for phoneme-level control), `bsc ear` (speech IN — always-on capture, `levels` to find a device that actually hears, `prosody` for arousal), and `bsc files` (file tree + `read`, the root-confined file-text
-verb a session reaches for when neither harvest lifts a module — #4161). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
+**Every persistent app store is reachable from a live session through the one bundled `bsc` binary**
+(#1877), execed by absolute path from `$BSC_BIN`: `plan` · `skill` · `data` · `logs` · `compliance` ·
+`blueprint` · `persona` · `teams` · `project` · `say` · `ear` · `files`, plus `bsc mcp research` /
+`bsc mcp compliance`.
+
+> The full event list, the helper roster and every subcommand's scope:
+> **`bsc memory read console-and-fleet`**.
 
 ### The voice loop — it speaks, it listens, and none of it leaves the machine
 
-`bsc say` and `bsc ear` are the two halves. Maintainer's decisions, which are settled and should not
-be relitigated: **fully local always** (no transcript or sample reaches a third party on any default
-path), **always-on rather than push-to-talk or a wake word** — the value is catching the half-formed
-thought you did not know to record, and a wake word means you had already decided to record it — and
-a **short rolling audio window**, so a stretch can be re-transcribed by a better model later without
-keeping an indefinite recording of the room.
+`bsc say` (speech out) and `bsc ear` (speech in) are the two halves. Three maintainer decisions are
+**settled — do not relitigate them**: fully local always, always-on rather than push-to-talk or a wake
+word, and a short rolling audio window.
 
-**MEASURED on this machine (RX 9070 XT, RDNA4), because the numbers decide the design:**
-
-| | |
-|---|---|
-| Whisper `large-v3-turbo`, CPU | 2.4× realtime — *slower than realtime on shorter clips* |
-| Whisper `large-v3-turbo`, **Vulkan** | **37.7× realtime** (encode step 43× faster) |
-| Kokoro-82M TTS, CPU | 4.5× realtime |
-
-**The GPU path is VULKAN, not ROCm.** ROCm is not installed and does not need to be; RADV picked up
-`GFX1201` with fp16, and Mesa was already present. whisper.cpp needs `cmake`, `libvulkan-dev`,
-`glslc` and `spirv-headers` to build that backend. A model that cannot keep up with realtime is
-disqualifying for always-on capture — you fall permanently behind — so this is what makes the best
-model usable rather than a tradeoff against `base.en`.
-
-**Four traps, each of which cost real time to find:**
-
-- **A device being PRESENT says nothing about it being connected to a human**, and this bites on both
-  sides. `bsc ear levels` exists because enumeration cannot distinguish a live capture device from a
-  dead one — measured here, the system *default*, the USB interface and the headset all delivered
-  digital silence while only the onboard input was live, and an ear pointed at a silent device
-  reports LISTENING forever, looking exactly like a quiet room. On the output side there is no
-  equivalent probe, because you cannot measure whether a human heard something: `bsc say` exits 0
-  whether or not anyone was in earshot, so it lets you choose an output once and remembers it.
-- **ALSA presents four physical inputs as 27 devices** — `hw:`, `plughw:`, `front:`, `surround*:`,
-  `iec958:`, `dsnoop:` and `sysdefault:CARD=` are routing variants of the same card, not choices. It
-  also writes its own diagnostics straight to stderr while enumerating. Both are filtered. And
-  probing a ROUTED node takes the hardware with it, hiding the hardware node from the rest of a
-  sweep, so hardware is probed first.
-- **Whisper hallucinates on non-speech**, characteristically as "Thank you." — and `prosody` finds
-  those same segments have no voiced content. Two independent measurements agreeing nothing was said
-  is a free hallucination filter, and worth keeping rather than smoothing over.
-- **Cleaning for ASR and cleaning for prosody are not the same chain.** The 70–900 Hz band-limiting
-  that makes pitch detection work would destroy the zero-crossing-rate feature that stands in for
-  spectral tilt, so pitch reads a filtered copy while loudness and effort read the raw signal.
-
-**What arousal is and is not.** `bsc ear prosody` measures pitch, pitch range, loudness, effort and
-rate, and combines them into a z-score **against the speaker's own habit** — a quiet person at their
-most animated may never reach a loud person's resting level, and a per-speaker baseline is also the
-only thing immune to preamp gain. It deliberately does **not** classify emotion: categorical models
-benchmark near 70% on *acted* corpora, collapse on spontaneous speech, and emit a label nothing can
-argue with. Valence is absent for the same reason — it is the dimension acoustic models are worst at,
-and the transcript carries it better. Measured against a real 23-segment corpus, the composite tracks
-f0 range at r=+0.77 and **loudness at r=−0.06**, so the loudness weight is spent on mic distance
-rather than affect and should be revisited against a second speaker.
+> The measured numbers (Vulkan takes Whisper from 2.4× to 37.7× realtime), the four audio traps, and
+> what arousal does and does not claim: **`bsc memory read voice`**.
 
 ### GitHub-readiness (#297 S1)
 - **GitHub-readiness probe**: on launch each claude-launching pane probes `gh`/`git` on PATH + `gh auth`; if not ready it shows a dismissible amber banner in the pane so the gap surfaces before the agent hits it mid-task.
@@ -853,92 +693,21 @@ A per-repo session that resumes the repo's prior conversation (`claude --continu
 
 ## Roadmap & Release Process
 
-Development is organized into **versions**, worked one at a time. A version is not a frozen
-snapshot you finish before cutting a build — it is a **living milestone** you ship early and keep
-improving until its theme is complete. We release a version, then continue working on that same
-version (refining, fixing, and filling out its theme) until every issue under it is done; only then
-does the next version become the focus. So a version on the roadmap is **Current** (actively being
-built on, even though a build may already be released under that number) rather than **Shipped**.
+**Current version: `1.0.52`** — accessibility & text-to-speech · market research, marketing & usage
+analytics. A version here is a **living milestone**: released early, then kept building on until its
+theme is complete, so it reads **Current** rather than Shipped. Exactly one version is Current at a
+time. GitHub milestones track **versions, nothing else**; new work defaults to the Current milestone,
+parked work goes to **Backlog**.
 
-**The cycle for a version:**
-1. **Open** the version with a theme and its set of issues (the work that defines "complete").
-2. **Build** through those issues on `{issue-number}-{short-description}` branches → `develop`.
-3. **Release** early and often from `develop → main` — a released build does **not** close the
-   version; it's a checkpoint, and work on the same version continues.
-4. **Complete** the version only when all of its issues are done. The next version then becomes
-   Current and step 1 repeats.
+The pre-v2 numbering is **deliberately loose** and is an intentional trade for velocity — **do not
+"fix" it or relitigate the scheme.** `2.0.0` is the hand-off point to rigorous semver.
 
-At any time exactly one version is **Current**. Earlier versions are **Complete**; later versions
-are **Planned**.
+`npm run release` does the whole cut (bump both version files · stamp the CHANGELOG · commit · tag ·
+push). It is a **maintainer action, not a step in the worker loop** — nothing else here pushes.
 
-### Milestones — the version system
-
-GitHub milestones track **versions, nothing else**: an issue's milestone is the release it ships in
-(`1.0.5`, `1.0.51`, `2.0.0`, …). Cross-version themes live as epic issues or labels, never as
-milestones — a theme milestone would steal the one milestone slot the version needs.
-
-- Only a few milestones are open at a time: the **Current** version, the next planned version(s),
-  and **Backlog** (the icebox — parked work with no version target yet).
-- New work defaults to the Current version's milestone; parked/deferred work goes to Backlog.
-- **On each release:** close the released version's milestone and roll its unfinished issues
-  forward to the next one. The closed milestone's issue list is the changelog's skeleton.
-
-### Versioning policy (pre-v2 is loose on purpose)
-
-The app is still coalescing — not every feature is well defined, work spans many files and overlaps
-with other work — so the version numbers are **deliberately loose** until it's unified. Three phases:
-
-1. **`1.0.4n` — fix & polish (COMPLETE).** Bump the trailing digit for each release (`1.0.41`,
-   `1.0.42`, …). Development stays the firehose: the fleet pushes to `develop`, features overlap,
-   nothing is gated on a tidy theme. A release is just a snapshot of `develop`.
-2. **`1.0.5x` — themed steps on the `1.0.x` line (CURRENT: `1.0.52`).** Each release carries its own
-   theme, worked one at a time, release-and-continue: `1.0.5` the UI release, `1.0.51` the UI-release
-   delivery build, **`1.0.52` accessibility & text-to-speech + market research/marketing/analytics (current)**.
-3. **`2.0.0` — unification.** Once every feature the maintainer wants is added and the app is a
-   defined product, we cut `2.0.0` and switch to **rigorous semver** (major/minor/patch by their real
-   meaning), followed strictly from there. This is the hand-off point where release discipline tightens.
-
-The pre-v2 numbering is an intentional trade for velocity — **do not "fix" it or relitigate the
-scheme.** The phase boundaries are tracked as GitHub **milestones** (`1.0.5 …`, `2.0.0 …`).
-
-### Cutting a release — one command
-
-`npm run release` does the whole cut in one go: bump the version in **both** `package.json` and
-`src-tauri/tauri.conf.json`, stamp the `CHANGELOG.md` `[Unreleased]` section as the new version,
-commit, tag `vX.Y.Z`, and `git push --follow-tags` — which fires the tag-triggered `release.yml` to
-build the platform installers and cut the GitHub Release.
-
-- `npm run release` — patch bump (the `1.0.4n` cadence: `1.0.41 → 1.0.42`).
-- `npm run release -- 1.0.5` — an explicit version (a themed step, or `2.0.0`).
-- `npm run release -- minor` / `major` — a semver bump (used from v2 on).
-
-Run it from an up-to-date `develop` with a clean working tree. Only `package.json` +
-`tauri.conf.json` carry the app version; `src-tauri/Cargo.toml` stays at its crate version.
-
-### Roadmap
-
-| Version | Status | Theme |
-|---|---|---|
-| v1.0.3 | Complete | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
-| v1.0.4 | Complete | **Enterprise integration & migration** — connect **read-only** to an existing system (CRM/ERP/BPM, Salesforce first) and **scan the whole platform**: data types *and* configurations *and* behaviors. The planner produces a **Platform Behavior Summary** — objects/fields, automations (validation rules, workflows, Flows/Process Builder), business processes (approval processes), and derived logic (formula fields, Apex) — so **automations, business processes, and data are all migratable**: reproduced as the generated app's schema and logic via canonical **data models** + **agent-authored connector manifests** (the planner probes the source and authors the connector; native per-vendor connectors were removed, #1976) + MCP connectors, with a compliance layer baked into the planner. The v1.0.5 line generalizes this into a global **Integrations Platform** (#1965). |
-| v1.0.4n | Complete · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …, per the Versioning policy above) — the large volume of no-user-facing-feature refactor, integration-architecture, and hardening work, plus ongoing polish. **Codebase refactor & consolidation**: feature-first frontend vertical slices (#1309) — `app/` shell · `features/` (UI + pure `lib/` + slice + `index.ts` barrel) · `shared/` · `store/`, `@/…` alias; shared UI primitives (`Banner`/`Card`/`Button`/`StatTile`/`EmptyState`/`BackButton`/`IconButton`/`ModalScrim`/`Dialog`/…) + a consistency sweep; `Planning.tsx`+`FocusedBodies.tsx` decomposition, `handlePublish`→`publishSteps.ts`, reusable `usePoll`/`useGithubQuery`/`useCoordLog` + `safeInvoke`/`fireInvoke`; Rust consolidation (`bsc-cli-util`, Tauri-free `bsc-blueprint`/`bsc-project`/`bsc-tunnel`, `session/` domain, `src-tauri/prompts`→`data`, **plan.db as the sole fleet store**, `tests.rs` decomposed, reference-context removed). **Integrations as agent-authored connectors** (#1962): the planner probes a source and authors the connector manifest (probe→validate→try, captured as skills); native connectors/presets/catalog removed (#1976); dynamic Source pane + runtime OAuth. **Data-driven planner**: Rust-inline prose/stage-registry/role-capabilities/deploy-taxonomy extracted to `@data/*`; tag-parsing → `bsc`. **Planner/fleet hardening**: unified stage vocabulary (#1958) + milestone phases removed (#1942); Repos+Deploy→**Deployment** and Fleet+Streams→**Streams** (carded, collapsible); fleet-identity, warden re-quarantine, worker-trust/prompt, and triage-tab-naming fixes. |
-| v1.0.5 | Complete | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code) — **and the maintenance bots** (#1957). Its builds shipped through the **v1.0.51** tag; UI/design-studio work still in flight was **rolled forward to the 1.0.52 milestone**. |
-| v1.0.51 | Complete · delivery build | **The UI-release delivery** — the build that carried the bulk of the v1.0.5 theme to `develop`: the **Design Studio** (in-app page/component/animation authoring · live build-and-iframe preview · component motion-as-data · the graph-health `doctor`), the **Algorithms knowledge graph** (`bsc graph`), **Studio snapshots** (save/share/re-seed the whole app library), the **maintenance-bot suite** (`bsc debug` · `bsc metrics` · warm-pool debugger · component + algorithm **harvest**), the **CAD geometry kernel** (`bsc cad`), the **Sounds** pillar, and **Glance-as-cockpit**. Its namesake market-research/marketing/analytics theme (the Marketer + usage analytics) **moved to the 1.0.52 milestone**. |
-| **v1.0.52** | **Current** | **Accessibility & text-to-speech · market research, marketing & usage analytics** — the current themed step: accessibility + TTS, plus the **Marketer** (market on your behalf via channel MCP servers, keychain-backed secrets) and generated-apps **usage analytics** (rolled forward from v1.0.51), and the **UI / design-studio** work still in flight from v1.0.5. |
-| v2.0.0 | Planned | **Unification + rigorous semver.** Once every feature the maintainer wants is added and the app is a defined product, cut `2.0.0` and switch to **strict semver** (see the Versioning policy above) — the hand-off point where release discipline tightens. |
-
-The agent-shell track shipped alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
-("Run on any model"). v1.0.4 (and its 1.0.4n line), **v1.0.5** (the UI release), and **v1.0.51** (the
-UI-release delivery build) are now **Complete**; **v1.0.52** (accessibility & text-to-speech + market
-research/marketing/analytics) is **Current**. When v1.0.52 is complete, promote the next version to **Current**.
-
-The *codebase refactor & consolidation* work (the frontend feature-first reorg, shared UI primitives,
-large-file decomposition, Rust crate consolidation) plus the integration-architecture and planner/fleet
-hardening was cut as the **v1.0.41** checkpoint — a labelled stop-gap on the v1.0.4 line, before v1.0.5.
-(Semver note: `1.0.41` sorts *after* `1.0.5`, so it's a "1.0.4, revision 1" marker, not a number between
-the two.) Its changes are stamped under the `[1.0.41]` CHANGELOG section; new post-checkpoint work
-accrues under `[Unreleased]`. The full version-by-version breakdown lives in
-[ROADMAP.md](ROADMAP.md).
+> The version cycle, the milestone rules, the three versioning phases, the release command's flags and
+> the version-by-version history: **`bsc memory read studio-code-roadmap`**. Full breakdown in
+> [ROADMAP.md](ROADMAP.md).
 
 ## Development Workflow — local-first, on the `bsc` surface
 
@@ -1348,98 +1117,37 @@ cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --li
 cargo nextest run --workspace                           # or `-p <crate>` to scope a slow build
 ```
 
-**`cargo nextest`, not `cargo test` — and it must be installed.** `cargo test` runs the workspace's
-~41 test binaries **one after another**; within a binary its tests thread, but the binaries are serial,
-so cores idle — visible as `cargo test` sitting at 65% CPU while nextest saturates. Install it like
-`sccache`: `cargo install cargo-nextest --locked`.
+**`cargo nextest`, not `cargo test` — and it must be installed** (`cargo install cargo-nextest
+--locked`). `cargo test` runs the workspace's ~41 test binaries serially, so cores idle.
 
-**Its win is CONDITIONAL on spare cores, and that is worth knowing before you expect a number.** Both
-arms measured from identical warm state, test targets prebuilt, same four pre-existing failures:
+Two differences that will surprise you:
 
-| machine | `cargo test --workspace` | `cargo nextest run --workspace` |
-|---|---|---|
-| quiet | 1m31.8s | **1m06.9s** (−27%) |
-| 4 other agent builds running | 1m32.9s | **1m30.1s** (−3%) |
+- **It runs each test in its own PROCESS.** That makes env-var tests *more* isolated — but the isolation
+  **cuts both ways, and this direction is dangerous**: a test that PASSES under nextest can still FAIL
+  under `cargo test`, because per-process isolation *hides* a race on process-global state rather than
+  fixing it, and **the gate runs nextest, so the gate cannot see this class at all**. The mechanism is a
+  lock (`ENV_LOCK` in `src-tauri/src/testutil.rs`); the guard is a SOURCE-ASSERTING test
+  (`every_store_env_mutation_is_inside_the_store_lock`), because nothing at run time can observe the
+  *absence* of a lock. An unlocked store-env write corrupts the real per-user authoring copy.
+- **It does not run doctests.** This workspace has none, and `no_rust_doctests_are_silently_skipped`
+  FAILS if one is ever added. If it fires, drop the doctest or add `cargo test --doc --workspace` —
+  **do not delete the guard.**
 
-nextest fills idle cores; when several worktree agents are already saturating the box there are none to
-fill, and the gain nearly vanishes. It is never *slower*, so it is still the right default — just do not
-plan around 27% on a busy machine, which is this repo's normal state.
+**Install `sccache` before your first build.** `.cargo/config.toml` sets it as `rustc-wrapper`, so cargo
+fails loudly with *"could not execute process sccache"* if it is missing (`cargo install sccache
+--locked`; it must land on PATH). A shared `CARGO_TARGET_DIR` was rejected instead — it broke tauri
+builds and puts every concurrent cargo behind one lock.
 
-Two differences worth knowing before they surprise you:
+**Iterate against the CRATE, not the binary:** `cargo check -p <crate>` while writing, `cargo test -p
+<crate> --lib` to verify, and build `bsc` only when you need to *run* it. Every subcommand crate exposes
+`cli::run(args, prog)`, so a crate's own tests reach the whole surface without linking the binary.
+**DuckDB is the dividing line** for what a crate costs — `bsc-graph`, `bsc-ui`, `bsc-files`,
+`bsc-component` and `bsc-cad` deliberately avoid it (`bsc-data` with `default-features = false`).
+**Keep it that way:** re-adding the default feature puts the whole DuckDB amalgamation back into their
+iteration loop (measured: `cargo check -p bsc-ui` 2m28s → 20.8s).
 
-- **It runs each test in its own PROCESS**, where `cargo test` threads them inside one binary per crate.
-  Anything sharing process-global state behaves differently — which is what `ENV_LOCK` in
-  `src-tauri/src/testutil.rs` exists for. Per-test processes make env-var tests *more* isolated, not
-  less, and the whole suite was verified under it (2,362 of 2,366 passing, same four reds) — but a test
-  that quietly depended on a sibling having run first will now fail, and that is the test being wrong.
-
-  **THE ISOLATION CUTS BOTH WAYS, and this direction is the dangerous one.** A test that PASSES under
-  nextest can still FAIL under `cargo test`, because per-process isolation *hides* a race on
-  process-global state rather than fixing it. **The gate runs nextest, so the gate cannot see this
-  class at all.** MEASURED on `bsc-graph`, back to back on a quiet machine:
-
-  | | |
-  |---|---|
-  | `cargo nextest run -p bsc-graph` | 259 passed, 0 failed |
-  | `cargo test -p bsc-graph --lib` | 243 passed, **16 FAILED** (a second run: 242 / **17**) |
-
-  The count MOVING between runs is the signature — a race, not a broken assertion. Every failure was a
-  test pointing the CLI at a temp store with `set_var("BSC_GRAPH_STORE", …)`, so one test's `remove_var`
-  landed between a sibling's `set_var` and the call it was setting up. `src-tauri/src/fleet/warden.rs`
-  hit the same shape on 2026-09-02 (1 run in 10) with three tests sharing an in-memory registry.
-
-  **It is not merely a developer-facing annoyance.** An unlocked write resolves the DEFAULT store and
-  corrupts `~/.base-studio-code/knowledge/algorithms.json` — the real per-user authoring copy. That is
-  what made `graph-promote-check` go red on a *different node every run* and forced every
-  `npm run promote` that day through `--skip-gate`, which skips verifying develop entirely.
-
-  **So a lock is the mechanism and a SOURCE-ASSERTING TEST is the guard**, because nothing at run time
-  can observe the *absence* of a lock. `every_store_env_mutation_is_inside_the_store_lock`
-  (`crates/bsc-graph/src/cli.rs`) scans the crate's own source and names any function that mutates a
-  store env var without holding the lock. Two details there are worth copying rather than rediscovering:
-  it delimits function bodies by INDENTATION, not brace counting, because the file is full of raw JSON
-  fixtures whose braces would need string-literal stripping to survive — and a scanner that silently
-  mis-parses reports zero offenders, which reads as a pass. And it asserts the POPULATION
-  (`mutating >= 10`) so a scanner that stopped matching fails loudly instead of going quiet.
-- **It does not run doctests.** This workspace has none, and `no_rust_doctests_are_silently_skipped` in
-  `src-tauri/src/tests.rs` FAILS if one is ever added, because a doctest that silently never runs is
-  exactly the kind of green-gate-that-sees-less this repo keeps getting caught by. If that test fires,
-  either drop the doctest or add `cargo test --doc --workspace` to this gate — do not delete the guard.
-
-**The Rust build is SHARED across worktrees — install `sccache` before your first build.**
-`.cargo/config.toml` sets it as `rustc-wrapper`, so cargo fails loudly with *"could not execute process
-sccache"* if it is missing. Get it with `winget install Mozilla.sccache` or `cargo install sccache
---locked` (it must land on PATH; `~/.cargo/bin` is the conventional spot and is already on PATH wherever
-cargo is).
-
-Why it exists: every worktree has its own `target/`, so each one used to recompile ~8000 dependency units
-from scratch. Measured in a genuinely cold worktree with the cache warmed by a *different* worktree:
-**181 cache hits against 27 misses — 87%**. A shared `CARGO_TARGET_DIR` was rejected instead: it broke
-tauri builds before, and it puts every concurrent cargo behind one target-dir lock, which is exactly wrong
-with many agents building at once.
-
-**Iterate against the CRATE, not the binary.** Measured after touching one line in `crates/bsc-graph`:
-
-| command | warm | first run of that profile in a fresh worktree |
-|---|---|---|
-| `cargo check -p <crate>` | ~3s | 25s |
-| `cargo test -p <crate> --lib` | **7s** | 168s |
-| `cargo build -p bsc --bin bsc` | **9s** | 343s |
-
-So: `check -p` while writing, `test -p` to verify, and build `bsc` only when you need to *run* it. Every
-subcommand crate exposes `cli::run(args, prog)`, so the crate's own tests reach the whole surface without
-linking the unified binary. (Splitting `bsc` into smaller binaries does **not** help — the cost is
-compiling dependencies, not linking, and each split binary would still pull DuckDB and arrow.)
-
-**Which crates cost what — DuckDB is the dividing line.** Bundled DuckDB is ~1.8 GB of build output and
-one to two minutes of C++ per worktree, and cargo unifies features per *invocation*, so a scoped
-`-p` command pays it only if that crate's own dependency tree asks for it. `bsc-graph`, `bsc-ui`,
-`bsc-files`, `bsc-component` and `bsc-cad` do **not** — `bsc-graph` takes `bsc-data` with
-`default-features = false`, since the only thing it needs there (`bsc_data::entity`) is a JSON store that
-reaches no database. Keep it that way: re-adding the default feature to any of them quietly puts the whole
-DuckDB amalgamation back into their iteration loop. Measured on a cold worktree, `cargo check -p bsc-ui`:
-**2m28s before that change, 20.8s after.** The crates that genuinely pay are `bsc-data`, `bsc` and
-`base-studio-code`, plus any `--workspace` command — which is why the gate is slower than the loop.
+> The measured tables behind all of the above — nextest quiet-vs-busy, the per-crate timings, the
+> sccache hit rate: **`bsc memory read build-cost-measurements`**.
 
 Record what each gate ACTUALLY did, as it runs — evidence, not a claim:
 ```bash
@@ -1483,10 +1191,14 @@ That turned an unowned standing red into a line you can act on in seconds. **Whe
 failing the build is a MAINTAINER decision, not a branch's** — record the case on the item and leave the
 leg alone.
 
-#### Four sharp edges that are not obvious and cost real time
+#### Six sharp edges that are not obvious and cost real time
 
 - **Never `cargo fmt`.** There is no `rustfmt.toml`, no fmt gate leg, and lines run to 142 chars. It
   reformats hundreds of files you did not touch and buries your change.
+- **Never a bare `git stash`.** The stash is REPO-GLOBAL, shared across every worktree — a `pop` here
+  can take another session's entry. Commit to your branch instead.
+- **`/tmp` is a 16G tmpfs that runs full, and it is shared.** Use `TMPDIR=/var/tmp/bsc-run` for
+  anything big, and never keep the only copy of something there.
 - **Never hand-merge `develop` into `main`.** A `--no-ff` merge commit on `main` breaks EVERY future
   `npm run promote`, permanently — promote fast-forwards, and refuses once `main` has a commit
   `develop` does not. Use `npm run promote`; if it refuses, that refusal is the signal, not the obstacle.
@@ -1535,171 +1247,41 @@ destroys the work, which is why these are separate commands and never `&&`-chain
 queued, leave the worktree parked on `develop` (`git checkout -B parked-<short> develop`) rather than
 removing it — a parked worktree is a warm `target/` waiting for the next claim.
 
-**Recycle, don't recreate.** A worktree's `target/` is the expensive part, and
-`git worktree remove` throws it away so the next item rebuilds it from nothing. Point the existing
-worktree at the next ref instead. Measured on a quiet machine, `cargo build -p bsc --bin bsc`:
+**Recycle, don't recreate.** A worktree's `target/` is the expensive part and `git worktree remove`
+throws it away — point the existing worktree at the next ref instead (measured: **1m59s** cold vs
+**0.41s** recycled). **The one exception:** a branch that edits `Cargo.toml` profiles or
+`.cargo/config.toml` invalidates the *dependencies* too, so recycling across one is **worse than
+cold** — which is the reason to batch config/profile edits rather than land them one at a time. When
+that happens, or when no worktree is free, `git worktree remove --force wt-<short>` (real
+`node_modules` → safe; a junction is **not**) and create a new one.
 
-| | rebuild |
-|---|---|
-| fresh worktree, cold `target/` | **1m59s** |
-| recycled, new ref at the same commit | **0.41s** |
-| recycled, plus a real one-leaf-crate diff | **5.11s** |
-| recycled **across a root `Cargo.toml` profile change** | **2m21s** — *worse than cold* |
+**SIZING THE FLEET — memory is the binding constraint, not CPU or disk.**
 
-Git does not touch mtimes when the resulting tree is identical, so cargo genuinely sees nothing to do;
-the normal cost is the size of the diff, not the size of the tree. The last row is the exception worth
-remembering: a branch that edits `Cargo.toml` profiles or `.cargo/config.toml` invalidates the
-**dependencies** too and leaves the tree holding two opt-level variants, so recycling across one is
-slower than starting cold — and it is the reason to batch config/profile edits rather than land them
-one at a time. When that happens, or when no worktree is free, `git worktree remove --force wt-<short>`
-(real `node_modules` → safe; a junction is **not**) and create a new one.
+- **`.cargo/config.toml` sets `jobs = 4`.** Cargo's default is one job per LOGICAL processor — 16 here
+  on 8 physical cores — which is *no faster* than 4 and uses 2.2× the memory. Alone on a bigger box,
+  `--jobs 8` overrides it.
+- **A FULL gate is an 8 GB operation**, so **two** fit in what this machine has free, not ten.
+  `npm run gate -- --full` therefore takes a cross-worktree slot from `~/.base-studio-code/locks/`;
+  raise it with `BSC_GATE_SLOTS`. A waiting gate says so, and a dead holder's lock is stolen. This repo
+  already has an OOM history (#795).
+- **THE SLOT FOLLOWS THE COST, NOT THE TIER.** Gate memory is dominated by **VITEST**, not cargo. A
+  scoped gate is **not automatically a cheap one**: touching a record store sets `vitestUnscoped`, so
+  the whole suite runs while the plan still calls itself scoped — and since most of this frontend IS
+  records, that is the common path. `needsGateSlot` queues any plan that runs vitest unscoped.
 
-This is not a substitute for the build cache — it is what remains after the cache is exhausted. sccache
-already serves ~232 of the ~263 cacheable compilations in a cold build; the rest are `crate-type`
-(proc-macros, bins, `cdylib`/`staticlib`), workspace crates whose **source path is part of the cache
-key** so they can never hit across worktrees, and linking. `CARGO_INCREMENTAL=0` and seeding a copied
-`target/` were both measured and are both losses.
+Ten sessions EDITING Rust is fine. Ten sessions GATING at once is an out-of-memory failure, not a slow
+one. **Never run two gates in one worktree** — they fight over `target/`.
 
-**SIZING THE FLEET — memory is the binding constraint, not CPU or disk.** MEASURED on 8c/16t / 32 GB
-with ~16 GB actually free, `cargo nextest run --workspace --no-run` after touching `bsc-util` (36 of 40
-crates rebuild):
+**Disk: three levers, all EXPLICIT except the sweep.** `bsc disk gc` (the `target/` sweep) is wired
+into the gate and `build:plan` and is fail-safe — a janitor must never redden a gate. `bsc disk dedupe`
+hard-links identical dependency artifacts across trees; it is **currently UNDONE deliberately**,
+because the trade reverses with fleet size. `bsc worktree cap` is the **biggest** lever (~20 GB per
+parked tree) and is **DESTRUCTIVE**, so it is never wired into anything — it refuses a junction
+`node_modules` and refuses a **dirty tree** (`--force` is never passed, and that refusal is the
+feature: the first run correctly spared a parked tree holding 7 staged modifications).
 
-| cargo jobs | peak RAM | wall |
-|---|---|---|
-| 2 | 5.47 GB | 73s |
-| **4 (now the repo default)** | **8.04 / 8.13 GB** | **55 / 54s** |
-| 6 | 11.64 GB | 46s |
-| 8 | 13.58 GB | 46s |
-| 16 (cargo's default when unset) | 18.01 GB | 54s |
-
-Two things follow, and the second is the one that limits the fleet:
-
-- **`.cargo/config.toml` sets `jobs = 4`.** Cargo's default is one job per LOGICAL processor — 16 here,
-  on 8 physical cores — which is *no faster* than 4 and uses 2.2× the memory. Working alone on a
-  bigger box, `--jobs 8` on the command line overrides it and is ~15% quicker.
-- **A FULL gate is an 8 GB operation** because nextest links ~41 test binaries (9 concurrent `link.exe`
-  at the old default; one app link alone peaks at 2.99 GB). So **two** full gates fit in what this
-  machine has free, not ten. `npm run gate -- --full` therefore takes a cross-worktree slot from
-  `~/.base-studio-code/locks/`. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting
-  gate says so — a silent wait is indistinguishable from a hang — and a lock whose holder died or
-  wedged is stolen, so one crashed agent cannot block the fleet. This repo already has an OOM history
-  (#795).
-- **THE SLOT FOLLOWS THE COST, NOT THE TIER**, and that distinction was learned the hard way. The rule
-  used to be "`--full` queues, scoped does not, since it compiles one crate plus its dependents" — a
-  statement about CARGO, applied to a gate whose memory is dominated by VITEST. MEASURED on this box
-  over 60s of ordinary fleet work: an 18.19 GB peak of which **vitest was 11.45 GB** (8.59 GB across 28
-  workers, 2.86 GB across **six** concurrent runners) — more than the whole Rust toolchain, the app and
-  every agent session combined, and not one of those six held a slot.
-  A scoped gate is **not automatically a cheap one**: touching a record store sets `vitestUnscoped`
-  (`--changed` cannot see from a JSON blob to the modules `emit:records` materializes out of it), so the
-  whole 768-file suite runs while the plan still calls itself scoped. Since most of this frontend IS
-  records, that is the common path rather than a corner. `needsGateSlot` now queues any plan that runs
-  vitest unscoped, and `gate-scope.test.ts` pins it.
-
-Ten sessions EDITING Rust is fine. Ten sessions GATING at once is not, and without the lock it is an
-out-of-memory failure rather than a slow one.
-
-**De-duplicate identical dependency artifacts across trees.** 721 of 765 rlibs in one worktree's
-`deps/` share a filename with another's, and they are byte-identical — dependencies carry
-`debug = false` (#795) so no absolute paths are baked in, and a shared filename already implies
-shared inputs because `-C metadata` folds package + features + profile + target.
-
-```bash
-bsc disk dedupe --dry-run     # what would be linked
-bsc disk dedupe               # hard-link verified-identical artifacts
-bsc disk dedupe --undo        # BREAK the links again, one copy per tree
-```
-
-> **THE TRADE REVERSES WITH FLEET SIZE — currently UNDONE, deliberately.** At 3 active trees the shared
-> inodes were a dormant risk. At 10+ sessions a dependency bump has several trees rebuilding the same
-> registry crates at once, several processes writing one inode. It bought 13 GB against ~1,050 GB free,
-> so it is not worth that. `--undo` reduced cross-tree shared inodes from thousands to **5 (0.02 GB)**.
-> Re-run the dedup only when the box is quiet and space actually matters.
-
-EXPLICIT, like the pool cap — never wired into the gate. Measured on the real pool: **13.05 GB
-reclaimed** and it HOLDS (only 0.16 GB became re-eligible after the trees rebuilt).
-
-- **sha256 is verified before every link** — a filename is a hint, never a proof. That guard is not
-  theoretical: the first real run found **1902 files with identical name AND size but different
-  bytes** (`.d` dep-info files embed absolute source paths), every one of which a name+size
-  heuristic would have linked wrongly.
-- **Workspace crates are never linked** — cargo folds the absolute manifest path into their
-  `-C metadata`, so they differ per tree anyway, and they rebuild constantly.
-- **THE COST IS A ONE-TIME PARTIAL REBUILD.** A hard link shares metadata, so a linked artifact
-  adopts the canonical copy's mtime and non-canonical trees read it as stale. Setting the shared
-  inode to the group's NEWEST mtime cuts that sharply (measured 189 → 53 crates) but cannot remove
-  it: one inode cannot satisfy N trees' independent fingerprints. Expect ~40-50 crates to rebuild
-  once per tree, after which the trees are stable (0 recompiles on the next build).
-- `--min-age-mins` (default 60) keeps a live build in another tree from being raced.
-
-**Cap the parked pool — it is the biggest disk lever, and nothing else can reach it.** A parked
-worktree exists only to hold a warm `target/`, worth ~2 minutes (1m59s cold vs 0.41-5.11s recycled).
-Each one costs ~20 GB, and eight of them were holding ~160 GB. Nothing INSIDE a worktree is
-reclaimable — the deps sweep measures 0 orphaned units on every one, because they are too young to
-have any.
-
-```bash
-bsc worktree list                 # every tree, what it holds, whether it is collectable
-bsc worktree cap --dry-run        # what would go
-bsc worktree cap                  # keep the 2 most recently BUILT parked trees
-bsc worktree cap --keep 4
-```
-
-DESTRUCTIVE, so unlike the two janitors it is **never** wired into `build:plan` — you invoke it. It
-refuses rather than works around:
-
-- a **junction/symlink `node_modules`**, because `git worktree remove` follows it and wipes the
-  shared root install;
-- a **dirty tree** — `--force` is never passed, and that refusal is the feature. First real run kept
-  `wt-swap`, which turned out to hold 7 staged source modifications on a *parked* branch. `--force`
-  would have destroyed real work.
-
-Measured on the first run: **86 GB reclaimed**, 5 trees removed, 1 correctly refused.
-
-**`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
-artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
-version) mints a new one and orphans the old permanently. One entry point, `bsc disk gc`, runs the sweeps; it
-is called from **the gate** and from `build:plan`, and is fail-safe (it swallows every error and
-exits 0, because a janitor must never redden a gate or block a dev launch):
-
-```bash
-bsc disk gc --force         # force a sweep now — both directories, one report
-bsc disk prune              # target/*/incremental — keep newest 1 per crate, >6h
-bsc disk sweep              # target/*/deps        — keep newest 3 per crate, >6h
-                            #   add --dry-run, or --root <dir> to sweep ANOTHER worktree
-```
-
-**It hangs off the GATE for a reason.** The sweeps originally ran only from `build:plan`, which only
-`tauri dev` invokes — so the one tree ever collected was the tree where the app gets launched (the
-one that had accumulated two months of orphans), and **no worktree had ever been swept once**. They
-audited clean only because they were young. The gate is the single command every worktree agent runs.
-`bsc disk gc` stamps the tree in `target/`, so repeat gate runs during iteration cost ~0ms, not 1.5s.
-The stamp window is deliberately SHORTER than the age floor — when the floor came down to six hours a
-one-day window would have inverted the invariant, skipping the sweep for four times longer than a
-directory takes to become eligible. `gc.rs` pins that relationship in a test.
-
-> **That two-defaults trap is gone by construction** (`the-disk-and-worktree-surface-moves-into-a-rust-crate`).
-> It used to be real: `planPrune` carried its own defaults AND the runner always passed an explicit
-> value, so editing the pure module's default was dead code — an earlier pass did exactly that, and
-> the sweep kept running at 14 days while the docs claimed 3. Every `plan_*` function in `bsc-disk`
-> now takes its policy as a REQUIRED argument, and the defaults are named consts the CLI reads
-> (`sweep::DEFAULT_DAYS`, `pool::DEFAULT_KEEP`), so there is one place to change and no way to change
-> the wrong one.
-
-Set expectations from the measurements, not from the total:
-
-- **One warm tree is legitimately ~21 GB** (incremental 8.8G · deps 7.4G · build 2.9G · a 1.4G
-  static lib). The 245 GB across all trees is mostly *current* output, not garbage — the multiplier
-  is having eleven trees, and the sweep does **nothing** for a young worktree (measured: 0 units on
-  all ten). It bounds growth in a LONG-LIVED tree; the 2-month-old main tree gave up 5 GB.
-- **`.fingerprint/` is deliberately NOT swept.** It accumulates identically (6939 dirs, some from
-  June) but is **22 MB** against 24 GB in `deps/` — and sweeping 5408 of them made cargo treat those
-  units as never-built and recompile **328 crates in 2m24s**. All cost, no benefit.
-- **The degradation is real and accepted:** an rlib is not touched when merely *linked*, so a stable
-  live dependency keeps an old mtime and can be swept, costing one rebuild. Bounded, never
-  incorrect. Do not "fix" it by dropping the age floor to zero.
-- The incremental default was 14 days and pruned **0 of 697**; at 3 days it pruned 214 and reclaimed
-  5 GB. `--keep` never bound at any window tested — the age floor is the whole policy.
+> What each reclaimed, the sha256-before-linking guard, why `.fingerprint/` is never swept, and the
+> full jobs/RAM and recycle tables: **`bsc memory read build-cost-measurements`**.
 
 Gotchas:
 - **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke since.
@@ -1709,29 +1291,15 @@ Gotchas:
 - A branch whose ref carries a migrated GitHub number (`4260-…`) is still purely local. The number is
   provenance, not a link to act on — do not `gh` anything on it.
 
-### Dependency order for UI issues
+## Design Reference · Companion App
 
-```
-#2 scaffold
-  └─ #3 CSS + chrome
-       ├─ #4 pane system
-       └─ #5 store + router
-            ├─ #6 Console screen
-            ├─ #8 GitHub screen
-            ├─ #9 Automations screen
-            └─ #10 Settings screen
-```
+**The design lives in the app** — the **Design Studio** (`src/features/designs/`) authors pages,
+components and animations in-app, previewed live by the render-preview chain. The old `design/`
+prototype folder was **removed** (#3834); the `design/` dir inside a project *hub* is unrelated (it
+stages a user's dropped files).
 
-Issues #4 and #5 can be worked in parallel after #3 merges. Issues #6–#10 can be worked in parallel after #4 and #5 merge.
+**mobile-studio-code lives in a separate repository**, and the tunnel wire schema must stay in sync
+across both — a breaking protocol change needs coordinated changes in both repos.
 
-## Design Reference
-
-**The design lives in the app.** The **Design Studio** (`src/features/designs/`, v1.0.51) authors pages, components, and animations in-app against the packaged `base-studio-code` kit, previewed live by the render-preview chain — and #3783 closed the external Claude-Design round-trip in the planner (the UI stage generates a navigable shell in-app; the drop-files intake survives only as the opt-in `external` `uiMode`).
-
-The old `design/` folder — the browser-rendered Claude Design prototypes — was **removed** (#3834). Its trees had gone stale and partly broken, and the workflow they served is gone. Git history keeps them if a past screen ever needs consulting; a few `// Ported from design/bsc …` comments remain in `features/planner/relationship/*` as provenance.
-
-> Not to be confused with the **runtime** `design/` directory inside a project hub (`fileIntake.ts`'s `INTAKE_DIR`, `project/ui_skeleton.rs`) — that is where a user's dropped design files are staged, and it is unrelated to the deleted repo folder.
-
-## Companion App
-
-**mobile-studio-code** lives in a separate repository. The WebSocket message schema between the two apps must stay in sync. Breaking changes to the tunnel protocol require coordinated PRs in both repos.
+> `bsc memory read design-and-companion` — the Design Studio, the tunnel contract, and the original
+> UI-issue dependency order (#2–#10, historical).
