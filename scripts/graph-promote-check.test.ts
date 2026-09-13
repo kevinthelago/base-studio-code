@@ -350,7 +350,8 @@ describe("a clean verdict is only worth what it covered", () => {
 
 // observe the declaration order the CLI actually uses.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { resolveStorePath } from "./lib/recordStore.mjs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -653,7 +654,16 @@ function stubManyCheckout(): string {
       "  esac",
       "  exit 0; fi",
       `echo '${JSON.stringify({ checked: MANY, drifted: MANY_IDS, ok: false })}'`,
-      `echo "${BLOB}" 1>&2`,
+      // SINGLE-QUOTED, AND THAT IS LOAD-BEARING. `BLOB` ends with the real message's
+      // "Run `bsc graph promote` to bring it forward." — and BACKTICKS INSIDE A DOUBLE-QUOTED SHELL
+      // STRING ARE COMMAND SUBSTITUTION. Written as `echo "$BLOB"`, this stub executed a bare
+      // `bsc graph promote` on every run, with cwd = the worktree, which promoted every tracked record
+      // from the runtime ledger into the COMMITTED store: 127 records rewritten the first time,
+      // stamped `by: repo store`, five of them losing `pub use` re-exports so `bsc-util` stopped
+      // compiling — a test silently rewriting the thing the build compiles from.
+      // Filed as `a-test-silently-rewrites-committed-records-with-ledger-bodies`. Single quotes make
+      // the backticks literal, which is also what the fixture is supposed to be: TEXT, not a command.
+      `echo '${BLOB}' 1>&2`,
       "exit 1",
       "",
     ].join("\n"),
@@ -766,4 +776,34 @@ describe("graph-promote-check filters (CLI)", () => {
     expect(out).toContain("--auther");
     expect(out).not.toContain("node-39.ts");
   });
+
+  /**
+   * A TEST MUST NOT WRITE THE COMMITTED RECORD STORE — the thing the build compiles from.
+   *
+   * THIS GUARD EXISTS BECAUSE THIS FILE DID EXACTLY THAT, and nothing anywhere could see it. `BLOB`
+   * ends with the real failure message's "Run `bsc graph promote` to bring it forward.", and the stub
+   * wrote it into a `/bin/sh` script as `echo "$BLOB"` — where BACKTICKS ARE COMMAND SUBSTITUTION. So
+   * every run of the tests above executed a bare `bsc graph promote` (a real one: `bsc` is on PATH)
+   * with cwd = this worktree, promoting every tracked record from the per-user ledger into
+   * `graph/algorithms.db`. MEASURED: 127 records rewritten the first time and 262 on later runs,
+   * stamped `by: repo store`; five of them lost `pub use` re-exports, so `bsc-util` stopped compiling
+   * and the failure presented as "my Rust is broken" in a crate the branch never touched.
+   *
+   * It is the same backtick trap this repo already records for `bsc plan change note`, one layer down:
+   * there the shell eats the text, here it RUNS it.
+   *
+   * Size and mtime rather than a hash: the store is ~87 MB and this must stay cheap enough to keep.
+   * Both move on any write, and neither moves on a read.
+   */
+  it("spawning the CLI does not write this checkout's committed record store", () => {
+    const store = resolveStorePath(join(HERE, ".."));
+    if (!existsSync(store)) return; // a checkout that has not materialized a store has nothing to protect
+    const before = statSync(store);
+    runCliArgs(stubManyCheckout(), []);
+    const after = statSync(store);
+    expect(
+      { size: after.size, mtimeMs: after.mtimeMs },
+      "a spawned CLI wrote the committed store — check the stub for backticks inside double quotes",
+    ).toEqual({ size: before.size, mtimeMs: before.mtimeMs });
+  }, 30_000);
 });
