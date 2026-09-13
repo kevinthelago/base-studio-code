@@ -31,6 +31,7 @@ file per cluster, so historical `(#N)` references can still be resolved.
 | [layouts-audit.md](layouts-audit.md) | Every page against the template set (epic #2197) | Point-in-time; several audited files are records now, including `GraphCanvas.tsx` |
 | [ui-kit-coverage.md](ui-kit-coverage.md) | File-level comparison of the kit vs the frontend | Point-in-time, and structurally obsolete — it counts `.tsx` files, which is no longer what the frontend is made of |
 | [project-plan-2026-05.md](project-plan-2026-05.md) | The checked-in product-plan snapshot, from `.github/` | Superseded by [`../../ROADMAP.md`](../../ROADMAP.md) and the roadmap table in `CLAUDE.md`; last touched 2026-05-27 |
+| [debug-phone-to-ear-stream.md](debug-phone-to-ear-stream.md) | Debug session getting the phone's microphone into `bsc ear` — the two-seeds/two-keypairs blocker that was not in the brief, and nine method lessons about green results that were not evidence | Code landed as `one-pairing-assigns-every-room`; the stream itself was **not** run end-to-end at the time of writing. Outstanding: `the-phone-joins-a-feature-room-only-when-it-wants-that-feature` and `a-tauri-event-with-no-listener-is-a-void-and-nothing-catches-it` |
 
 Five of these arrived late: `HANDOFF-*`, `PROPOSAL-*` and `RUST-GRAPH-*` sat at the REPO ROOT until
 2026-08-24, which is exactly the confusion this directory exists to prevent — a reader at the root
