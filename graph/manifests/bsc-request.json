@@ -122,6 +122,24 @@
         ""
       ],
       "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# TEST-ONLY: `capture_output`, the thread-local stdout sink the shared print helpers consult.",
+            "# `list --brief` is asserted on what it actually PRINTS (#request-316), because the real risk in",
+            "# a narrower shape is the DEFAULT quietly becoming narrow — which no exit code can show."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
     }
   ],
   "src": "crates/bsc-request/Cargo.toml",
