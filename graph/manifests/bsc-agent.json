@@ -138,8 +138,10 @@
         {
           "cont": [],
           "key": "tokio",
-          "lead": [],
-          "value": "{ version = \"1\", features = [\"rt-multi-thread\", \"macros\", \"process\", \"io-util\", \"sync\", \"time\"] }"
+          "lead": [
+            "# `signal`: Ctrl+C cancels the running turn and closes the session (agent::interrupt)."
+          ],
+          "value": "{ version = \"1\", features = [\"rt-multi-thread\", \"macros\", \"process\", \"io-util\", \"sync\", \"time\", \"signal\"] }"
         }
       ],
       "lead": [
