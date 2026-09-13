@@ -170,6 +170,15 @@
             "# ways. Cheap: bsc-sandbox's only deps are bsc-util + bsc-cli-util + serde_json, all already here."
           ],
           "value": "{ path = \"../bsc-sandbox\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-config",
+          "lead": [
+            "# `bsc fleet protocol` reads the director protocol the way the app's launch does: the user's copy under the",
+            "# config root first, else the packaged seed bsc-config already embeds for CLI sessions."
+          ],
+          "value": "{ path = \"../bsc-config\" }"
         }
       ],
       "lead": [
