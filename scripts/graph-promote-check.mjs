@@ -69,6 +69,167 @@ export const PROMOTE_CHECK_DEFAULT_TIMEOUT_MS = 180_000;
  *  to git + `bsc`. This caps the noise; the wall-clock deadline is the hard stop on top of it. */
 export const PROMOTE_CHECK_DETAIL_CAP = 25;
 
+// ── THE FILTERS (request #317) ───────────────────────────────────────────────────────────────────
+//
+// THE FAILURE THEY EXIST FOR, measured 2026-09-12. This leg capped per-id DETAIL at 25 and then
+// printed the underlying verb's own failure message, which names EVERY drifted id in one
+// comma-separated blob — 434 of them, 9.4 KB on one line, beside a 25-entry detail section. A reader
+// reviewing a lane's merge read the 25, concluded none of that lane's records were drifted, and was
+// WRONG: six of its eleven were among the 409 the detail never reached. A complete list nobody can
+// read, next to a truncated list that looks complete, is worse than either alone.
+//
+// So the full set stops being the DEFAULT way the answer is conveyed, and the narrow questions get
+// verbs of their own. FILTERS, NOT PAGINATION (maintainer, explicit): there is no `--page`/`--offset`,
+// because a page is just a smaller blob that still makes the reader do the joining.
+//
+// Every one of these is OPT-IN. The gate leg invokes this file with NO arguments, the exit codes are
+// untouched (0 clean · 1 drift · 3 timeout · 4 coverage shortfall), and `gate.mjs` inherits stdio and
+// records pass/fail from the exit status rather than parsing a line of this — so none of it can move
+// what the gate concludes.
+export const PROMOTE_CHECK_FILTERS = ["--count", "--ids", "--json", "--mine", "--author", "--id"];
+
+/**
+ * The filter flags out of an argv tail. An UNRECOGNISED flag is collected, never ignored.
+ *
+ * Silently ignoring an unknown flag is how a reader ends up trusting an answer to a question they did
+ * not ask: `--auther claude` would otherwise print the whole unfiltered report and look like a filtered
+ * one. The CLI refuses on a non-empty `unknown`.
+ */
+export function parseFilters(argv = []) {
+  const out = { count: false, ids: false, json: false, mine: false, author: null, named: null, unknown: [] };
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    const value = () => {
+      const v = argv[i + 1];
+      if (v === undefined || v.startsWith("--")) return null;
+      i += 1;
+      return v;
+    };
+    switch (a) {
+      case "--count": out.count = true; break;
+      case "--ids": out.ids = true; break;
+      case "--json": out.json = true; break;
+      case "--mine": out.mine = true; break;
+      case "--author": {
+        const v = value();
+        if (v === null) out.unknown.push("--author (needs a value)");
+        else out.author = v;
+        break;
+      }
+      case "--id": {
+        const v = value();
+        if (v === null) out.unknown.push("--id (needs a value)");
+        else out.named = (out.named ?? []).concat(v.split(",").map((s) => s.trim()).filter(Boolean));
+        break;
+      }
+      default: out.unknown.push(a);
+    }
+  }
+  return out;
+}
+
+/**
+ * WHO `--mine` means, from the same source the writes are stamped with — or null.
+ *
+ * `bsc_record::resolve_writer` stamps `updatedBy` from `--by`, else `$BSC_UI_WRITER`, else the literal
+ * string `"unknown"`. So `$BSC_UI_WRITER` is the only identity a filter can honestly match on, and
+ * `"unknown"` is NOT an identity: 6,381 of the runtime ledger's rows carry it, and treating it as one
+ * would answer "yours" with almost the whole store.
+ *
+ * NULL IS THE REFUSAL, and the CLI exits non-zero on it rather than filtering to nothing. An
+ * unresolvable identity that reported an empty match would print "none of yours drifted" — which is
+ * the exact false clean this whole request exists to stop.
+ */
+export function resolveMine(env = {}) {
+  const who = String(env.BSC_UI_WRITER ?? "").trim();
+  return who === "" || who.toLowerCase() === "unknown" ? null : who;
+}
+
+/**
+ * The CLOSED question `--id` asks: are THESE ids drifted, saying nothing about any other.
+ *
+ * This is the shape the failure called for. The reader had eleven record ids in hand and wanted a yes
+ * or no about those eleven; what the leg offered was a 434-id blob to search by eye.
+ */
+export function verdictForIds(named, driftedIds) {
+  const set = new Set(driftedIds);
+  return { drifted: named.filter((id) => set.has(id)), clean: named.filter((id) => !set.has(id)) };
+}
+
+/**
+ * The drifted ids attributable to ONE author, plus the coverage that says what the filter could not see.
+ *
+ * `unattributed` is the load-bearing return value, not a detail. Most of this ledger's rows are stamped
+ * `unknown` (measured: 6,381 of 6,459), so a bare "0 matched" is indistinguishable from "0 of the ones
+ * that CAN be attributed" — and this repo's signature failure is a measurement reporting an absence
+ * that reads as a clean result. The caller prints it alongside every answer.
+ *
+ * `truncated` is the same rule applied to the wall-clock bound: `historyFor` shells out per id, so a
+ * long run stops at the leg deadline, and a stopped filter must say it is INCOMPLETE rather than
+ * report what it happened to reach.
+ */
+export function selectByAuthor(ids, historyFor, who, opts = {}) {
+  const { deadlineMs } = opts;
+  const want = String(who).trim().toLowerCase();
+  const matched = [];
+  let unattributed = 0;
+  let unreadable = 0;
+  let considered = 0;
+  for (const id of ids) {
+    if (deadlineMs && Date.now() > deadlineMs) break;
+    considered += 1;
+    const h = historyFor(id);
+    if (!h) { unreadable += 1; continue; }
+    const by = String(h.updatedBy ?? "").trim();
+    if (by === "" || by.toLowerCase() === "unknown") { unattributed += 1; continue; }
+    if (by.toLowerCase() === want) matched.push(id);
+  }
+  return { matched, unattributed, unreadable, considered, truncated: ids.length - considered };
+}
+
+/** What an author-filtered answer must say about its own blind spots, so an empty match is readable. */
+export function authorCoverage(sel, total, who) {
+  const lines = [
+    `  matched ${sel.matched.length} of the ${total} drifted id(s), attributed to ${who}.`,
+  ];
+  if (sel.unattributed > 0) {
+    lines.push(
+      `  ${sel.unattributed} of the ${sel.considered} examined carry NO author stamp (updatedBy is empty or`,
+      "  `unknown`), so this filter cannot see them either way. An empty match is not a clean bill.",
+    );
+  }
+  if (sel.unreadable > 0) lines.push(`  ${sel.unreadable} could not be read from the runtime store at all.`);
+  if (sel.truncated > 0) {
+    lines.push(
+      `  INCOMPLETE: stopped ${sel.truncated} id(s) short of the full set on the wall-clock bound.`,
+      "  This answer is a floor, not a verdict — re-run it with a larger BSC_PROMOTE_CHECK_TIMEOUT_MS.",
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The default drift headline — what REPLACED the 434-id blob.
+ *
+ * It states the count and then routes the reader to a narrower question instead of handing them the
+ * set. The set is still reachable (`--ids`, `--json`); it simply stops being the thing you get when
+ * you did not ask, because that is what made a truncated detail section read as a complete report.
+ */
+export function driftHeadline(total) {
+  return `${[
+    "",
+    `graph: the repo store is out of date — ${total} record(s) drifted.`,
+    `  The ids are NOT listed here. A ${total}-id blob beside a ${PROMOTE_CHECK_DETAIL_CAP}-entry detail section reads as a`,
+    "  complete report and is not: six of one lane's eleven records once sat in the part the detail",
+    "  never reached, and the reader concluded none of them had drifted. Ask a narrower question:",
+    "    --count                    how many, and nothing else",
+    "    --id <id>[,<id>…]          are THESE drifted? (exits 0 when none of the named ones are)",
+    "    --mine | --author <who>    the slice attributable to one author, with its blind spots named",
+    "    --ids                      every drifted id, one per line, when you do want them all",
+    "    --json                     the check's own machine-readable line, unchanged",
+  ].join("\n")}\n`;
+}
+
 export function promoteCheckTimeoutMs(env = {}) {
   const raw = env.BSC_PROMOTE_CHECK_TIMEOUT_MS;
   if (raw === undefined || raw === "") return PROMOTE_CHECK_DEFAULT_TIMEOUT_MS;
@@ -136,7 +297,7 @@ export function attribute(ids, historyFor, nowMs, opts = {}) {
     // deadline and say so — every drifted id is still named in the check's own JSON above, so truncating
     // this per-id detail loses no finding, only the noise of attributing 344 records nobody will read.
     if (done >= limit || (deadlineMs && Date.now() > deadlineMs)) {
-      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); every drifted id is named in the check output above.`);
+      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); the rest are NOT named anywhere in this report — ask \`--ids\`, \`--author <who>\` or \`--id <id>\`.`);
       break;
     }
     done += 1;
@@ -265,7 +426,7 @@ export function diagnose(ids, io, opts = {}) {
     // parses, which is the real 32-minute spin. Stop at a count cap or a deadline; the ids are all named
     // in the check's JSON above, so this truncates detail, not the finding.
     if (done >= limit || (deadlineMs && Date.now() > deadlineMs)) {
-      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); every drifted id is named in the check output above.`);
+      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); the rest are NOT named anywhere in this report — ask \`--ids\`, \`--author <who>\` or \`--id <id>\`.`);
       break;
     }
     done += 1;
@@ -564,9 +725,75 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
     process.exit(0);
   }
   // A genuine drift: non-zero exit carrying the JSON line the underlying verb emitted.
-  process.stdout.write(String(r.stdout ?? ""));
-  process.stderr.write(String(r.stderr ?? ""));
-  const ids = drifted(String(r.stdout ?? ""));
+  //
+  // THE CHILD'S OWN OUTPUT IS NO LONGER ECHOED BY DEFAULT (request #317). Both halves of it name every
+  // drifted id — a 51 KB JSON line on stdout and a 9.4 KB comma-separated sentence on stderr, measured
+  // on a 434-id run — and that blob beside a 25-entry detail section is what made a truncated report
+  // read as a complete one. Both are still reachable, by asking: `--json` for the machine line verbatim,
+  // `--ids` for the set. Nothing PARSES this leg's stdout (`gate.mjs` inherits stdio and records the
+  // exit status), so what changes here is what a human is handed, not what any script consumes.
+  const rawOut = String(r.stdout ?? "");
+  const ids = drifted(rawOut);
+  const filters = parseFilters(process.argv.slice(2));
+  if (filters.unknown.length > 0) {
+    process.stderr.write(
+      `graph-promote-check: unrecognised argument(s): ${filters.unknown.join(", ")}\n` +
+        `  known filters: ${PROMOTE_CHECK_FILTERS.join(" ")}\n` +
+        "  Refusing rather than ignoring them: an ignored filter prints the WHOLE report and looks\n" +
+        "  exactly like a filtered one, which is the misreading this surface exists to prevent.\n",
+    );
+    process.exit(2);
+  }
+  // The machine line, byte for byte as the verb emitted it — the unchanged contract, now on request.
+  if (filters.json) {
+    const line = rawOut.trim().split("\n").filter((l) => l.trim().startsWith("{")).pop() ?? "";
+    process.stdout.write(`${line}\n`);
+    process.exit(1);
+  }
+  if (filters.count) {
+    process.stdout.write(`graph: ${ids.length} drifted\n`);
+    process.exit(1);
+  }
+  if (filters.ids) {
+    for (const id of ids) process.stdout.write(`${id}\n`);
+    process.exit(1);
+  }
+  // The CLOSED question: are THESE drifted? It is the only filter that changes the exit code, because
+  // it is the only one asking about a named set rather than narrowing a report of the whole store.
+  if (filters.named) {
+    const v = verdictForIds(filters.named, ids);
+    process.stdout.write(
+      `${[
+        `graph: ${v.drifted.length} of the ${filters.named.length} id(s) named are drifted` +
+          ` (the store holds ${ids.length} drifted in total, not listed here).`,
+        ...v.drifted.map((id) => `  DRIFTED  ${id}`),
+        ...v.clean.map((id) => `  current  ${id}`),
+      ].join("\n")}\n`,
+    );
+    process.exit(v.drifted.length > 0 ? 1 : 0);
+  }
+  if (filters.mine || filters.author) {
+    const who = filters.author ?? resolveMine(process.env);
+    if (!who) {
+      process.stderr.write(
+        "graph-promote-check: `--mine` cannot resolve who you are, so it is REFUSING rather than\n" +
+          "  filtering to nothing. A write is stamped from `$BSC_UI_WRITER` (else the literal string\n" +
+          "  `unknown`), so that variable is the only identity this can honestly match — and `unknown`\n" +
+          "  is not one: most rows carry it. Set BSC_UI_WRITER, or name it: --author <who>.\n",
+      );
+      process.exit(2);
+    }
+    const sel = selectByAuthor(ids, (id) => history(usable.path, id), who, { deadlineMs: legDeadlineMs });
+    process.stdout.write(
+      `${[
+        `graph: the repo store is out of date — ${ids.length} record(s) drifted in total.`,
+        authorCoverage(sel, ids.length, who),
+        ...sel.matched.map((id) => `  ${id}`),
+      ].join("\n")}\n`,
+    );
+    process.exit(1);
+  }
+  process.stdout.write(driftHeadline(ids.length));
   const diagOpts = { limit: PROMOTE_CHECK_DETAIL_CAP, deadlineMs: legDeadlineMs };
   process.stdout.write(attribute(ids, (id) => history(usable.path, id), Date.now(), diagOpts));
   // Compute the committed-store commit list ONCE, not once per id. It was inside the per-id `blame`
