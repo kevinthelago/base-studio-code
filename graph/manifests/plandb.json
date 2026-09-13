@@ -147,6 +147,15 @@
             "# `bsc teams model` so the levels of the precedence chain cannot drift (`discovery-chooses-the-model`)."
           ],
           "value": "{ path = \"../llm\" }"
+        },
+        {
+          "cont": [],
+          "key": "skilldb",
+          "lead": [
+            "# `fleet skills` checks each planned skill id against the skills library before storing it, so a typo is",
+            "# refused rather than launching a fleet session with nothing (a-skill-reaches-only-the-profiles-it-names)."
+          ],
+          "value": "{ path = \"../skilldb\" }"
         }
       ],
       "lead": [

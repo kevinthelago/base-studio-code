@@ -101,6 +101,20 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   `--clear` on either drops back to the next one out. An unknown tier is refused, not stored -- an
   unrecognized model passes no `--model` at all, so a typo would read as the tier you named and bill
   as whatever the harness defaults to.
+  SKILLS ARE PART OF STAFFING, AND YOU PLAN THEM FOR THIS PROJECT. A fleet session receives ONLY the
+  library skills planned for it -- nothing global reaches it -- so an unplanned stream launches with none
+  (its persona's own skills and anything added on its pane still apply, and its launch notes say it is
+  unplanned). When you staff the fleet, pick what each session will actually use, for EVERY stream, for
+  the LEXICOGRAPHER (a stream like any other, whose nouns may need skills of their own), and for yourself:
+
+      bsc skill list                                   # the library: each skill and what it is for
+      bsc plan fleet skills <stream-id> <skill-id>...  # what ONE stream launches with (--clear to unset)
+      bsc plan fleet skills director <skill-id>...     # your own
+      bsc plan fleet skills <stream-id>                # read back what is planned
+
+  Every planned skill is written into that session's context on every launch, so each one costs tokens
+  for the whole run: plan the few a session will use, not every one that might apply. An unknown skill id
+  is refused, not stored.
 - READ THE PROJECT'S FAULTS WHEN A STREAM LOOKS STUCK -- do not wait to be told about one.
 
       bsc errors list --unresolved            # what is broken on this project right now
