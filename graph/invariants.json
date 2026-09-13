@@ -1,0 +1,66 @@
+{
+  "$comment": [
+    "The store invariants a MERGE REVIEW checks — read by `bsc graph invariants` (request #317).",
+    "These were four hand-written sqlite3 queries repeated after every one of nine merges. They are data",
+    "now so the next reviewer adds a ROW instead of retyping a query, and so the REASON travels with the",
+    "check. Adding one is cheap and is the intended way to use this file.",
+    "",
+    "Kinds: population (expect | min) · facet-count (record, facet, expect) · facet-contains (record,",
+    "facet, value) · code-contains (record, text, optional expect = exact occurrences).",
+    "An unknown kind is REFUSED, never skipped: a skipped row is a check you believe is running."
+  ],
+  "invariants": [
+    {
+      "id": "population-floor",
+      "kind": "population",
+      "min": 2987,
+      "note": "A FLOOR, not an exact count. The fear a merge review has is a merge that LOSES records; an ordinary addition must not redden a committed file. Ask the exact question per review with `--expect-population <n>`, where the reviewer knows the number. Floor set from develop 911e10894, measured with the SAME instrument the verb uses — the IMPLEMENTATION count. The first value here was 3064, taken from `select count(*) from records`, which counts both tiers: that store holds 2987 impl rows plus 80 edge rows, and the verb reads implementations, so the floor was 77 too high and the row failed on its first run. Measure a floor with the reader, never with a second query that happens to be nearby."
+    },
+    {
+      "id": "logs-tauri-command-count",
+      "kind": "facet-count",
+      "record": "src-tauri--observability--logs--mod.rs",
+      "facet": "tauriCommands",
+      "expect": 23,
+      "note": "The facet a take-theirs resolve reverted on 2026-09-12: develop's 22 came back over the branch's 23. It COMPILES CLEAN — graph-materialize hard-errors only when a facet names a MISSING function, never when a function has no facet — so the command would be defined and unregistered and every reader would degrade to the renderer fold behind a green gate. Bump this row deliberately when a command is genuinely added."
+    },
+    {
+      "id": "logs-coord-is-registered",
+      "kind": "facet-contains",
+      "record": "src-tauri--observability--logs--mod.rs",
+      "facet": "tauriCommands",
+      "value": "logs_coord",
+      "note": "The member the count is a proxy for. Both are kept: a revert that drops one command and adds another leaves the COUNT intact, and only the member check sees it."
+    },
+    {
+      "id": "divergence-surface-fleet-coord-fold",
+      "kind": "code-contains",
+      "record": "bsc-util--divergence--mod.rs",
+      "text": "fleet.coord-fold",
+      "note": "One of the two DIVERGENCE_SURFACES rows checked after every merge in the coordination fan-out. The rows live inside a const table, so the question is about the record's code rather than about a facet."
+    },
+    {
+      "id": "divergence-surface-sessions-studio-protected",
+      "kind": "code-contains",
+      "record": "bsc-util--divergence--mod.rs",
+      "text": "sessions.studio-protected",
+      "note": "The second declared divergence surface from the same fan-out."
+    },
+    {
+      "id": "secrets-crate-dep-launch-plan-sources",
+      "kind": "facet-contains",
+      "record": "bsc-session--launch-plan--sources.rs",
+      "facet": "crateDeps",
+      "value": "bsc_secret",
+      "note": "The second instance of the facet-revert, from the secrets lane: develop's copy carried the old crateDeps, so re-applying the body would have dropped this cross-crate edge. This one at least reddens graph-relationships — the tauriCommands one does not, which is why both are here."
+    },
+    {
+      "id": "secrets-crate-dep-session-cli",
+      "kind": "facet-contains",
+      "record": "bsc-session--cli.rs",
+      "facet": "crateDeps",
+      "value": "bsc_secret",
+      "note": "The other record the same lane added the bsc_secret dependency edge to."
+    }
+  ]
+}
