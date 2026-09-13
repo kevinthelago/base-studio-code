@@ -130,7 +130,11 @@ describe("graph-promote-check diagnostic bound", () => {
     const out = attribute(manyIds, () => { calls += 1; return h; }, NOW, { limit: 3 });
     expect(calls).toBe(3); // it did NOT shell out for the other 97
     expect(out).toContain("stopped after 3 of 100 (detail cap)");
-    expect(out).toContain("named in the check output above");
+    // The truncation line used to end "every drifted id is named in the check output above", pointing
+    // the reader at the 434-id blob. That sentence was the trap (request #317): it made a truncated
+    // report read as a complete one. It now says the rest are named NOWHERE, and routes to a filter.
+    expect(out).toContain("the rest are NOT named anywhere in this report");
+    expect(out).toContain("--ids");
   });
 
   it("attribute stops on a blown wall-clock deadline", () => {
@@ -526,4 +530,240 @@ describe("graph-promote-check wall-clock bound (CLI)", () => {
     },
     30_000,
   );
+});
+
+// ── THE FILTERS (request #317) ───────────────────────────────────────────────────────────────────
+//
+// The failure: this leg capped per-id DETAIL at 25 and then echoed the verb's own failure message,
+// which names EVERY drifted id in one comma-separated blob (measured: 434 ids, 9.4 KB on one line,
+// beside a 51 KB JSON line). A reader took the 25 attributed entries for the whole finding and
+// concluded a lane had nothing drifted; six of its eleven records were in the 409 that were named in
+// the blob and attributed nowhere.
+//
+// EVERY CLI TEST BELOW IS RED AGAINST THE OLD MODULE, and for the right reason rather than by
+// accident: the old code never read argv at all, so `--count` printed the full report, and the
+// default printed the blob these assert is gone.
+
+import {
+  authorCoverage,
+  driftHeadline,
+  parseFilters,
+  resolveMine,
+  selectByAuthor,
+  verdictForIds,
+  PROMOTE_CHECK_FILTERS,
+} from "./graph-promote-check.mjs";
+
+describe("graph-promote-check filters (pure)", () => {
+  it("reads each filter, and COLLECTS an unknown flag rather than ignoring it", () => {
+    expect(parseFilters(["--count"]).count).toBe(true);
+    expect(parseFilters(["--ids"]).ids).toBe(true);
+    expect(parseFilters(["--json"]).json).toBe(true);
+    expect(parseFilters(["--mine"]).mine).toBe(true);
+    expect(parseFilters(["--author", "claude"]).author).toBe("claude");
+    expect(parseFilters(["--id", "a.ts,b.ts"]).named).toEqual(["a.ts", "b.ts"]);
+    // The whole point of collecting it: an IGNORED filter prints the unfiltered report and reads
+    // exactly like a filtered one.
+    expect(parseFilters(["--auther", "claude"]).unknown).toContain("--auther");
+    expect(parseFilters(["--author"]).unknown).toEqual(["--author (needs a value)"]);
+    expect(parseFilters(["--id"]).unknown).toEqual(["--id (needs a value)"]);
+    expect(PROMOTE_CHECK_FILTERS).toContain("--mine");
+  });
+
+  /** `unknown` is what the store stamps when nobody said — it is not a person, and 6,381 rows carry it. */
+  it("refuses to treat an absent or `unknown` writer as an identity", () => {
+    expect(resolveMine({ BSC_UI_WRITER: "kevin lago" })).toBe("kevin lago");
+    expect(resolveMine({ BSC_UI_WRITER: "  " })).toBeNull();
+    expect(resolveMine({ BSC_UI_WRITER: "unknown" })).toBeNull();
+    expect(resolveMine({})).toBeNull();
+  });
+
+  it("answers the CLOSED question `--id` asks, about the named ids and nothing else", () => {
+    const v = verdictForIds(["a.ts", "b.ts"], ["b.ts", "zzz.ts"]);
+    expect(v.drifted).toEqual(["b.ts"]);
+    expect(v.clean).toEqual(["a.ts"]);
+  });
+
+  /**
+   * THE ANTI-FALSE-CLEAN RULE. Most rows are stamped `unknown`, so "0 matched" and "0 of the ones that
+   * can be attributed" are the same output unless the blind spot is reported with the answer.
+   */
+  it("counts what it could NOT attribute, so an empty match is not read as a clean bill", () => {
+    const hist = (id: string) =>
+      id === "mine.ts"
+        ? { rev: 2, updatedBy: "claude", updatedAt: "2026-08-30T09:00:00Z" }
+        : { rev: 0, updatedBy: "unknown", updatedAt: "" };
+    const sel = selectByAuthor(["mine.ts", "theirs.ts", "nobody.ts"], hist, "claude");
+    expect(sel.matched).toEqual(["mine.ts"]);
+    expect(sel.unattributed).toBe(2);
+    expect(authorCoverage(sel, 3, "claude")).toContain("carry NO author stamp");
+    expect(authorCoverage(sel, 3, "claude")).toContain("An empty match is not a clean bill");
+  });
+
+  it("says INCOMPLETE when the wall-clock bound stopped it short, rather than reporting a floor as a verdict", () => {
+    const sel = selectByAuthor(["a.ts", "b.ts"], () => ({ updatedBy: "claude" }), "claude", {
+      deadlineMs: Date.now() - 1,
+    });
+    expect(sel.truncated).toBe(2);
+    expect(authorCoverage(sel, 2, "claude")).toContain("INCOMPLETE");
+  });
+
+  it("its headline states the count and routes to a narrower question instead of listing the set", () => {
+    const h = driftHeadline(434);
+    expect(h).toContain("434 record(s) drifted");
+    expect(h).toContain("--count");
+    expect(h).toContain("--id <id>");
+    expect(h).toContain("--mine");
+  });
+});
+
+/** How many drifted ids the many-id stub reports — comfortably past `PROMOTE_CHECK_DETAIL_CAP` (25). */
+const MANY = 40;
+const MANY_IDS = Array.from({ length: MANY }, (_, i) => `node-${i}.ts`);
+/** The sentence the REAL `bsc` prints on stderr, with every id in it — the blob under test. */
+const BLOB = `bsc: the repo store is out of date — ${MANY} drifted (${MANY_IDS.join(", ")}). Run \`bsc graph promote\` to bring it forward.`;
+
+/**
+ * A checkout whose stub `bsc` reports MANY drifted ids, exactly as the real one does: the JSON line on
+ * stdout naming all of them, and the comma-separated blob on stderr. Three of them are attributed to
+ * `claude`; the rest carry the `unknown` stamp most of the real ledger carries.
+ */
+function stubManyCheckout(): string {
+  const root = mkdtempSync(join(tmpdir(), "promote-check-many-"));
+  CHECKOUTS.push(root);
+  mkdirSync(join(root, "scripts", "lib"), { recursive: true });
+  mkdirSync(join(root, "target", "debug"), { recursive: true });
+  mkdirSync(join(root, "graph"), { recursive: true });
+  stageModule(root);
+
+  const bsc = join(root, "target", "debug", "bsc");
+  writeFileSync(
+    bsc,
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "version" ]; then echo "bsc 0.0.0-many"; exit 0; fi',
+      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
+      '  echo \'{"id":"node-0.ts","code":"RUNTIME","tech":"rust"}\'; exit 0; fi',
+      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then',
+      '  case "$4" in',
+      // MINE: three ids carry a real writer tag...
+      '    node-0.ts|node-1.ts|node-2.ts) echo \'{"rev":2,"updatedBy":"claude","updatedAt":"2026-08-30T09:00:00Z"}\';;',
+      // ...and every other row is stamped `unknown`, as most of the real ledger is.
+      '    *) echo \'{"rev":0,"updatedBy":"unknown","updatedAt":""}\';;',
+      "  esac",
+      "  exit 0; fi",
+      `echo '${JSON.stringify({ checked: MANY, drifted: MANY_IDS, ok: false })}'`,
+      `echo "${BLOB}" 1>&2`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(bsc, 0o755);
+  writeFileSync(
+    join(root, "graph", "algorithms.json"),
+    JSON.stringify({ implementations: MANY_IDS.map((id) => ({ id, code: "REPO-IS-DIFFERENT", tech: "rust" })) }),
+  );
+  return root;
+}
+
+/** Run the staged module as a CLI with ARGUMENTS, capturing status and both streams separately. */
+function runCliArgs(root: string, args: string[], env: Record<string, string> = {}) {
+  const r = spawnSync(process.execPath, [join(root, "scripts", "graph-promote-check.mjs"), ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, BSC_UI_WRITER: "", ...env },
+  });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+describe("graph-promote-check filters (CLI)", () => {
+  /**
+   * THE REGRESSION, NAMED. The default report must no longer convey the full set — not on stdout as
+   * the 51 KB JSON line, and not on stderr as the blob. Against the old module both were echoed
+   * verbatim, so both halves of this are red there.
+   */
+  it("no longer hands the reader every drifted id by default", () => {
+    const { out, status } = runCliArgs(stubManyCheckout(), []);
+    expect(out).not.toContain(BLOB);
+    // An id PAST the 25-entry detail cap: named in the blob before, named nowhere now.
+    expect(out).not.toContain("node-39.ts");
+    // What it says instead: the count, and the way to ask a narrower question.
+    expect(out).toContain(`${MANY} record(s) drifted`);
+    expect(out).toContain("--count");
+    expect(out).toContain("--id <id>");
+    // The detail section survives untouched — this removes the blob, not the diagnosis.
+    expect(out).toContain("what drifted");
+    expect(out).toContain("node-0.ts");
+    // And the exit code the gate reads is unchanged.
+    expect(status).toBe(1);
+    // 30s like its siblings: the DEFAULT path still runs the full per-id diagnosis (25 attributions +
+    // 25 drift shapes, each shelling out to the stub and to git), which is exactly what it should do —
+    // this request removed the blob, not the diagnosis.
+  }, 30_000);
+
+  it("--count reports the number and names nothing", () => {
+    const { stdout, status } = runCliArgs(stubManyCheckout(), ["--count"]);
+    expect(stdout.trim()).toBe(`graph: ${MANY} drifted`);
+    expect(stdout).not.toContain("node-");
+    expect(status).toBe(1);
+  });
+
+  it("--ids is the explicit door to the whole set, one per line", () => {
+    const { stdout } = runCliArgs(stubManyCheckout(), ["--ids"]);
+    expect(stdout.trim().split("\n")).toEqual(MANY_IDS);
+  });
+
+  it("--json returns the check's own machine line, unchanged", () => {
+    const { stdout } = runCliArgs(stubManyCheckout(), ["--json"]);
+    expect(JSON.parse(stdout.trim())).toEqual({ checked: MANY, drifted: MANY_IDS, ok: false });
+  });
+
+  /** The question the failure needed answering: is THIS one drifted, without reading the other 433. */
+  it("--id answers about the named ids and stays silent about the rest", () => {
+    const { stdout, status } = runCliArgs(stubManyCheckout(), ["--id", "node-3.ts"]);
+    expect(stdout).toContain("DRIFTED  node-3.ts");
+    expect(stdout).not.toContain("node-4.ts");
+    expect(status).toBe(1);
+  });
+
+  it("--id exits 0 when none of the NAMED ids drifted, though the store is still dirty", () => {
+    const { stdout, status } = runCliArgs(stubManyCheckout(), ["--id", "not-in-the-set.ts"]);
+    expect(status).toBe(0);
+    expect(stdout).toContain("current  not-in-the-set.ts");
+    // It must still say the store is dirty, or a closed question reads as a clean store.
+    expect(stdout).toContain(`${MANY} drifted in total`);
+  });
+
+  /**
+   * THE REFUSAL THAT MATTERS MOST. An identity it cannot resolve must not filter to nothing: "none of
+   * yours drifted" is the false clean this entire request exists to stop.
+   */
+  it("--mine REFUSES when it cannot resolve who you are, instead of reporting an empty match", () => {
+    const { out, status, stdout } = runCliArgs(stubManyCheckout(), ["--mine"], { BSC_UI_WRITER: "" });
+    expect(status).toBe(2);
+    expect(out).toContain("cannot resolve who you are");
+    expect(out).toContain("REFUSING");
+    expect(stdout).not.toContain("matched 0");
+  });
+
+  it("--mine filters to the caller's own drifted records and names its blind spot", () => {
+    const { stdout, status } = runCliArgs(stubManyCheckout(), ["--mine"], { BSC_UI_WRITER: "claude" });
+    expect(stdout).toContain("matched 3 of the 40 drifted id(s)");
+    expect(stdout).toContain("node-0.ts");
+    expect(stdout).not.toContain("node-30.ts");
+    expect(stdout).toContain("carry NO author stamp");
+    expect(status).toBe(1);
+  });
+
+  it("--author <who> takes the identity explicitly", () => {
+    const { stdout } = runCliArgs(stubManyCheckout(), ["--author", "claude"]);
+    expect(stdout).toContain("matched 3 of the 40");
+  });
+
+  it("refuses an unrecognised flag rather than printing the whole report under a filtered heading", () => {
+    const { out, status } = runCliArgs(stubManyCheckout(), ["--auther", "claude"]);
+    expect(status).toBe(2);
+    expect(out).toContain("--auther");
+    expect(out).not.toContain("node-39.ts");
+  });
 });
