@@ -75,9 +75,14 @@
           "cont": [],
           "key": "rusqlite",
           "lead": [
-            "# `bundled` compiles SQLite from source (matches skilldb / plandb) for cross-platform reliability."
+            "# `bundled` compiles SQLite from source (matches skilldb / plandb) for cross-platform reliability.",
+            "# `hooks` is pure Rust (the feature is literally `hooks = []`, no extra C), and it is here for a TEST:",
+            "# `every_seed_is_one_transaction` installs a commit hook to COUNT commits, which is what pins the seed",
+            "# to a single transaction. Counting is the only way to state that invariant as something other than a",
+            "# timing assertion — the unbatched seed cost 0.19s alone and 139s under a loaded workspace run, so a",
+            "# wall-clock threshold would be measuring the machine rather than the code."
           ],
-          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+          "value": "{ version = \"0.40\", features = [\"bundled\", \"hooks\"] }"
         }
       ],
       "lead": [

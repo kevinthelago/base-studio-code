@@ -74,6 +74,22 @@ describe("gate scope", () => {
     expect(plan(["crates/bsc-ui/Cargo.toml"]).full).toBe(false);
   });
 
+  // MEMBERSHIP, not just behaviour. The loop above iterates FORCE_FULL, so it proves every listed
+  // path forces the full gate — but it cannot notice a path being REMOVED from the list, because the
+  // loop simply gets shorter and stays green. That is the same shape as every other silent
+  // under-covering in this repo, so the entries whose absence would be dangerous are named here.
+  it("keeps .config/nextest.toml in FORCE_FULL — it decides how every Rust test is RUN", () => {
+    expect(FORCE_FULL).toContain(".config/nextest.toml");
+    expect(plan([".config/nextest.toml"]).full).toBe(true);
+
+    // Why this one specifically. The file carries
+    // `slow-timeout = { period = "60s", terminate-after = 2 }`, so it does not merely configure
+    // reporting — it can turn a test that runs long into a test that is KILLED. MEASURED 2026-09-12:
+    // the six `atlasdb` tests took 139s each inside a full `--workspace` run and PASSED; under that
+    // cap they would have been terminated instead. A change here can therefore redden crates the
+    // diff never touched, which is exactly what the scoped gate cannot see.
+  });
+
   it("always runs tsc when frontend files change, and never tries to scope it", () => {
     // `tsc --noEmit` is whole-program — "just the changed files" is not something it can do, and at
     // 18.7s measured it is cheap enough to always pay.
