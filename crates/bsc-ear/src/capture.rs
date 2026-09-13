@@ -10,7 +10,9 @@ use crate::segment::{Segmenter, VadConfig, VadEvent};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Silences file descriptor 2 for as long as it is alive, and restores it on drop.
@@ -133,6 +135,13 @@ pub struct SampleSource {
     pub hz: u32,
     /// What to call this in the log and in `ear.state`.
     pub name: String,
+    /// The capture error path's memory, shared with whatever produces the samples.
+    ///
+    /// It lives on the SOURCE because only the source knows whether its errors can repeat: a
+    /// microphone has an error callback cpal may call forever, while a channel-fed source simply
+    /// ends and is caught by the `Disconnected` arm. The loop reads this to decide when an input has
+    /// stopped being an input at all.
+    pub errors: Arc<CaptureErrors>,
     /// Held for exactly as long as the source is read, and NEVER inspected.
     ///
     /// A `cpal::Stream` stops delivering the moment it is dropped — the old code kept it in a local
@@ -152,7 +161,14 @@ impl SampleSource {
         hz: u32,
         name: impl Into<String>,
     ) -> SampleSource {
-        SampleSource { rx, channels, hz, name: name.into(), _alive: Box::new(()) }
+        SampleSource {
+            rx,
+            channels,
+            hz,
+            name: name.into(),
+            errors: Arc::new(CaptureErrors::new()),
+            _alive: Box::new(()),
+        }
     }
 }
 
@@ -165,6 +181,130 @@ pub struct Progress {
 
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+}
+
+/// How long a capture device may keep erroring, with no sample arriving, before the ear treats the
+/// input as gone and stops rather than spinning.
+///
+/// TIME, NOT A COUNT, and the measurement is why. A dead ALSA input errors roughly 240,000 times a
+/// second — at 26.67 MB/s over ~110-byte lines — so any consecutive-error ceiling low enough to stop
+/// a runaway trips in milliseconds, and a momentary glitch would kill a healthy always-on ear. "No
+/// audio has arrived for half a minute" is the condition a human would actually use.
+pub const DEAD_INPUT_AFTER_MS: i64 = 30_000;
+
+/// How often a suppressed, repeating capture error restates itself with a count.
+pub const ERROR_SUMMARY_EVERY_MS: i64 = 60_000;
+
+/// What the capture error path should write, if anything.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ErrorReport {
+    /// The first error of this run — say it in full.
+    First,
+    /// A repeat, and the summary window has closed: say how many were swallowed, so a suppressed
+    /// flood is still VISIBLE as a flood rather than looking like one stray error.
+    Summary { suppressed: u64, window_ms: i64 },
+    /// A repeat inside the window. Write nothing.
+    Silent,
+}
+
+/// The capture error path's memory, shared between the audio thread and the capture loop.
+///
+/// **MEASURED 2026-09-12, which is the only reason this type exists.** A USB input died under
+/// `bsc ear listen` and the bare `eprintln!` it replaced wrote `~/.base-studio-code/ear/ear.log` to
+/// **161 GB at 26.67 MB/s — 93.8 GB/hour**, with 5000 of the last 5000 lines byte-identical
+/// (`alsa::poll()` returned POLLERR). A 1 TB root disk was about 80 minutes from full.
+///
+/// **ATOMICS, NOT A MUTEX**, and that is correctness rather than micro-optimisation. cpal invokes the
+/// error callback on the AUDIO thread, where the comment on the data callback already warns that
+/// blocking drops samples with no error anywhere. A mutex contended with the capture loop's periodic
+/// read is exactly that block, so every field the hot path touches is an atomic.
+///
+/// **Rotation cannot solve this and coalescing can.** `bsc ear start` opens the log with `append(true)`
+/// and hands the same descriptor to the child as BOTH stdout and stderr, so renaming or truncating it
+/// mid-run leaves the writer appending at its old offset and the size reappears as a sparse file. The
+/// only thing that bounds the bytes is not writing them.
+#[derive(Debug, Default)]
+pub struct CaptureErrors {
+    total: AtomicU64,
+    /// Errors swallowed since the last line was written.
+    suppressed: AtomicU64,
+    /// When a line was last actually written, so the rate limit is a comparison rather than a timer.
+    last_report_ms: AtomicI64,
+    /// When a sample last arrived. The dead-input test asks about BOTH this and the error count —
+    /// errors alone are normal, and silence alone is just a quiet room.
+    last_ok_ms: AtomicI64,
+}
+
+impl CaptureErrors {
+    pub fn new() -> Self {
+        CaptureErrors::default()
+    }
+
+    /// Samples are flowing. Also called once before the loop starts, so the dead-input clock counts
+    /// from the run rather than from the epoch.
+    pub fn record_ok(&self, now_ms: i64) {
+        self.last_ok_ms.store(now_ms, Ordering::Relaxed);
+    }
+
+    /// Note one capture error and decide what should be written.
+    ///
+    /// `now_ms` is a PARAMETER, never a clock read, for the same reason [`speaking_until`] takes one:
+    /// every branch here is about elapsed time, and a function that reaches for the wall clock cannot
+    /// be tested against the moment it is judging.
+    pub fn observe(&self, now_ms: i64) -> ErrorReport {
+        let before = self.total.fetch_add(1, Ordering::Relaxed);
+        if before == 0 {
+            self.last_report_ms.store(now_ms, Ordering::Relaxed);
+            return ErrorReport::First;
+        }
+        let swallowed = self.suppressed.fetch_add(1, Ordering::Relaxed) + 1;
+        let last = self.last_report_ms.load(Ordering::Relaxed);
+        if now_ms.saturating_sub(last) < ERROR_SUMMARY_EVERY_MS {
+            return ErrorReport::Silent;
+        }
+        // CLAIM the window with a compare-exchange rather than a store. cpal drives this from one
+        // thread today, so the race is theoretical — but two writers both passing the check above and
+        // both printing a summary is the one way this could reintroduce a duplicate-line flood.
+        if self
+            .last_report_ms
+            .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return ErrorReport::Silent;
+        }
+        self.suppressed.store(0, Ordering::Relaxed);
+        ErrorReport::Summary { suppressed: swallowed, window_ms: now_ms.saturating_sub(last) }
+    }
+
+    /// How many errors this run has seen, suppressed or not.
+    pub fn total(&self) -> u64 {
+        self.total.load(Ordering::Relaxed)
+    }
+
+    /// Is this input erroring AND delivering nothing?
+    ///
+    /// Both halves are load-bearing. An input that errors occasionally while still delivering audio is
+    /// working; one that is silent without erroring is a quiet room, which [`Segmenter::input_looks_dead`]
+    /// already reports. Only the conjunction means the device has stopped being a device.
+    pub fn looks_dead(&self, now_ms: i64) -> bool {
+        self.total() > 0
+            && now_ms.saturating_sub(self.last_ok_ms.load(Ordering::Relaxed)) >= DEAD_INPUT_AFTER_MS
+    }
+}
+
+/// The line to write for one report, or `None` for silence.
+///
+/// PURE and separate from the callback so the WORDING is pinned by a test. A log line that only ever
+/// gets read during an incident is exactly the kind of string that rots unnoticed.
+pub fn capture_error_line(report: &ErrorReport, msg: &str) -> Option<String> {
+    match report {
+        ErrorReport::First => Some(format!("bsc ear: capture stream error: {msg}")),
+        ErrorReport::Summary { suppressed, window_ms } => Some(format!(
+            "bsc ear: capture stream error repeated {suppressed} more time(s) in the last {}s: {msg}",
+            window_ms / 1000
+        )),
+        ErrorReport::Silent => None,
+    }
 }
 
 /// Recover a segment's start time from its name: `seg-<unix_ms>-<seq>.wav`.
@@ -608,7 +748,26 @@ fn open_device(cfg: &CaptureConfig) -> Result<SampleSource, String> {
     let stream_cfg: cpal::StreamConfig = supported.into();
 
     let (tx, rx) = mpsc::channel::<Vec<f32>>();
-    let err_fn = |e| eprintln!("bsc ear: capture stream error: {e}");
+    // COALESCED. cpal calls this once per failed poll, on the audio thread — measured at ~240,000
+    // calls a second for a dead ALSA input, which is how the bare `eprintln!` this replaced wrote
+    // 161 GB in a few hours.
+    let errors = Arc::new(CaptureErrors::new());
+    let cb_errors = Arc::clone(&errors);
+    let err_fn = move |e: cpal::StreamError| {
+        let report = cb_errors.observe(now_ms());
+        // The message is formatted ONLY when a line will be written. Allocating a String per error is
+        // most of the cost this type exists to remove, and it would happen on the audio thread.
+        let write = match &report {
+            ErrorReport::First => true,
+            ErrorReport::Summary { .. } => true,
+            ErrorReport::Silent => false,
+        };
+        if write {
+            if let Some(line) = capture_error_line(&report, &e.to_string()) {
+                eprintln!("{line}");
+            }
+        }
+    };
     // The callback must not block or allocate much: it runs on the audio thread, and stalling it
     // drops samples with no error anywhere. It converts to f32 and hands off, nothing more.
     let stream = match fmt {
@@ -637,7 +796,7 @@ fn open_device(cfg: &CaptureConfig) -> Result<SampleSource, String> {
     }
     .map_err(|e| format!("could not open '{name}': {e}"))?;
     stream.play().map_err(|e| format!("could not start '{name}': {e}"))?;
-    Ok(SampleSource { rx, channels, hz: in_hz, name, _alive: Box::new(stream) })
+    Ok(SampleSource { rx, channels, hz: in_hz, name, errors, _alive: Box::new(stream) })
 }
 
 /// Run the capture loop against ANY source.
@@ -655,6 +814,10 @@ pub fn run_with_source(
     let name = src.name.clone();
     let channels = src.channels;
     let in_hz = src.hz;
+    let errors = Arc::clone(&src.errors);
+    // "Nothing was wrong when we started." Without this the dead-input clock counts from the epoch,
+    // so a device that errors on its first poll is condemned instantly instead of given its grace.
+    errors.record_ok(now_ms());
     on_event(format!("listening on '{name}' ({channels}ch @ {in_hz}Hz → mono @ {TARGET_HZ}Hz)"));
 
     let mut rec =
@@ -672,6 +835,7 @@ pub fn run_with_source(
     while !stop() {
         match src.rx.recv_timeout(Duration::from_millis(200)) {
             Ok(chunk) => {
+                errors.record_ok(now_ms());
                 let mono = audio::to_mono(&chunk, channels);
                 pending.extend(audio::resample_linear(&mono, in_hz, TARGET_HZ));
             }
@@ -679,6 +843,18 @@ pub fn run_with_source(
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return Err("the capture stream ended unexpectedly".into())
             }
+        }
+        // A POLLERR does NOT disconnect the channel, so the arm above never fires for a device that
+        // has died with its stream still open — which is precisely how one listener span for four
+        // hours while `bsc ear status` still reported LISTENING. Stopping ends the heartbeat, which
+        // is what makes the death visible to `status` at all.
+        if errors.looks_dead(now_ms()) {
+            return Err(format!(
+                "'{name}' has errored {} time(s) and delivered no samples for {}s — treating the input \
+                 as gone rather than spinning on it. `bsc ear levels` shows which device actually hears.",
+                errors.total(),
+                DEAD_INPUT_AFTER_MS / 1000
+            ));
         }
         // HALF DUPLEX. While the app is speaking, its own voice is arriving at the microphone —
         // measured before this existed, one announcement produced five segments, two of them
@@ -1131,5 +1307,115 @@ mod suppression_tests {
         let p = bsc_util::speaking_flag_path().expect("a home dir");
         assert!(p.ends_with("say-speaking"), "{p:?}");
         assert!(p.to_string_lossy().contains(".base-studio-code"), "{p:?}");
+    }
+}
+
+/// The capture ERROR path, which needs no microphone and no filesystem — every decision is a function
+/// of (error count, elapsed time), both injected.
+#[cfg(test)]
+mod capture_error_tests {
+    use super::*;
+
+    const T0: i64 = 1_800_000_000_000;
+
+    /// THE 94 GB/HOUR GUARD. One line for the first error and then silence — not one line per call.
+    #[test]
+    fn a_repeating_error_is_logged_once_and_then_coalesced() {
+        let e = CaptureErrors::new();
+        assert_eq!(e.observe(T0), ErrorReport::First, "the first is always said in full");
+        for i in 1..10_000 {
+            assert_eq!(
+                e.observe(T0 + i % 1_000),
+                ErrorReport::Silent,
+                "call {i} landed inside the window and must write nothing"
+            );
+        }
+        assert_eq!(e.total(), 10_000, "every error is still COUNTED — suppressed is not ignored");
+    }
+
+    /// Suppression must not become silence forever: when the window closes it says how many it ate,
+    /// so a flood stays visible AS a flood instead of looking like one stray error.
+    #[test]
+    fn a_suppressed_flood_restates_itself_with_a_count() {
+        let e = CaptureErrors::new();
+        assert_eq!(e.observe(T0), ErrorReport::First);
+        for _ in 0..500 {
+            let _ = e.observe(T0 + 1);
+        }
+        match e.observe(T0 + ERROR_SUMMARY_EVERY_MS) {
+            ErrorReport::Summary { suppressed, window_ms } => {
+                assert_eq!(suppressed, 501, "every swallowed error is accounted for");
+                assert_eq!(window_ms, ERROR_SUMMARY_EVERY_MS, "and the window it covers");
+            }
+            // Enumerated, not a wildcard: this crate denies `wildcard_enum_match_arm`, and it denies it
+            // in tests too — `--all-targets` lints the lib-test target.
+            other @ ErrorReport::First | other @ ErrorReport::Silent => {
+                panic!("the window closed, so it must summarise: {other:?}")
+            }
+        }
+        // The counter RESETS, so the next window reports its own flood rather than the running total.
+        let _ = e.observe(T0 + ERROR_SUMMARY_EVERY_MS + 1);
+        match e.observe(T0 + 2 * ERROR_SUMMARY_EVERY_MS) {
+            ErrorReport::Summary { suppressed, .. } => {
+                assert_eq!(suppressed, 2, "the second window counts only its own");
+            }
+            other @ ErrorReport::First | other @ ErrorReport::Silent => {
+                panic!("expected a second summary: {other:?}")
+            }
+        }
+    }
+
+    /// A silent report must format NOTHING. The allocation per error is most of what this avoids, and
+    /// it would happen on the audio thread.
+    #[test]
+    fn a_silent_report_produces_no_line_and_the_others_name_the_cause() {
+        assert_eq!(capture_error_line(&ErrorReport::Silent, "POLLERR"), None);
+
+        let first = capture_error_line(&ErrorReport::First, "POLLERR").expect("the first is written");
+        assert!(first.contains("POLLERR"), "the cause must survive into the log: {first}");
+
+        let sum =
+            capture_error_line(&ErrorReport::Summary { suppressed: 240_000, window_ms: 60_000 }, "POLLERR")
+                .expect("a summary is written");
+        assert!(sum.contains("240000"), "the COUNT is the whole point of a summary: {sum}");
+        assert!(sum.contains("60s"), "as is the window: {sum}");
+    }
+
+    /// Errors AND no audio. This is the conjunction that span for four hours while `status` still
+    /// reported LISTENING.
+    #[test]
+    fn an_input_that_errors_and_delivers_nothing_is_declared_dead() {
+        let e = CaptureErrors::new();
+        e.record_ok(T0);
+        let _ = e.observe(T0);
+        assert!(!e.looks_dead(T0 + DEAD_INPUT_AFTER_MS - 1), "inside the grace it is not yet dead");
+        assert!(e.looks_dead(T0 + DEAD_INPUT_AFTER_MS), "past it, the input is gone");
+    }
+
+    /// A device that hiccups and recovers must NOT be killed. This is exactly why the test is elapsed
+    /// TIME rather than a consecutive-error count: a dead ALSA input errors ~240,000 times a second,
+    /// so any count low enough to catch it would also catch a momentary glitch.
+    #[test]
+    fn a_device_that_recovers_is_never_declared_dead() {
+        let e = CaptureErrors::new();
+        e.record_ok(T0);
+        for i in 0..100 {
+            let _ = e.observe(T0 + i * 10);
+            e.record_ok(T0 + i * 10);
+        }
+        assert!(!e.looks_dead(T0 + 1_000), "samples keep arriving, so the device is working");
+        assert_eq!(e.total(), 100, "even though it errored a hundred times");
+    }
+
+    /// Silence with NO errors is a quiet room — `Segmenter::input_looks_dead` reports that separately.
+    /// Condemning it here would stop an ear working perfectly in an empty house.
+    #[test]
+    fn a_quiet_room_is_not_a_dead_device() {
+        let e = CaptureErrors::new();
+        e.record_ok(T0);
+        assert!(
+            !e.looks_dead(T0 + 10 * DEAD_INPUT_AFTER_MS),
+            "no error has ever occurred, so this input is not dead however long it stays quiet"
+        );
     }
 }
