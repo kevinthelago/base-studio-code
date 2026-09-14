@@ -20,6 +20,7 @@
   "bsc-session--lib.rs": 9,
   "bsc-session--policy.rs": 8,
   "bsc-session--secrets.rs": 9,
+  "bsc-tunnel--relay.rs": 12,
   "checkpoint.ts": 3,
   "color-hue.ts": 4,
   "commons-gate.ts": 7,

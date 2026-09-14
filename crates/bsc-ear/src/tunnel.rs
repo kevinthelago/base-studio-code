@@ -177,6 +177,51 @@ impl Identity {
             psk: self.psk(),
         })
     }
+
+    /// The seed-carrying QR line: `B2*<HOST>*<PK>*<SEED>`, plus `*<LAN>` when `lan_host` is given.
+    ///
+    /// The same line the desktop app's settings card encodes, so pairing from `bsc ear pair` reaches
+    /// the console's room too, and the phone dials the LAN part before the relay. `Ok(None)` when the
+    /// identity predates seeds or the relay URL carries a path — the B1 line is the answer then. An
+    /// unrepresentable `lan_host` is DROPPED rather than refusing the line: without it the phone
+    /// still pairs, it just always takes the relay.
+    ///
+    /// CONTAINS THE SEED, the widest secret there is — print it only where `bsc ear pair` already
+    /// prints the psk.
+    ///
+    /// # Errors
+    /// If no relay URL is available, exactly as [`Identity::pairing`].
+    pub fn compact_v2(&self, relay_override: Option<&str>, lan_host: Option<&str>) -> Result<Option<String>, String> {
+        use base64::Engine;
+        let payload = self.pairing(relay_override)?;
+        let (Some(host), Some(seed)) = (compact_host(&payload.relay_url), self.seed_bytes()) else {
+            return Ok(None);
+        };
+        let pk = match base64::engine::general_purpose::STANDARD.decode(&payload.host_pub_key) {
+            Ok(pk) if pk.len() == 32 => pk,
+            _ => return Ok(None),
+        };
+        let mut line = format!("B2*{host}*{}*{}", b32_encode(&pk), b32_encode(&seed));
+        if let Some(lan) = lan_host.and_then(compact_lan) {
+            line.push('*');
+            line.push_str(&lan);
+        }
+        Ok(Some(line))
+    }
+}
+
+/// A LAN host reduced to the compact form's fifth part, or `None` when it cannot ride in one.
+///
+/// Uppercase letters, digits, dots and hyphens only: every one is inside QR's alphanumeric set, and
+/// `*` — the separator — is not among them, so a hostile hostname cannot smuggle in a sixth field.
+/// An IPv6 literal's colons ARE alphanumeric-safe but read as a port to the phone's URL builder, so
+/// IPv6 is refused rather than half-supported.
+fn compact_lan(lan_host: &str) -> Option<String> {
+    let up = lan_host.trim().to_ascii_uppercase();
+    let valid = !up.is_empty()
+        && up.len() <= 253
+        && up.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+    valid.then_some(up)
 }
 
 /// What the phone reads from the QR (or from pasted text). Field-for-field the mobile client's
@@ -656,6 +701,48 @@ mod tests {
         );
         // And the seed beats the stored legacy values rather than the other way round.
         assert_ne!(id.room(), FIXTURE_ROOM, "a present seed is authoritative over the stored room");
+    }
+
+    /// `pairingV2.compact` and `pairingV2.compactLan`, copied in lockstep with the shared fixture as
+    /// the B1 vectors above are. The phone parses these exact strings, so `bsc ear pair` must print
+    /// them byte for byte or a scan from the terminal pairs to nothing.
+    const FIXTURE_COMPACT_V2: &str = "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ";
+    const FIXTURE_COMPACT_LAN: &str = "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*192.168.1.20";
+
+    #[test]
+    fn the_b2_line_is_the_fixture_with_and_without_the_lan_part() {
+        let seed_hex = hex_encode(&(0u8..=31).collect::<Vec<u8>>());
+        let id: Identity = serde_json::from_str(&identity_json_with_seed(&seed_hex)).unwrap();
+
+        assert_eq!(id.compact_v2(Some(FIXTURE_RELAY), None).unwrap().as_deref(), Some(FIXTURE_COMPACT_V2));
+        assert_eq!(
+            id.compact_v2(Some(FIXTURE_RELAY), Some("192.168.1.20")).unwrap().as_deref(),
+            Some(FIXTURE_COMPACT_LAN),
+            "pairingV2.compactLan"
+        );
+    }
+
+    /// The fifth part is a FIELD in a `*`-separated line, so anything that could add a sixth — or
+    /// fall outside QR alphanumeric mode — is dropped, and the line still pairs over the relay.
+    #[test]
+    fn an_unrepresentable_lan_host_is_dropped_not_smuggled_in() {
+        let seed_hex = hex_encode(&(0u8..=31).collect::<Vec<u8>>());
+        let id: Identity = serde_json::from_str(&identity_json_with_seed(&seed_hex)).unwrap();
+        for bad in ["", "192.168.1.20*EVIL", "fe80::1", "host name", "ho_st"] {
+            assert_eq!(
+                id.compact_v2(Some(FIXTURE_RELAY), Some(bad)).unwrap().as_deref(),
+                Some(FIXTURE_COMPACT_V2),
+                "{bad:?} must not ride in the QR"
+            );
+        }
+        assert_eq!(compact_lan("my-desktop.local").as_deref(), Some("MY-DESKTOP.LOCAL"));
+    }
+
+    /// An identity minted before seeds reaches one room; it has no B2 line to print.
+    #[test]
+    fn a_seedless_identity_has_no_b2_line() {
+        let id: Identity = serde_json::from_str(LEGACY_IDENTITY_JSON).unwrap();
+        assert_eq!(id.compact_v2(None, Some("192.168.1.20")).unwrap(), None);
     }
 
     // THE STORED room/psk MIRROR IS GONE, and it was removed on purpose — do not re-add it.

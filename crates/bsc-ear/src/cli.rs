@@ -2179,6 +2179,18 @@ fn cmd_pair(a: &Args) -> Result<(), String> {
         "\nThis identity is DURABLE — generated once and kept in the OS keychain — so a phone paired\n\
          with it stays paired across a reboot and across `bsc ear stop` / `start`."
     );
+    // B2 FIRST: the seed-carrying line reaches every feature's room from one scan, and it carries this
+    // machine's LAN address so a phone on the same network dials the ear directly on
+    // `LAN_PORT_EAR` and falls back to the relay only when it is elsewhere. Built from the identity
+    // again rather than from `payload`, because the payload carries a derived room and psk, not the
+    // seed the phone needs.
+    if let Some(line) = tunnel::load_or_create(&Keyring)?
+        .compact_v2(relay.as_deref(), bsc_tunnel::relay::local_lan_host().as_deref())?
+    {
+        println!("\nScan it, or paste this line (B2 — every room, LAN first, relay as the fallback):");
+        println!("{line}");
+        println!("\nAn older phone that cannot read B2 can use the B1 line below.");
+    }
     // The COMPACT form is what a QR should carry: uppercase base32 of the RAW BYTES, which fits QR
     // ALPHANUMERIC mode at 5.5 bits per character where the JSON form forces byte mode at 8.
     // MEASURED on a live payload: version 6 (41x41 modules) against version 10 (57x57) at EC level M.

@@ -285,6 +285,13 @@
     "seedBase32": "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
     "hostPubKeyBase32": "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
     "compact": "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+    "$lanComment": "LAN FIRST, RELAY SECOND (the-phone-reaches-the-host-over-the-lan-first). An optional FIFTH part carries the host's LAN address, uppercased like the relay host: B2*<HOST>*<PK>*<SEED>*<LAN>. The phone dials ws://<lan>:<port>/connect?room=<room(f)>&role=guest first and silently falls back to the relay. PORTS ARE WIRE CONSTANTS per feature, exactly as the feature names are - each feature is a different host PROCESS, so each needs its own listener - which is why no port rides in the QR. The 4-part form stays valid: a host with no LAN address simply omits the part.",
+    "lanHost": "192.168.1.20",
+    "compactLan": "B2*RELAY.EXAMPLE.WORKERS.DEV*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ*192.168.1.20",
+    "lanPorts": {
+      "console": 47730,
+      "ear": 47731
+    },
     "features": {
       "console": {
         "room": "X3nsvjcpmyYsFxCvWdrhWB5_5zthMDr9",
