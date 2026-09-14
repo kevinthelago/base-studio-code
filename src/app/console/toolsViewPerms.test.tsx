@@ -10,7 +10,7 @@
 //
 // THE EXPECTATIONS ARE DERIVED, NOT RETYPED. Every assertion below reads
 // `roleCapabilityBaseline.fixtures.json` — the frozen table `bsc-perms` itself resolves against, proven
-// equal to the live `bsc session perms all` answer across all 19 roles by the role-gate lane's parity
+// equal to the live `bsc session perms all` answer across all 20 roles by the role-gate lane's parity
 // diff. A hand-written expectation table here would be a third copy of the very thing this slice exists
 // to stop copying.
 //
@@ -56,8 +56,8 @@ const globsOf = (el: HTMLElement): string[] =>
   [...el.querySelectorAll("[data-glob]")].map((n) => n.getAttribute("data-glob") ?? "");
 
 describe("the baseline this test derives from is really there", () => {
-  it("carries all nineteen roles — a shrunken fixture would make every case below vacuous", () => {
-    expect(Object.keys(ROLES)).toHaveLength(19);
+  it("carries all twenty roles — a shrunken fixture would make every case below vacuous", () => {
+    expect(Object.keys(ROLES)).toHaveLength(20);
     // The four the component used to hardcode, and one it never did — named so a fixture that lost a
     // role fails HERE, with a legible reason, rather than silently narrowing the sweep below.
     for (const r of ["planner", "worker", "director", "triage", "designer"]) {

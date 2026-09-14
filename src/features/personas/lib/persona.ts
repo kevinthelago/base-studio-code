@@ -13,6 +13,7 @@ import { slugify } from "@/shared/lib/core/format";
 import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
 import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
+import lexicographerProtocolMd from "@data/fleet/lexicographer-protocol.md?raw";
 
 /**
  * A persona's PERMISSIONS — the capability it launches under (epic `the-persona-is-the-whole-agent`).
@@ -258,6 +259,9 @@ const PROTOCOL_PROSE: Record<string, string> = {
   // #funnel-architect-front-door — tier 1's protocol, resolved the same way so the persona's prompt and
   // any other consumer of the architect prose stay ONE source (the #2027 drift-killer).
   "fleet/architect-protocol.md": overlayRaw("fleet/architect-protocol.md", architectProtocolMd).trim(),
+  // `the-lexicographer-has-its-own-role` — the language curator's protocol, resolved the same way. An
+  // interim file (the maintainer wants agent context fed from `bsc memory` eventually), kept as one source.
+  "fleet/lexicographer-protocol.md": overlayRaw("fleet/lexicographer-protocol.md", lexicographerProtocolMd).trim(),
 };
 
 /** Assemble the packaged persona library from the per-persona JSON defs: overlay the config-dir copies,
