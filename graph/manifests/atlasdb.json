@@ -83,6 +83,14 @@
             "# wall-clock threshold would be measuring the machine rather than the code."
           ],
           "value": "{ version = \"0.40\", features = [\"bundled\", \"hooks\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane-rows",
+          "lead": [
+            "# The row overlay that puts atlas.db on lanes (the-relational-stores-are-laned)."
+          ],
+          "value": "{ path = \"../bsc-lane-rows\" }"
         }
       ],
       "lead": [

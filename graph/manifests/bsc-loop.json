@@ -116,6 +116,22 @@
             "# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system."
           ],
           "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane-rows",
+          "lead": [
+            "# The row overlay that puts loops.db on lanes (the-relational-stores-are-laned)."
+          ],
+          "value": "{ path = \"../bsc-lane-rows\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# `Lane`, the branch-derived lane a store opens in."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
         }
       ],
       "lead": [

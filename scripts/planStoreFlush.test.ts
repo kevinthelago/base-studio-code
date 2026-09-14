@@ -135,6 +135,86 @@ describe("a plan-store write journals its lane before it returns", () => {
   });
 });
 
+// THE RELATIONAL STORES ON LANES (`the-relational-stores-are-laned`) hold the same rule through `bsc-lane-rows`: a
+// `Store` method ends with `self.lanes_flushed(..)`, and a store whose writes are free functions over a connection
+// (atlas, projects) ends each one with `LANES.flush(conn)`.
+
+/** The body of every `fn` in `code` — method or free function — outside its test module. */
+function allFns(code: string): { name: string; body: string }[] {
+  const src = blank(code.split(/#\[cfg\(test\)\]\s*mod tests/)[0]);
+  const fns: { name: string; body: string }[] = [];
+  for (const fn of src.matchAll(/\bfn\s+([a-z_][a-z0-9_]*)\s*(?:<[^>]*>)?\s*\(/g)) {
+    const open = src.indexOf("{", fn.index!);
+    const semi = src.indexOf(";", fn.index!);
+    if (open === -1 || (semi !== -1 && semi < open)) continue;
+    let depth = 0;
+    let end = src.length;
+    for (let k = open; k < src.length; k++) {
+      if (src[k] === "{") depth++;
+      else if (src[k] === "}" && --depth === 0) {
+        end = k;
+        break;
+      }
+    }
+    fns.push({ name: fn[1], body: src.slice(open, end + 1) });
+  }
+  return fns;
+}
+
+const RELATIONAL_RECORDS = ["bsc-request--lib.rs", "bsc-loop--lib.rs", "skilldb--lib.rs", "atlasdb--lib.rs", "bsc-project--store.rs"];
+const RELATIONAL_FLUSH = /\bself\.lanes_flushed\s*\(|\bself\.flush_lanes\s*\(|\bLANES\.flush\s*\(/g;
+
+/** Writes that are right to skip the journal, and why, as `<record>::<fn>`. A name here that stops writing must go. */
+const RELATIONAL_EXEMPT: Record<string, string> = {
+  "atlasdb--lib.rs::migrate": "schema on open, before the lane binds",
+  "atlasdb--lib.rs::seed_synthesis": "runs only inside seed, which flushes before its transaction commits",
+  "bsc-project--store.rs::ensure_schema": "schema on open, before the lane binds",
+  "bsc-project--store.rs::add_column_if_missing": "schema on open, before the lane binds",
+};
+
+describe("a relational-store write journals its lane before it returns", () => {
+  const fns = RELATIONAL_RECORDS.flatMap((id) => {
+    const rec = records.find((r) => r.id === id);
+    return rec ? allFns(rec.code!).map((f) => ({ ...f, id, key: `${id}::${f.name}` })) : [];
+  });
+
+  it("reads every relational store's write paths from the record store", () => {
+    expect(new Set(fns.map((f) => f.id))).toEqual(new Set(RELATIONAL_RECORDS));
+    expect(fns.map((f) => f.name)).toEqual(expect.arrayContaining(["add_note", "claim", "say", "group_toggle_member", "seed", "set_state"]));
+  });
+
+  it("every fn that writes SQL flushes after its last write, directly or through a fn of its record that does", () => {
+    const calls = (f: (typeof fns)[number]) =>
+      [...f.body.matchAll(/\b(?:self\.)?([a-z_][a-z0-9_]*)\s*\(/g)].map((c) => ({ key: `${f.id}::${c[1]}`, at: c.index! }));
+    const flushing = new Set(fns.filter((f) => lastIndex(f.body, RELATIONAL_FLUSH) >= 0).map((f) => f.key));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const f of fns) {
+        if (!flushing.has(f.key) && calls(f).some((c) => c.key !== f.key && flushing.has(c.key))) {
+          flushing.add(f.key);
+          grew = true;
+        }
+      }
+    }
+    const offenders = fns
+      .filter((f) => !(f.key in RELATIONAL_EXEMPT) && lastIndex(f.body, WRITE) >= 0)
+      .filter((f) => {
+        const flushAt = Math.max(
+          lastIndex(f.body, RELATIONAL_FLUSH),
+          ...calls(f).filter((c) => c.key !== f.key && flushing.has(c.key)).map((c) => c.at),
+        );
+        return flushAt < lastIndex(f.body, WRITE);
+      })
+      .map((f) => f.key);
+    expect(offenders, "these write and return without journaling — end them with self.lanes_flushed(..) / LANES.flush(conn)").toEqual([]);
+  });
+
+  it("every exemption still names a fn that writes", () => {
+    const writers = new Set(fns.filter((f) => lastIndex(f.body, WRITE) >= 0).map((f) => f.key));
+    expect(Object.keys(RELATIONAL_EXEMPT).filter((k) => !writers.has(k))).toEqual([]);
+  });
+});
+
 /** A record's module path as other code names it: `bsc--defer--mod.rs` is `defer` in crate `bsc`. */
 function modulePath(id: string): { krate: string; path: string } {
   const [krate, ...rest] = id.replace(/\.rs$/, "").split("--");
