@@ -545,6 +545,80 @@ pub fn is_sqlite(path: &Path) -> bool {
     f.read_exact(&mut head).is_ok() && &head == b"SQLite format 3\0"
 }
 
+/// The lane a BUILD reads: `BSC_LANE`, then `BSC_GRAPH_LANE`, else the branch of the checkout at `dir`.
+///
+/// A COPY of `bsc_util::Lane::resolve` (this file is `include!`d by a build script that materializes
+/// bsc-util itself, so it cannot depend on it). `graph_materialize_derives_the_same_lane_as_bsc_util`
+/// pins the two to one table.
+pub fn build_lane(dir: &Path, env: impl Fn(&str) -> Option<String>) -> String {
+    for var in ["BSC_LANE", "BSC_GRAPH_LANE"] {
+        if let Some(v) = env(var).map(|v| v.trim().to_string()).filter(|v| lane_name_ok(v)) {
+            return v;
+        }
+    }
+    branch_lane(checkout_branch(dir).as_deref())
+}
+
+/// The lane a branch is: `develop`/`main`/`master` or none is `main`, `<project>/develop` is `<project>`.
+pub fn branch_lane(branch: Option<&str>) -> String {
+    let Some(b) = branch.map(str::trim).filter(|b| !b.is_empty()) else { return "main".to_string() };
+    if ["develop", "main", "master"].contains(&b) {
+        return "main".to_string();
+    }
+    let name = match b.rsplit_once('/') {
+        Some((project, "develop")) => project,
+        _ => b,
+    };
+    if lane_name_ok(name) { name.to_string() } else { "main".to_string() }
+}
+
+/// Whether `name` can key a lane — no whitespace/control, no empty, `.` or `..` segment.
+pub fn lane_name_ok(name: &str) -> bool {
+    !name.is_empty()
+        && !name.chars().any(|c| c.is_whitespace() || c.is_control())
+        && !name.split('/').any(|s| s.is_empty() || s == "." || s == "..")
+}
+
+/// Every lane `lane` reads through, landed line first: `a/b` is `[main, a, a/b]`.
+pub fn lane_chain(lane: &str) -> Vec<String> {
+    let mut chain = vec![lane.to_string()];
+    let mut at = lane.to_string();
+    while at != "main" {
+        at = match at.rsplit_once('/') {
+            Some((up, _)) => up.to_string(),
+            None => "main".to_string(),
+        };
+        chain.push(at.clone());
+    }
+    chain.reverse();
+    chain
+}
+
+/// The `HEAD` file governing the checkout at `dir` — a `.git` directory's, or a linked worktree's own.
+pub fn checkout_head(dir: &Path) -> Option<PathBuf> {
+    let mut at = Some(dir);
+    while let Some(d) = at {
+        let dot = d.join(".git");
+        if dot.is_dir() {
+            return Some(dot.join("HEAD"));
+        }
+        if dot.is_file() {
+            let text = std::fs::read_to_string(&dot).ok()?;
+            let target = text.lines().find_map(|l| l.trim().strip_prefix("gitdir:"))?.trim();
+            let p = Path::new(target);
+            return Some(if p.is_absolute() { p.join("HEAD") } else { d.join(p).join("HEAD") });
+        }
+        at = d.parent();
+    }
+    None
+}
+
+/// The branch the checkout at `dir` is on — `None` when detached or outside a repository.
+pub fn checkout_branch(dir: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(checkout_head(dir)?).ok()?;
+    head.trim().strip_prefix("ref: refs/heads/").map(str::to_string)
+}
+
 /// The merged store, assembled from the LEDGER rather than from `graph/records/*.json`.
 ///
 /// The envelope (`edges`, `note`, `version`) still comes from `graph/algorithms.json` when that file
@@ -553,9 +627,14 @@ pub fn is_sqlite(path: &Path) -> bool {
 /// `implementations` and would otherwise lose the edge table.
 #[allow(dead_code)]
 pub fn load_store_from_db(db_path: &Path, store_path: &Path) -> Result<String, String> {
-    let lane = std::env::var("BSC_GRAPH_LANE").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "main".to_string());
-    let records = read_lane_of(db_path, &lane, Some("impl"))?;
-    let db_edges = read_lane_of(db_path, &lane, Some("edge"))?;
+    // THE LANE IS THE CHECKOUT'S BRANCH (`a-session-lane-is-derived-from-its-branch`), overlaid on every
+    // lane above it — a lane holds rows only for what it changed, so reading the lane ALONE would compile
+    // an empty store on any branch that has not written a record yet.
+    let lane = build_lane(store_path.parent().unwrap_or(store_path), |k| std::env::var(k).ok());
+    let chain = lane_chain(&lane);
+    let chain: Vec<&str> = chain.iter().map(String::as_str).collect();
+    let records = read_lanes_over(db_path, &chain, Some("impl"))?;
+    let db_edges = read_lanes_over(db_path, &chain, Some("edge"))?;
 
     // THE ENVELOPE COMES FROM A JSON STORE ONLY WHEN THERE IS ONE. Once `graph/store.toml` names the
     // database itself, `store_path` IS `db_path` — reading it as text then fails with "stream did not
@@ -663,6 +742,11 @@ pub fn emit_into(
     // whole reason this comment exists: the flag appeared to work while doing nothing at all.
     println!("cargo:rerun-if-env-changed=BSC_MATERIALIZE_FROM_DB");
     println!("cargo:rerun-if-env-changed=BSC_GRAPH_LANE");
+    println!("cargo:rerun-if-env-changed=BSC_LANE");
+    // The lane follows the BRANCH, so switching branches must re-materialize — HEAD is the one file that moves.
+    if let Some(head) = plan.store_path.parent().and_then(checkout_head) {
+        println!("cargo:rerun-if-changed={}", head.display());
+    }
     for p in &plan.rerun {
         println!("cargo:rerun-if-changed={}", p.display());
     }
