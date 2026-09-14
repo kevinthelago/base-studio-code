@@ -227,3 +227,63 @@ fn a_tombstone_removes_the_id_rather_than_falling_back_to_the_previous_revision(
     // And the tombstone must not take its neighbours with it.
     assert!(got.iter().any(|r| r["id"] == "alpha.rs"), "live records are unaffected");
 }
+
+/// A LANE READS THROUGH ITS ANCESTORS (`a-session-lane-is-derived-from-its-branch`).
+///
+/// The build now reads the checkout's branch lane, and a lane only holds what it changed — so a branch
+/// that has written nothing must compile exactly main, and one that has must see its own rows over main's.
+#[test]
+fn a_lane_reads_its_own_rows_over_main_and_an_empty_lane_is_main() {
+    let db = fixture("ledger.db");
+    let main = read_lane(&db, "main").expect("main");
+    let untouched = read_lanes_over(&db, &["main", "never-wrote-a-record"], None).expect("empty lane");
+    assert_eq!(untouched, main, "a lane with no rows compiles main, not an empty store");
+
+    let nested = read_lanes_over(&db, &["main", "some-slice", "some-slice/child"], None).expect("nested");
+    let by = |id: &str| nested.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("{id} missing"));
+    assert_eq!(by("x.rs")["where"], "lane", "the lane's revision wins over main's");
+    assert!(nested.iter().any(|r| r["id"] == "y.rs"), "a lane-only record is seen");
+    assert!(nested.iter().any(|r| r["id"] == "alpha.rs"), "main's untouched records are seen");
+    assert!(!nested.iter().any(|r| r["id"] == "dead.rs"), "main's tombstone still holds");
+    assert_eq!(read_lane_of(&db, "some-slice", None).expect("one"), read_lanes_over(&db, &["some-slice"], None).expect("chain of one"));
+}
+
+/// The build's copy of the branch→lane rule, pinned to `bsc_util::Lane`'s own table
+/// (`BRANCH_TO_LANE` in `bsc-util--lane--mod.rs`), which it cannot import.
+#[test]
+fn graph_materialize_derives_the_same_lane_as_bsc_util() {
+    let table: &[(Option<&str>, &str)] = &[
+        (None, "main"),
+        (Some("develop"), "main"),
+        (Some("main"), "main"),
+        (Some("master"), "main"),
+        (Some("voice/lexicographer"), "voice/lexicographer"),
+        (Some("voice/develop"), "voice"),
+        (Some("a-session-lane-is-derived-from-its-branch"), "a-session-lane-is-derived-from-its-branch"),
+        (Some("bad//name"), "main"),
+    ];
+    for (branch, want) in table {
+        assert_eq!(branch_lane(*branch), *want, "branch {branch:?}");
+    }
+    assert_eq!(lane_chain("voice/lexicographer"), vec!["main", "voice", "voice/lexicographer"]);
+    assert_eq!(lane_chain("main"), vec!["main"]);
+    let env = |k: &str| (k == "BSC_LANE").then(|| "forced".to_string());
+    assert_eq!(build_lane(std::path::Path::new("/"), env), "forced", "an explicit lane wins");
+}
+
+/// A LINKED WORKTREE's lane comes from its OWN `HEAD`, reached through its `.git` file.
+#[test]
+fn a_linked_worktree_builds_from_its_own_branch_lane() {
+    let root = std::env::temp_dir().join(format!("gm-lane-{}", std::process::id()));
+    let admin = root.join("repo").join(".git").join("worktrees").join("wt");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::write(root.join("repo").join(".git").join("HEAD"), "ref: refs/heads/develop\n").unwrap();
+    std::fs::write(admin.join("HEAD"), "ref: refs/heads/radio/ui-lan\n").unwrap();
+    let wt = root.join("wt");
+    std::fs::create_dir_all(wt.join("graph")).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    let no_env = |_: &str| None;
+    assert_eq!(build_lane(&wt.join("graph"), no_env), "radio/ui-lan");
+    assert_eq!(build_lane(&root.join("repo"), no_env), "main", "the main checkout is on develop");
+    let _ = std::fs::remove_dir_all(&root);
+}

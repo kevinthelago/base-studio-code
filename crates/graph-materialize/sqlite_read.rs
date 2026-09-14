@@ -62,11 +62,50 @@ pub fn read_lane_of(
     //
     // So the newest revision is chosen over EVERY row, tombstones included, and an id whose winner is a
     // tombstone is omitted entirely.
-    let mut best: std::collections::HashMap<String, (i64, Option<String>)> = std::collections::HashMap::new();
+    read_lanes_rows_over(&rows, &[lane], tier, (i_id, i_lane, i_rev, i_json, i_tier))
+}
+
+/// Every record a session on `chain`'s LAST lane sees — each lane overlaid on the one before it.
+///
+/// `chain` is landed line first (`["main", "voice", "voice/lexicographer"]`): a lane holds rows only for
+/// what it changed, so the nearest lane that touched an id wins, and a TOMBSTONE there removes the id
+/// even when an ancestor still carries it. With a one-lane chain this is exactly [`read_lane_of`].
+pub fn read_lanes_over(
+    db_path: &std::path::Path,
+    chain: &[&str],
+    tier: Option<&str>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let db = Db::open(db_path)?;
+    let root = db.table_root("record_revs")?;
+    let rows = db.rows(root)?;
+    let cols = db.columns_of("record_revs")?;
+    let idx = |name: &str| -> Result<usize, String> {
+        cols.iter()
+            .position(|c| c == name)
+            .ok_or_else(|| format!("`record_revs` has no `{name}` column; it has {cols:?}"))
+    };
+    let (i_id, i_lane, i_rev, i_json) = (idx("id")?, idx("lane")?, idx("rev")?, idx("json")?);
+    let i_tier = cols.iter().position(|c| c == "tier");
+    read_lanes_rows_over(&rows, chain, tier, (i_id, i_lane, i_rev, i_json, i_tier))
+}
+
+/// The shared body of [`read_lane_of`] and [`read_lanes_over`]: the newest revision per id WITHIN each
+/// lane of `chain`, then overlaid in chain order.
+fn read_lanes_rows_over(
+    rows: &[Vec<Val>],
+    chain: &[&str],
+    tier: Option<&str>,
+    (i_id, i_lane, i_rev, i_json, i_tier): (usize, usize, usize, usize, Option<usize>),
+) -> Result<Vec<serde_json::Value>, String> {
+    let lane = chain.last().copied().unwrap_or("main");
+    // Per lane of the chain: id -> (newest rev, body-or-tombstone).
+    let mut per_lane: Vec<std::collections::HashMap<String, (i64, Option<String>)>> =
+        chain.iter().map(|_| std::collections::HashMap::new()).collect();
     for row in rows {
-        if row.get(i_lane).and_then(Val::as_text) != Some(lane) {
+        let Some(at) = row.get(i_lane).and_then(Val::as_text).and_then(|l| chain.iter().position(|c| *c == l)) else {
             continue;
-        }
+        };
+        let best = &mut per_lane[at];
         if let Some(want) = tier {
             // A NULL tier is an `impl` — see the doc above; defaulting the other way loses records.
             let got = i_tier
@@ -87,6 +126,13 @@ pub fn read_lane_of(
             _ => {
                 best.insert(id, (rev, json));
             }
+        }
+    }
+    // Overlay, landed line first: a nearer lane's winner — body or tombstone — replaces an ancestor's.
+    let mut best: std::collections::HashMap<String, (i64, Option<String>)> = std::collections::HashMap::new();
+    for winners in per_lane {
+        for (id, won) in winners {
+            best.insert(id, won);
         }
     }
     best.retain(|_, (_, json)| json.is_some());
