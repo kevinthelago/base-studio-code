@@ -174,12 +174,46 @@
             "# branch's lane in every migrated document store, found by the same discovery `bsc studio migrate` walks."
           ],
           "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane-rows",
+          "lead": [
+            "# The relational stores (`integrate-lands-the-relational-stores`): `bsc plan integrate` pre-checks and lands an",
+            "# incoming branch's lane in skills.db, atlas.db and projects.db through each store's row-lane declaration."
+          ],
+          "value": "{ path = \"../bsc-lane-rows\" }"
+        },
+        {
+          "cont": [],
+          "key": "atlasdb",
+          "lead": [
+            "# atlas.db's lane declaration and store path, for the same landing. (projects.db is REGISTERED by the `bsc` binary",
+            "# instead: bsc-project depends on plandb, so naming it here would be a dependency cycle.)"
+          ],
+          "value": "{ path = \"../atlasdb\" }"
         }
       ],
       "lead": [
         ""
       ],
       "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-project",
+          "lead": [
+            "# Tests only: the integrate tests land the REAL projects.db declaration, registered as the `bsc` binary registers it."
+          ],
+          "value": "{ path = \"../bsc-project\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dev-dependencies]"
     }
   ],
   "src": "crates/plandb/Cargo.toml",
