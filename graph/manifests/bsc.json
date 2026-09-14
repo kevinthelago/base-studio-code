@@ -556,6 +556,14 @@
             "# `bsc project rename --apply` refuses while the desktop app runs: the app writes app-state.json back on exit."
           ],
           "value": "{ version = \"0.39\", default-features = false, features = [\"system\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-json-store",
+          "lead": [
+            "# `bsc project rename` rewrites document-store records through the store, in lane main, since those stores are laned."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
         }
       ],
       "lead": [
