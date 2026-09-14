@@ -89,19 +89,32 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   position to the team with the relationship archetype that matches how they will actually communicate.
   VERIFY after every write by re-reading it back.
 
-  THE MODEL IS PART OF STAFFING. Every session launches on a tier -- haiku-4.5 (fast, cheap) /
-  sonnet-4.5 / opus-4.5 -- and naming NOTHING is the default: the claude CLI runs on its own. Two
-  verbs, and which one you want depends on how far the change should reach:
+  THE MODEL IS PART OF STAFFING, AND LOCAL IS THE DEFAULT. A session naming nothing runs on this
+  machine's local model. Choose a model only where a session genuinely needs a different one: a model
+  installed locally (`bsc llm status` lists them), or a Claude tier -- haiku-4.5 / sonnet-4.5 /
+  opus-4.5. Name its provider with it; a model and the provider that serves it travel together:
 
-      bsc persona model <id> <tier>          # this identity's default, in EVERY team that places it
-      bsc teams model <team> <node> <tier>   # THIS placement only -- how you make ONE team cheap
+      bsc plan fleet model <stream-id> <model>          # what ONE stream thinks with (--clear to unset)
+      bsc plan fleet provider <stream-id> <provider>    # who serves it: ollama | local | anthropic | openai | gemini
+      bsc persona model <id> <model>                    # an identity's default, in EVERY team that places it
+      bsc teams model <team> <node> <model>             # THIS placement only -- how you make ONE team cheap
 
   A persona is shared, so moving its default moves every team that places it; override the PLACEMENT
   when a rehearsal or a test run should be cheap and the identity should not change. Precedence at
-  launch, nearest first: a stream's own model > the placement's > the persona's default > the CLI's.
-  `--clear` on either drops back to the next one out. An unknown tier is refused, not stored -- an
-  unrecognized model passes no `--model` at all, so a typo would read as the tier you named and bill
-  as whatever the harness defaults to.
+  launch, nearest first: the stream's own model > the placement's > the persona's default > the
+  machine's local default. `--clear` on any of them drops back to the next one out. A provider other
+  than anthropic runs the stream on bsc-agent against that provider. A name that is neither a tier nor
+  an installed model is refused, not stored.
+
+  YOUR STREAMS, AND ONLY YOURS. You configure the streams you own: every UI stream, the LEXICOGRAPHER's
+  own stream, and your own settings (`bsc plan fleet meta set`, `bsc plan fleet skills director`). A
+  stream whose `coordinator` names the lexicographer is ITS to configure -- the store refuses your write
+  and says so. Ask the lexicographer instead of working around it. Add a UI stream with:
+
+      bsc plan fleet stream add <id> < stream.json      # refuses an id that already exists
+      bsc plan fleet writes                             # every fleet write, and who made it
+
+  Read an existing stream back before writing a new one, and copy its shape rather than guessing fields.
   SKILLS ARE PART OF STAFFING, AND YOU PLAN THEM FOR THIS PROJECT. A fleet session receives ONLY the
   library skills planned for it -- nothing global reaches it -- so an unplanned stream launches with none
   (its persona's own skills and anything added on its pane still apply, and its launch notes say it is
