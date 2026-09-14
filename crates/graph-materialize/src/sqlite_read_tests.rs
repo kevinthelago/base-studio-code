@@ -319,3 +319,19 @@ fn a_linked_worktree_builds_from_its_own_branch_lane() {
     assert_eq!(build_lane(&root.join("repo"), no_env), "main", "the main checkout is on develop");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// A STORE THAT KEEPS HISTORY (`the-committed-record-store-does-not-grow-a-full-copy-per-edit`) reads exactly its
+/// heads. Superseded revisions live in `record_history`, which has no `json` column; a reader that picked a table
+/// by prefix, or took the newest rev from both tables, would surface a history row as a record — or fail on one.
+#[test]
+fn a_store_that_keeps_history_reads_its_heads_and_never_a_history_row() {
+    let main = read_lane(&fixture("history.db"), "main").expect("read");
+    let ids: Vec<&str> = main.iter().map(|r| r["id"].as_str().expect("id")).collect();
+    assert_eq!(ids, vec!["x.rs"], "the tombstoned head hides gone.rs, and no history-only id appears");
+    assert_eq!(main[0]["v"], 3, "the head body, exactly as written");
+
+    let lane = read_lane(&fixture("history.db"), "some-slice").expect("lane");
+    let by = |id: &str| lane.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("{id} missing"));
+    assert_eq!(by("x.rs")["where"], "lane", "the lane's head over main's");
+    assert!(lane.iter().all(|r| r["id"] != "orphan.rs"));
+}
