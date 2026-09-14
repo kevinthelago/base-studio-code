@@ -179,10 +179,19 @@
           "cont": [],
           "key": "bsc-lane-rows",
           "lead": [
-            "# The shared row overlay (`plandb-uses-the-shared-row-lane-helper`): the plan store declares its tables, keys,",
-            "# references, blobs, channels and main-only tables, and the crate lanes them."
+            "# The relational stores (`integrate-lands-the-relational-stores`): `bsc plan integrate` pre-checks and lands an",
+            "# incoming branch's lane in skills.db, atlas.db and projects.db through each store's row-lane declaration."
           ],
           "value": "{ path = \"../bsc-lane-rows\" }"
+        },
+        {
+          "cont": [],
+          "key": "atlasdb",
+          "lead": [
+            "# atlas.db's lane declaration and store path, for the same landing. (projects.db is REGISTERED by the `bsc` binary",
+            "# instead: bsc-project depends on plandb, so naming it here would be a dependency cycle.)"
+          ],
+          "value": "{ path = \"../atlasdb\" }"
         }
       ],
       "lead": [
