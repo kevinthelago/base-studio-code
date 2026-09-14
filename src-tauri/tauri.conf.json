@@ -52,6 +52,7 @@
       "../target/bundle-resources/data/personas/integrator.json": "data/personas/integrator.json",
       "../target/bundle-resources/data/personas/issuer.json": "data/personas/issuer.json",
       "../target/bundle-resources/data/personas/juror.json": "data/personas/juror.json",
+      "../target/bundle-resources/data/personas/lexicographer.json": "data/personas/lexicographer.json",
       "../target/bundle-resources/data/personas/librarian.json": "data/personas/librarian.json",
       "../target/bundle-resources/data/personas/marketer.json": "data/personas/marketer.json",
       "../target/bundle-resources/data/personas/planner.json": "data/personas/planner.json",

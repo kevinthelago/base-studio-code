@@ -93,7 +93,7 @@ describe("the role-capability scanner still works", () => {
   });
 
   it("knows the real role names — a fixture that shrank would narrow the scan silently", () => {
-    expect(ROLE_NAMES).toHaveLength(19);
+    expect(ROLE_NAMES).toHaveLength(20);
     expect(ROLE_NAMES).toContain("director");
   });
 });
