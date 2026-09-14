@@ -136,6 +136,14 @@
             "# for cross-platform reliability. Same version as the sibling SQLite stores so the workspace shares one build."
           ],
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane",
+          "lead": [
+            "# Laned revisions (`the-document-stores-are-laned`): every record is a history of revisions in the session lane."
+          ],
+          "value": "{ path = \"../bsc-lane\" }"
         }
       ],
       "lead": [

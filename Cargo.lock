@@ -825,6 +825,7 @@ dependencies = [
  "bsc-graph",
  "bsc-imagine",
  "bsc-imprint",
+ "bsc-json-store",
  "bsc-lan",
  "bsc-llm",
  "bsc-loop",
@@ -1204,6 +1205,7 @@ name = "bsc-json-store"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-lane",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",
