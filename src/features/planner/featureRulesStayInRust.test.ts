@@ -51,7 +51,7 @@ describe("the feature rules stay in Rust", () => {
     // Anchored on a record that is STILL THERE. It used to name `feature-list.ts`, which this suite
     // now asserts is retired — a non-vacuity check that fails when the thing it guards succeeds is
     // worse than none, because it reads as the guard breaking rather than as the work landing.
-    expect(impls.some((i) => i.id === "feature-nodes.ts")).toBe(true);
+    expect(impls.some((i) => i.id === "plan-features.ts")).toBe(true);
   });
 
   it.each(RUST_OWNED)("no TypeScript record DEFINES %s", (sym) => {
