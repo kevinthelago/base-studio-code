@@ -156,6 +156,15 @@
             "# refused rather than launching a fleet session with nothing (a-skill-reaches-only-the-profiles-it-names)."
           ],
           "value": "{ path = \"../skilldb\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane",
+          "lead": [
+            "# The lane engine (`the-committed-record-stores-write-into-lanes`): `bsc plan integrate` lands an incoming",
+            "# branch's lane into the committed record stores instead of leaving a binary merge for a person."
+          ],
+          "value": "{ path = \"../bsc-lane\" }"
         }
       ],
       "lead": [

@@ -271,6 +271,38 @@ fn graph_materialize_derives_the_same_lane_as_bsc_util() {
     assert_eq!(build_lane(std::path::Path::new("/"), env), "forced", "an explicit lane wins");
 }
 
+/// THE RULE IS ONE TABLE (`the-committed-record-stores-write-into-lanes`): `scripts/lib/laneCases.json`
+/// is read by the JS store reader's test and by `bsc_util::Lane`'s, and by this one — so the three places
+/// that derive a lane from a branch cannot come to disagree about which lane a checkout reads.
+#[test]
+fn the_build_derives_lanes_exactly_as_the_shared_table_says() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/lib/laneCases.json");
+    let raw = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
+    let cases: serde_json::Value = serde_json::from_str(&raw).expect("laneCases.json parses");
+    let rows = cases["branchToLane"].as_array().expect("branchToLane");
+    assert!(rows.len() > 5, "a near-empty table would pass every assertion below");
+    for row in rows {
+        let (branch, want) = (row["branch"].as_str(), row["lane"].as_str().expect("lane"));
+        assert_eq!(branch_lane(branch), want, "branch {branch:?}");
+    }
+    for row in cases["chains"].as_array().expect("chains") {
+        let want: Vec<String> =
+            row["chain"].as_array().expect("chain").iter().map(|v| v.as_str().expect("lane").to_string()).collect();
+        assert_eq!(lane_chain(row["lane"].as_str().expect("lane")), want);
+    }
+    let root = std::env::temp_dir().join(format!("gm-lane-cases-{}", std::process::id()));
+    for (i, row) in cases["env"].as_array().expect("env").iter().enumerate() {
+        let dir = root.join(i.to_string());
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join(".git").join("HEAD"), format!("ref: refs/heads/{}\n", row["branch"].as_str().expect("branch")))
+            .unwrap();
+        let env = row["env"].clone();
+        let lookup = move |k: &str| env.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        assert_eq!(build_lane(&dir, lookup), row["lane"].as_str().expect("lane"), "env case {i}: {row}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// A LINKED WORKTREE's lane comes from its OWN `HEAD`, reached through its `.git` file.
 #[test]
 fn a_linked_worktree_builds_from_its_own_branch_lane() {
