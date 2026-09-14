@@ -165,6 +165,15 @@
             "# branch's lane into the committed record stores instead of leaving a binary merge for a person."
           ],
           "value": "{ path = \"../bsc-lane\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-json-store",
+          "lead": [
+            "# The machine document stores (`integrate-lands-every-laned-store`): `bsc plan integrate` lands an incoming",
+            "# branch's lane in every migrated document store, found by the same discovery `bsc studio migrate` walks."
+          ],
+          "value": "{ path = \"../bsc-json-store\" }"
         }
       ],
       "lead": [
