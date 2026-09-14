@@ -65,7 +65,11 @@ pub(crate) mod schema {
                 duration_s      REAL NOT NULL,
                 hnr_db          REAL NOT NULL,          -- voice QUALITY, kept apart from arousal
                 jitter_local    REAL NOT NULL,
-                shimmer_local   REAL NOT NULL
+                shimmer_local   REAL NOT NULL,
+                -- Attribution (D6): present from birth on a fresh ear.db; an existing table gains them
+                -- only through `bsc ear migrate --apply`, never here.
+                lane            TEXT,
+                writer          TEXT
              );
              CREATE INDEX IF NOT EXISTS idx_obs_key ON observations(speaker, channel, id);",
         )
@@ -95,16 +99,39 @@ pub(crate) mod schema {
 /// The ear's own store.
 pub struct Store {
     conn: Connection,
+    /// Whether `observations` carries `lane`/`writer` (D6) — probed ONCE at open, never altered here.
+    tagged: bool,
+    /// The attribution every tagged observation records; this process's by default.
+    tags: bsc_sqlite_util::TelemetryTags,
 }
 
 impl Store {
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
-        Ok(Store { conn: bsc_sqlite_util::open_migrated(path, schema::migrate)? })
+        Ok(Self::over(bsc_sqlite_util::open_migrated(path, schema::migrate)?))
     }
 
     /// The test path — no disk, same schema.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
-        Ok(Store { conn: bsc_sqlite_util::open_in_memory_migrated(schema::migrate)? })
+        Ok(Self::over(bsc_sqlite_util::open_in_memory_migrated(schema::migrate)?))
+    }
+
+    fn over(conn: Connection) -> Store {
+        let tagged = bsc_sqlite_util::TelemetryTags::is_tagged(&conn, "observations");
+        Store { conn, tagged, tags: bsc_sqlite_util::TelemetryTags::process().clone() }
+    }
+
+    /// Attribute this store's observations to `tags` instead of this process's.
+    pub fn with_tags(mut self, tags: bsc_sqlite_util::TelemetryTags) -> Store {
+        self.tags = tags;
+        self
+    }
+
+    /// The explicit attribution migration (`bsc ear migrate`): plan, or with `apply` add `lane` and
+    /// `writer` to `observations`. Re-probes afterwards so this handle writes them at once.
+    pub fn migrate_tags(&mut self, apply: bool) -> rusqlite::Result<Vec<bsc_sqlite_util::TagPlan>> {
+        let plan = bsc_sqlite_util::TelemetryTags::migrate(&self.conn, schema::ALL_TABLES, apply)?;
+        self.tagged = bsc_sqlite_util::TelemetryTags::is_tagged(&self.conn, "observations");
+        Ok(plan)
     }
 
     /// `$BSC_EAR_DB`, else `~/.base-studio-code/ear.db`.
@@ -132,28 +159,57 @@ impl Store {
         if !p.has_speech() {
             return Ok(false);
         }
-        self.conn.execute(
-            "INSERT INTO observations
-               (speaker, channel, at, f0_median, f0_range, rms_mean, rms_sd, zcr_mean,
-                voiced_fraction, onset_rate, duration_s, hnr_db, jitter_local, shimmer_local)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                speaker,
-                channel,
-                at,
-                p.f0_median,
-                p.f0_range,
-                p.rms_mean,
-                p.rms_sd,
-                p.zcr_mean,
-                p.voiced_fraction,
-                p.onset_rate,
-                p.duration_s,
-                p.hnr_db,
-                p.jitter_local,
-                p.shimmer_local
-            ],
-        )?;
+        // An UNMIGRATED table gets exactly the row it always got; a tagged one also records the lane
+        // and pane that observed it (D6).
+        if self.tagged {
+            self.conn.execute(
+                "INSERT INTO observations
+                   (speaker, channel, at, f0_median, f0_range, rms_mean, rms_sd, zcr_mean,
+                    voiced_fraction, onset_rate, duration_s, hnr_db, jitter_local, shimmer_local, lane, writer)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                params![
+                    speaker,
+                    channel,
+                    at,
+                    p.f0_median,
+                    p.f0_range,
+                    p.rms_mean,
+                    p.rms_sd,
+                    p.zcr_mean,
+                    p.voiced_fraction,
+                    p.onset_rate,
+                    p.duration_s,
+                    p.hnr_db,
+                    p.jitter_local,
+                    p.shimmer_local,
+                    self.tags.lane,
+                    self.tags.writer
+                ],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO observations
+                   (speaker, channel, at, f0_median, f0_range, rms_mean, rms_sd, zcr_mean,
+                    voiced_fraction, onset_rate, duration_s, hnr_db, jitter_local, shimmer_local)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    speaker,
+                    channel,
+                    at,
+                    p.f0_median,
+                    p.f0_range,
+                    p.rms_mean,
+                    p.rms_sd,
+                    p.zcr_mean,
+                    p.voiced_fraction,
+                    p.onset_rate,
+                    p.duration_s,
+                    p.hnr_db,
+                    p.jitter_local,
+                    p.shimmer_local
+                ],
+            )?;
+        }
         Ok(true)
     }
 
@@ -228,6 +284,113 @@ mod tests {
             jitter_local: 0.01,
             shimmer_local: 0.04,
         }
+    }
+
+    // ── D6: attribution (lane + writer), explicit migration, legacy mode ─────────────────────────
+
+    /// The pre-D6 `observations` schema, exactly as every existing ear.db carries it.
+    const LEGACY_SCHEMA: &str = "PRAGMA journal_mode = WAL;
+        CREATE TABLE observations (id INTEGER PRIMARY KEY AUTOINCREMENT, speaker TEXT NOT NULL,
+            channel TEXT NOT NULL, at INTEGER NOT NULL DEFAULT 0, f0_median REAL NOT NULL,
+            f0_range REAL NOT NULL, rms_mean REAL NOT NULL, rms_sd REAL NOT NULL, zcr_mean REAL NOT NULL,
+            voiced_fraction REAL NOT NULL, onset_rate REAL NOT NULL, duration_s REAL NOT NULL,
+            hnr_db REAL NOT NULL, jitter_local REAL NOT NULL, shimmer_local REAL NOT NULL);
+        CREATE INDEX idx_obs_key ON observations(speaker, channel, id);
+        INSERT INTO observations (speaker, channel, at, f0_median, f0_range, rms_mean, rms_sd, zcr_mean,
+            voiced_fraction, onset_rate, duration_s, hnr_db, jitter_local, shimmer_local)
+            VALUES ('me', 'desk', 1, 120, 40, 0.05, 0.01, 0.08, 0.7, 3, 5, 18, 0.01, 0.04);";
+
+    fn legacy_ear_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-ear-d6-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = Connection::open(dir.join("ear.db")).unwrap();
+        conn.execute_batch(LEGACY_SCHEMA).unwrap();
+        drop(conn);
+        dir
+    }
+
+    fn d6_tags() -> bsc_sqlite_util::TelemetryTags {
+        bsc_sqlite_util::TelemetryTags { lane: "voice/ear".into(), writer: "voice:ear".into() }
+    }
+
+    #[test]
+    fn opening_and_reading_an_unmigrated_store_writes_no_schema() {
+        let dir = legacy_ear_dir("read");
+        let path = dir.join("ear.db");
+        let before = std::fs::read(&path).unwrap();
+        {
+            let s = Store::open(&path).unwrap();
+            assert_eq!(s.baseline("me", "desk").unwrap().n, 1);
+            assert!(!s.tagged);
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before, "open + read must leave an unmigrated store byte-identical");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unmigrated_store_observes_exactly_the_old_row_shape() {
+        let dir = legacy_ear_dir("legacy-write");
+        let s = Store::open(&dir.join("ear.db")).unwrap().with_tags(d6_tags());
+        assert!(s.observe("me", "desk", &speech(130.0, 17.0), 2).unwrap());
+        let n_cols: i64 =
+            s.conn.query_row("SELECT COUNT(*) FROM pragma_table_info('observations')", [], |r| r.get(0)).unwrap();
+        assert_eq!(n_cols, 15, "observations keeps its columns on a legacy write");
+        assert_eq!(s.baseline("me", "desk").unwrap().n, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn store_migrate_is_a_dry_run_until_apply_and_then_observations_carry_lane_and_writer() {
+        let dir = legacy_ear_dir("migrate");
+        let path = dir.join("ear.db");
+        let before = std::fs::read(&path).unwrap();
+        {
+            let mut s = Store::open(&path).unwrap();
+            assert_eq!(s.migrate_tags(false).unwrap()[0].missing, vec!["lane", "writer"]);
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before, "a dry run changes nothing");
+        let mut s = Store::open(&path).unwrap().with_tags(d6_tags());
+        s.migrate_tags(true).unwrap();
+        assert!(s.migrate_tags(true).unwrap()[0].missing.is_empty(), "a second apply finds nothing");
+        assert!(s.observe("me", "desk", &speech(130.0, 17.0), 2).unwrap());
+        let row: (String, String) = s
+            .conn
+            .query_row("SELECT lane, writer FROM observations WHERE at = 2", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(row, ("voice/ear".to_string(), "voice:ear".to_string()));
+        let old: Option<String> = s.conn.query_row("SELECT lane FROM observations WHERE at = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(old, None, "the pre-migration row keeps absent attribution");
+        assert_eq!(s.baseline("me", "desk").unwrap().n, 2, "reads are unchanged by the columns");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_fresh_store_carries_attribution_from_birth() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.tagged);
+        assert!(s.observe("me", "desk", &speech(120.0, 18.0), 1).unwrap());
+        let writer: Option<String> = s.conn.query_row("SELECT writer FROM observations", [], |r| r.get(0)).unwrap();
+        assert_eq!(writer.as_deref(), Some(bsc_sqlite_util::TelemetryTags::process().writer.as_str()));
+        assert!(bsc_sqlite_util::TelemetryTags::resolutions() <= 1);
+    }
+
+    #[test]
+    fn the_store_migrate_verb_uses_the_dir_store_and_changes_only_with_apply() {
+        let dir = legacy_ear_dir("cli");
+        let d = dir.to_string_lossy().into_owned();
+        let go = |v: Vec<&str>| crate::cli::run(v.into_iter().map(String::from).collect(), "bsc ear");
+        assert!(go(vec!["store", "migrate", "--dir", &d]).is_ok());
+        assert!(!bsc_sqlite_util::TelemetryTags::is_tagged(&Connection::open(dir.join("ear.db")).unwrap(), "observations"));
+        assert!(go(vec!["store", "migrate", "--dir", &d, "--apply"]).is_ok());
+        assert!(bsc_sqlite_util::TelemetryTags::is_tagged(&Connection::open(dir.join("ear.db")).unwrap(), "observations"));
+        assert!(go(vec!["store", "--dir", &d]).is_err(), "a bare `store` is a usage error");
+        let empty = legacy_ear_dir("cli-empty");
+        std::fs::remove_file(empty.join("ear.db")).unwrap();
+        assert!(go(vec!["store", "migrate", "--dir", &empty.to_string_lossy()]).is_err());
+        assert!(!empty.join("ear.db").exists(), "a missing store is refused, not created");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     #[test]
