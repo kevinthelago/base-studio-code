@@ -90,6 +90,12 @@
             "# a BTreeMap and the export guard could not see key-order drift at all."
           ],
           "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane",
+          "lead": [],
+          "value": "{ path = \"../bsc-lane\" }"
         }
       ],
       "lead": [
