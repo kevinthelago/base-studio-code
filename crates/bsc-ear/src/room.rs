@@ -250,9 +250,17 @@ pub fn host_room(
         .build()
         .map_err(|e| format!("could not start the async runtime: {e}"))?;
 
-    on_event(format!("hosting relay room {room} — waiting for a phone"));
+    // THE LAN TOO. The phone dials this port first when it shares the network, so on a home Wi-Fi the
+    // audio never leaves the house — the relay is only the fallback it silently takes when it does not.
+    on_event(match relay::local_lan_host() {
+        Some(lan) => format!(
+            "hosting relay room {room} and ws://{lan}:{} on the LAN — waiting for a phone",
+            relay::LAN_PORT_EAR
+        ),
+        None => format!("hosting relay room {room} — waiting for a phone (no LAN route found)"),
+    });
     let relay_thread = std::thread::spawn(move || {
-        runtime.block_on(relay::run(host, relay_url, room, static_priv, shutdown_rx));
+        runtime.block_on(relay::run_with_lan(host, relay_url, room, static_priv, Some(relay::LAN_PORT_EAR), shutdown_rx));
     });
 
     // Built before the first frame, so the rate is an expectation. `run_with_source` resamples
