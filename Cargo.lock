@@ -5490,6 +5490,7 @@ dependencies = [
  "bsc-data",
  "bsc-json-store",
  "bsc-lane",
+ "bsc-lane-rows",
  "bsc-llm",
  "bsc-sqlite-util",
  "bsc-util",
