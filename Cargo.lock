@@ -5469,6 +5469,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-data",
+ "bsc-json-store",
  "bsc-lane",
  "bsc-llm",
  "bsc-sqlite-util",
