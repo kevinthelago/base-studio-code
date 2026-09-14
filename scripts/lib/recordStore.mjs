@@ -4,8 +4,91 @@
 // JS readers and the Rust materializer agree on the record set. A record lives in exactly one place;
 // no records/ dir (e.g. a temp GRAPH_STORE in a test) means the file is returned untouched.
 import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync, openSync, readSync, closeSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { createRequire } from 'node:module';
+
+// ── WHICH LANE A CHECKOUT READS (`the-committed-record-stores-write-into-lanes`) ──────────────────────
+//
+// The committed record stores hold a row per (id, LANE, rev), and a lane is the git branch a checkout is
+// on: a worker's `<project>/<stream>`, a project's `<project>/develop` (lane `<project>`), and develop /
+// main / master / detached / no repo all lane `main`. A lane holds rows only for what it changed, so a
+// read overlays the lane on its ancestors — the nearest lane that touched an id wins, and its tombstone
+// hides every farther one.
+//
+// The SAME rule lives in `bsc_util::Lane` and in graph-materialize (the build), and it cannot be imported
+// here any more than the build can import bsc-util. `scripts/lib/laneCases.json` states it once as data,
+// and all three read that table in their tests. Reading `main` alone on a feature branch was the trap: the
+// build compiled the branch's lane while every gate leg tested main's bodies.
+
+const MAINLINE_BRANCHES = ['develop', 'main', 'master'];
+
+/** Why `name` cannot be a lane, or `null` when it can — the rules a store key needs. */
+export function laneProblem(name) {
+  if (typeof name !== 'string' || name.length === 0) return 'a lane name cannot be empty';
+  if (/[\s\p{Cc}]/u.test(name)) return `\`${name}\` holds whitespace or a control character`;
+  if (name.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) {
+    return `\`${name}\` has an empty, \`.\` or \`..\` segment`;
+  }
+  return null;
+}
+
+/** The lane a branch is. `null` (detached, no repo) and a mainline branch are `main`. */
+export function laneFromBranch(branch) {
+  const b = typeof branch === 'string' ? branch.trim() : '';
+  if (!b || MAINLINE_BRANCHES.includes(b)) return 'main';
+  const cut = b.lastIndexOf('/');
+  const name = cut >= 0 && b.slice(cut + 1) === 'develop' ? b.slice(0, cut) : b;
+  return laneProblem(name) ? 'main' : name;
+}
+
+/** The branch `dir`'s checkout is on, read from HEAD without spawning git — `null` if detached or no repo. */
+export function branchOf(dir) {
+  let at = resolvePath(dir);
+  for (;;) {
+    const dot = join(at, '.git');
+    if (existsSync(dot)) {
+      let head;
+      try {
+        if (statSync(dot).isDirectory()) {
+          head = join(dot, 'HEAD');
+        } else {
+          const line = readFileSync(dot, 'utf8').split('\n').map((l) => l.trim()).find((l) => l.startsWith('gitdir:'));
+          if (!line) return null;
+          const target = line.slice('gitdir:'.length).trim();
+          head = join(isAbsolute(target) ? target : join(at, target), 'HEAD');
+        }
+        const text = readFileSync(head, 'utf8').trim();
+        return text.startsWith('ref: refs/heads/') ? text.slice('ref: refs/heads/'.length) : null;
+      } catch {
+        return null;
+      }
+    }
+    const up = dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
+/** The lane a checkout at `dir` reads: `BSC_LANE`, then `BSC_GRAPH_LANE`, else its branch. */
+export function resolveLane(dir, env = process.env) {
+  for (const name of ['BSC_LANE', 'BSC_GRAPH_LANE']) {
+    const v = env?.[name];
+    if (typeof v === 'string' && !laneProblem(v.trim())) return v.trim();
+  }
+  return laneFromBranch(branchOf(dir));
+}
+
+/** Every lane `lane` reads through, landed line FIRST: `a/b` is `['main', 'a', 'a/b']`. */
+export function laneChain(lane) {
+  const chain = [lane];
+  let at = lane;
+  while (at !== 'main') {
+    const cut = at.lastIndexOf('/');
+    at = cut >= 0 ? at.slice(0, cut) : 'main';
+    chain.push(at);
+  }
+  return chain.reverse();
+}
 
 /**
  * Which store this checkout reads, from `graph/store.toml` — the marker that decoupled root discovery
@@ -55,29 +138,40 @@ export function isSqliteStore(path) {
  * is small and stated once:
  *
  *   * newest revision per id, per lane;
+ *   * the checkout's LANE over its ancestors: the nearest lane holding an id wins (see `laneChain`);
  *   * a NULL body is a TOMBSTONE — the record is retired, and the previous revision must NOT win;
  *   * `impl` rows are implementations, `edge` rows are the relationship tier, a NULL tier is `impl`.
  */
-function loadStoreFromDb(storePath, lane = 'main') {
+function loadStoreFromDb(storePath, lane) {
+  const chain = laneChain(lane);
   const { DatabaseSync } = sqliteModule();
   const db = new DatabaseSync(storePath, { readOnly: true });
   try {
+    const marks = chain.map(() => '?').join(', ');
     const rows = db
       .prepare(
-        `SELECT r.id AS id, r.json AS json, r.tier AS tier
+        `SELECT r.id AS id, r.lane AS lane, r.json AS json, r.tier AS tier
            FROM record_revs r
-           JOIN (SELECT id, MAX(rev) AS rev FROM record_revs WHERE lane = ? GROUP BY id) top
-             ON top.id = r.id AND top.rev = r.rev
-          WHERE r.lane = ?
-          ORDER BY r.id`,
+           JOIN (SELECT id, lane, MAX(rev) AS rev FROM record_revs WHERE lane IN (${marks}) GROUP BY id, lane) top
+             ON top.id = r.id AND top.lane = r.lane AND top.rev = r.rev`,
       )
-      .all(lane, lane);
+      .all(...chain);
+    // Per id, the NEAREST lane's head row — body or tombstone. `chain` is landed line first, so a higher
+    // index is nearer.
+    const rank = new Map(chain.map((l, i) => [l, i]));
+    const nearest = new Map();
+    for (const row of rows) {
+      const r = rank.get(row.lane);
+      const have = nearest.get(row.id);
+      if (!have || r > have.rank) nearest.set(row.id, { rank: r, json: row.json, tier: row.tier });
+    }
     const implementations = [];
     const edges = [];
-    for (const row of rows) {
-      if (row.json === null || row.json === undefined) continue; // tombstone: retired, not stale
-      const rec = JSON.parse(row.json);
-      ((row.tier ?? 'impl') === 'edge' ? edges : implementations).push(rec);
+    for (const id of [...nearest.keys()].sort()) {
+      const { json, tier } = nearest.get(id);
+      if (json === null || json === undefined) continue; // tombstone: retired, not stale
+      const rec = JSON.parse(json);
+      ((tier ?? 'impl') === 'edge' ? edges : implementations).push(rec);
     }
     return { implementations, edges };
   } finally {
@@ -99,8 +193,14 @@ function sqliteModule() {
   }
 }
 
-export function loadStore(storePath = resolveStorePath()) {
-  if (isSqliteStore(storePath)) return loadStoreFromDb(storePath);
+/**
+ * The merged store. A DATABASE is read in the lane its checkout is on (`opts.lane` overrides), which is
+ * the lane the build compiles — reading `main` alone would test different code from the code it builds.
+ */
+export function loadStore(storePath = resolveStorePath(), opts = {}) {
+  if (isSqliteStore(storePath)) {
+    return loadStoreFromDb(storePath, opts.lane ?? resolveLane(dirname(resolvePath(storePath))));
+  }
   const store = JSON.parse(readFileSync(storePath, 'utf8'));
   const dir = join(dirname(storePath) || '.', 'records');
   if (existsSync(dir) && Array.isArray(store.implementations)) {

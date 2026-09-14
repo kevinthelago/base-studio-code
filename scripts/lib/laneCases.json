@@ -1,0 +1,27 @@
+{
+  "note": "The branch-to-lane rule, stated ONCE as data. scripts/lib/recordStore.mjs (JS), crates/graph-materialize (the build) and bsc_util::Lane all derive a lane from a git branch; each reads this table in its tests so the three cannot drift (the-committed-record-stores-write-into-lanes). Chains are landed line first.",
+  "branchToLane": [
+    { "branch": null, "lane": "main" },
+    { "branch": "develop", "lane": "main" },
+    { "branch": "main", "lane": "main" },
+    { "branch": "master", "lane": "main" },
+    { "branch": "voice/lexicographer", "lane": "voice/lexicographer" },
+    { "branch": "voice/develop", "lane": "voice" },
+    { "branch": "a-session-lane-is-derived-from-its-branch", "lane": "a-session-lane-is-derived-from-its-branch" },
+    { "branch": "bad//name", "lane": "main" },
+    { "branch": "has space", "lane": "main" },
+    { "branch": "x/./y", "lane": "main" }
+  ],
+  "chains": [
+    { "lane": "voice/lexicographer", "chain": ["main", "voice", "voice/lexicographer"] },
+    { "lane": "solo", "chain": ["main", "solo"] },
+    { "lane": "main", "chain": ["main"] }
+  ],
+  "env": [
+    { "env": { "BSC_LANE": "forced" }, "branch": "voice/x", "lane": "forced" },
+    { "env": { "BSC_GRAPH_LANE": "legacy" }, "branch": "voice/x", "lane": "legacy" },
+    { "env": { "BSC_LANE": "  ", "BSC_GRAPH_LANE": "legacy" }, "branch": "voice/x", "lane": "legacy" },
+    { "env": { "BSC_LANE": "bad//" }, "branch": "voice/x", "lane": "voice/x" },
+    { "env": {}, "branch": "voice/develop", "lane": "voice" }
+  ]
+}
