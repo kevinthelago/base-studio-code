@@ -1267,6 +1267,7 @@ name = "bsc-lane"
 version = "0.1.0"
 dependencies = [
  "bsc-util",
+ "flate2",
  "rusqlite",
  "serde",
  "serde_json",

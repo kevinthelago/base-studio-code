@@ -85,6 +85,14 @@
           "key": "serde_json",
           "lead": [],
           "value": "{ version = \"1\", features = [\"preserve_order\"] }"
+        },
+        {
+          "cont": [],
+          "key": "flate2",
+          "lead": [
+            "# Superseded revisions are kept as gzipped reverse deltas (history). Already in the lock via other crates."
+          ],
+          "value": "\"1\""
         }
       ],
       "lead": [
