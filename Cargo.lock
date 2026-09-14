@@ -5493,7 +5493,6 @@ dependencies = [
  "bsc-lane",
  "bsc-lane-rows",
  "bsc-llm",
- "bsc-project",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",

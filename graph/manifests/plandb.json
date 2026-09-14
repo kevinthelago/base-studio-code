@@ -198,22 +198,6 @@
         ""
       ],
       "name": "[dependencies]"
-    },
-    {
-      "entries": [
-        {
-          "cont": [],
-          "key": "bsc-project",
-          "lead": [
-            "# Tests only: the integrate tests land the REAL projects.db declaration, registered as the `bsc` binary registers it."
-          ],
-          "value": "{ path = \"../bsc-project\" }"
-        }
-      ],
-      "lead": [
-        ""
-      ],
-      "name": "[dev-dependencies]"
     }
   ],
   "src": "crates/plandb/Cargo.toml",
