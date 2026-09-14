@@ -125,6 +125,15 @@
             "# Project completion (issues done/total) for `bsc metrics` (#3449) — Tauri-free, bundled SQLite."
           ],
           "value": "{ path = \"../plandb\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Telemetry attribution (D6): TelemetryTags — the lane + writer a perf row records, and the explicit",
+            "# `store migrate` that adds those columns. The `conn` feature carries it."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
         }
       ],
       "lead": [

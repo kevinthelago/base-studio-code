@@ -665,6 +665,15 @@
             "# DuckDB-free, like bsc-graph beside it — this edge costs nothing at build time."
           ],
           "value": "{ path = \"../crates/bsc-component\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# Telemetry attribution (D6): TelemetryTags — the lane + writer a perf row records, and the explicit",
+            "# `store migrate` that adds those columns. The `conn` feature carries it."
+          ],
+          "value": "{ path = \"../crates/bsc-sqlite-util\", features = [\"conn\"] }"
         }
       ],
       "lead": [
