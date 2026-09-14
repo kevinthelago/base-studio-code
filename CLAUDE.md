@@ -211,14 +211,14 @@ records that a rebuild cannot get there.
 A build or launch failure used to exist only as scrollback in whoever's shell ran it, and vanished with
 that shell. `npm run build:plan`, `npm run build` and `npm run dev:app` are wrapped in
 **`bsc errors run`**, which streams the command through untouched, exits with its exact code, and files
-one fingerprinted fault into `projects/studio-code/error.db` when it fails. A green run clears what its
+one fingerprinted fault into `projects/core/error.db` when it fails. A green run clears what its
 own command recorded, so the store is a list of what is broken NOW rather than a pile of fixed things.
 
 ```bash
 bsc errors projects                       # which project broke — the entry point when you know nothing
-bsc errors list --project studio-code --unresolved
-bsc errors get <fingerprint> --project studio-code    # the diagnostic + its context
-bsc errors resolve <fingerprint> --project studio-code
+bsc errors list --project core --unresolved
+bsc errors get <fingerprint> --project core    # the diagnostic + its context
+bsc errors resolve <fingerprint> --project core
 ```
 
 `--project` matters more than it looks: every other path resolves the store from `$BSC_ERROR_DB`, which
@@ -728,11 +728,11 @@ push). It is a **maintainer action, not a step in the worker loop** — nothing 
 
 ### Where the work lives
 
-The project's own plan store — `~/.base-studio-code/plans/studio-code.db`, reached with the
+The project's own plan store — `~/.base-studio-code/plans/core.db`, reached with the
 bundled `bsc` binary:
 
 ```bash
-export BSC_PLAN_DB="$HOME/.base-studio-code/plans/studio-code.db"
+export BSC_PLAN_DB="$HOME/.base-studio-code/plans/core.db"
 
 bsc plan list                      # the board
 bsc plan list --status open        # what's available

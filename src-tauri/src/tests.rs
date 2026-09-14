@@ -934,6 +934,32 @@
             "the frontend's SELF_PROJECT_KEY does not match `{}` — the app's faults would split across two stores",
             bsc_util::SELF_PROJECT_KEY,
         );
+        // The FOURTH copy: Glance's `APP_PROJECT_KEY` names the drill that draws the app's own studio
+        // sessions. It went unpinned while the other three were held together, so renaming the app project
+        // to `core` would have left Glance drawing those sessions under a key no longer on disk.
+        let spec = "@/features/glance/lib/studioProject";
+        let rec = impls
+            .iter()
+            .find(|r| r["provides"].as_str() == Some(spec))
+            .unwrap_or_else(|| panic!("no record provides `{spec}` — Glance's app-project copy has moved or been retired"));
+        let needle = format!("APP_PROJECT_KEY = \"{}\"", bsc_util::SELF_PROJECT_KEY);
+        assert!(
+            rec["code"].as_str().is_some_and(|c| c.contains(&needle)),
+            "Glance's APP_PROJECT_KEY does not match `{}` — the app's own drill would name a project that is not the app",
+            bsc_util::SELF_PROJECT_KEY,
+        );
+
+        // The surface operator records its test runs and costs into the app project with `--project`, from
+        // its packaged prompt. Every such flag in the seed must name the same key.
+        let persona = std::fs::read_to_string(manifest.join("data/personas/surface-operator.json")).expect("surface-operator seed");
+        let flagged: Vec<&str> = persona
+            .match_indices("--project ")
+            .filter_map(|(at, flag)| persona[at + flag.len()..].split(|c: char| c.is_whitespace() || c == '\\').next())
+            .collect();
+        assert!(!flagged.is_empty(), "the surface operator no longer passes `--project` — this guard points at nothing");
+        for key in flagged {
+            assert_eq!(key, bsc_util::SELF_PROJECT_KEY, "the surface operator records into project `{key}`, not the app's");
+        }
 
         for (name, key) in wired {
             assert_eq!(

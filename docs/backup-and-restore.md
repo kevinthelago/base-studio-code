@@ -147,7 +147,7 @@ cp /tmp/restore/stores-and-plans/stores/*.db ~/.base-studio-code/
 cp /tmp/restore/stores-and-plans/plans/*.db  ~/.base-studio-code/plans/
 
 # 3. confirm it is really there
-sqlite3 ~/.base-studio-code/plans/studio-code.db 'PRAGMA integrity_check; select count(*) from issues'
+sqlite3 ~/.base-studio-code/plans/core.db 'PRAGMA integrity_check; select count(*) from issues'
 ```
 
 **Do not copy stores over a running app.** Every `.db` is captured with `VACUUM INTO`, so each file

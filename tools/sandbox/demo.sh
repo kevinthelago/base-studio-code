@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
     *)      shift ;;
   esac
 done
-DB="${DB_OVERRIDE:-$BSC_HOME/.base-studio-code/plans/studio-code.db}"
+DB="${DB_OVERRIDE:-$BSC_HOME/.base-studio-code/plans/core.db}"
 
 ROOT="${HOME}/.cache/bsc-demo"
 WT="$ROOT/worktree"; PROJ="$ROOT/projection"; OUT="$ROOT/outbox"; LOG="$ROOT/coord.log"
