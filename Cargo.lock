@@ -1152,6 +1152,7 @@ name = "bsc-graph-store"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-lane",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",
@@ -1256,6 +1257,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bsc-lane"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
