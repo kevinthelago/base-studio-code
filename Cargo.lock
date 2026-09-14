@@ -589,6 +589,7 @@ dependencies = [
  "bsc-secret",
  "bsc-session",
  "bsc-shot",
+ "bsc-sqlite-util",
  "bsc-storefs",
  "bsc-tunnel",
  "bsc-util",
@@ -4479,6 +4480,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-llm",
+ "bsc-sqlite-util",
  "bsc-util",
  "plandb",
  "rusqlite",

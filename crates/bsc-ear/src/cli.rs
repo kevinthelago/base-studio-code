@@ -432,6 +432,19 @@ zero-knowledge Worker you deployed and is not guessable.
 THIS IS THE ONE VERB THAT PRINTS A SECRET, deliberately: the psk is what the phone echoes back to
 authenticate. Nothing else on this surface reads it, and it reaches no log line.",
     },
+    CmdDoc {
+        name: "store",
+        summary: "add lane + writer attribution columns to an existing ear.db (`store migrate`, dry run by default)",
+        usage: "\
+bsc ear store migrate [--dir <base>] [--apply]
+
+New observations record the LANE and the WRITER (pane) that produced them — but only on a store that
+carries the columns. A fresh ear.db has them from birth; an existing one gains them ONLY here, never
+when the store is opened. Without --apply this prints the plan and changes nothing; with --apply the
+columns are appended in one transaction, and a second run finds nothing to add.
+
+With --dir the store is <base>/ear.db; otherwise $BSC_EAR_DB, else ~/.base-studio-code/ear.db.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -451,6 +464,8 @@ struct Args {
     dir: Option<String>,
     window_min: Option<u64>,
     relay: Option<String>,
+    /// `migrate`: change the store instead of printing the plan.
+    apply: bool,
     positional: Vec<String>,
 }
 
@@ -468,6 +483,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--speaker" => a.speaker = Some(rest.value("--speaker needs a name")?),
             "--channel" => a.channel = Some(rest.value("--channel needs a label, e.g. the microphone it was recorded on")?),
             "--no-learn" => a.no_learn = true,
+            "--apply" => a.apply = true,
             "--dir" => a.dir = Some(rest.value("--dir needs a path")?),
             "--limit" => {
                 a.limit = Some(
@@ -2217,6 +2233,23 @@ fn cmd_pair(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// `store migrate [--apply]` — the explicit attribution migration of ear.db (D6). With `--dir` the store is
+/// `<base>/ear.db` (so a test never touches the live store); a missing store is refused, not created.
+fn cmd_migrate(a: &Args, p: &Paths) -> Result<(), String> {
+    let db_path = if a.dir.is_some() {
+        p.root.join("ear.db")
+    } else {
+        crate::store::Store::default_path().ok_or("no home directory, so the ear store could not be resolved")?
+    };
+    if !db_path.exists() {
+        return Err(format!("no ear.db at {} — nothing to migrate", db_path.display()));
+    }
+    let mut db = crate::store::Store::open(&db_path).map_err(|e| format!("open {}: {e}", db_path.display()))?;
+    let plan = db.migrate_tags(a.apply).map_err(|e| format!("migrate {}: {e}", db_path.display()))?;
+    println!("{}", bsc_sqlite_util::TelemetryTags::report(&db_path.display().to_string(), &plan, a.apply));
+    Ok(())
+}
+
 pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     let a = parse_args(argv)?;
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &a.positional) {
@@ -2245,6 +2278,8 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("embed") => cmd_embed(&a),
         Some("pair") => cmd_pair(&a),
         Some("room") => cmd_room(&a, &p),
+        Some("store") if a.positional.get(1).map(String::as_str) == Some("migrate") => cmd_migrate(&a, &p),
+        Some("store") => Err(format!("usage: {prog} store migrate [--dir <base>] [--apply]")),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -2265,7 +2300,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair"
+                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair", "store"
             ]
         );
     }
