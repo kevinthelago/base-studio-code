@@ -146,6 +146,14 @@
             "# `bundled` compiles SQLite from source (matches src-tauri/plandb/compliance) for cross-platform reliability."
           ],
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane-rows",
+          "lead": [
+            "# The row overlay that puts projects.db's own table on lanes (the-relational-stores-are-laned)."
+          ],
+          "value": "{ path = \"../bsc-lane-rows\" }"
         }
       ],
       "lead": [

@@ -128,6 +128,14 @@
             "# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default)."
           ],
           "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lane-rows",
+          "lead": [
+            "# The row overlay that puts skills.db on lanes (the-relational-stores-are-laned)."
+          ],
+          "value": "{ path = \"../bsc-lane-rows\" }"
         }
       ],
       "lead": [
