@@ -36,7 +36,8 @@
       "skill",
       "session",
       "request",
-      "persona"
+      "persona",
+      "memory"
     ],
     "allow": [
       "bsc help",
@@ -58,7 +59,8 @@
       "bsc request new",
       "bsc request list",
       "bsc request get",
-      "bsc persona whatami"
+      "bsc persona whatami",
+      "bsc memory"
     ]
   },
   "blurb": "Curates the bsc command LANGUAGE — which nouns are admitted, folded, or marked obsolete — and configures the surface streams it coordinates. Its unit is the crate.",

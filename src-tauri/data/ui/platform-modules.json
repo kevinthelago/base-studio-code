@@ -730,6 +730,7 @@
   "@data/personas/integrator.json",
   "@data/personas/issuer.json",
   "@data/personas/juror.json",
+  "@data/personas/lexicographer.json",
   "@data/personas/librarian.json",
   "@data/personas/marketer.json",
   "@data/personas/planner.json",

@@ -3173,7 +3173,8 @@
           "bsc request new",
           "bsc request list",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": [
           "help",
@@ -3182,7 +3183,8 @@
           "skill",
           "session",
           "request",
-          "persona"
+          "persona",
+          "memory"
         ]
       },
       "deniedCommands": [
@@ -3272,7 +3274,8 @@
           "bsc request new",
           "bsc request list",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": [
           "help",
@@ -3281,7 +3284,8 @@
           "skill",
           "session",
           "request",
-          "persona"
+          "persona",
+          "memory"
         ]
       },
       "deniedCommands": [
@@ -3368,7 +3372,8 @@
           "bsc request new",
           "bsc request list",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": [
           "help",
@@ -3377,7 +3382,8 @@
           "skill",
           "session",
           "request",
-          "persona"
+          "persona",
+          "memory"
         ]
       },
       "deniedCommands": [
@@ -3470,7 +3476,8 @@
           "bsc request new",
           "bsc request list",
           "bsc request get",
-          "bsc persona whatami"
+          "bsc persona whatami",
+          "bsc memory"
         ],
         "surfaces": [
           "help",
@@ -3479,7 +3486,8 @@
           "skill",
           "session",
           "request",
-          "persona"
+          "persona",
+          "memory"
         ]
       },
       "deniedCommands": [
