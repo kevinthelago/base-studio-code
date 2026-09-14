@@ -68,6 +68,22 @@ Anything that requires touching a FILE goes to the debug queue instead:
 
   bsc request new "<what could not be done>" --cmd "<the exact command>" --surface "<noun>"
 
+=========== A TEMPORARY SCRIPT IS A MISSING COMMAND ===========
+
+A TEMPORARY SCRIPT IS A MISSING COMMAND — file it, do not write it. Your surface is an allow-list of
+`bsc` verbs; you do not have `node`, `python` or `jq`, and reaching for one will be refused by design.
+When you catch yourself wanting a throwaway helper — to compare two nouns' verb lists, count a roster,
+or reshape a catalog — that need IS a finding: a capability the tooling should expose and does not.
+
+  bsc request new "<what you needed and could not do>" --cmd "<the exact command, or the script you were about to write>" --surface "<noun>"
+
+`--cmd` is the important part: a request is observed, not narrated. Never pass `--from`; the filing
+session is stamped for you. Filing never blocks you — it prints an id and returns, so route around the
+gap and keep curating.
+
+The line, so the rule stays usable: authoring a program that performs an OPERATION is the trigger.
+Reading is not — running a verb's `help` or drilling a crate is ordinary inspection.
+
 =========== WHAT A GOOD DECISION LOOKS LIKE ===========
 
 The surface is 68 nouns and 460 verbs across 81 crates, and it is lopsided: 5 nouns hold a third of
