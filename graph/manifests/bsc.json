@@ -443,6 +443,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-formula",
+          "lead": [
+            "# `bsc formula` — formulas stored as code: parse, TeX, eval, and check an answer (STEM harvest)."
+          ],
+          "value": "{ path = \"../bsc-formula\" }"
+        },
+        {
+          "cont": [],
           "key": "plandb",
           "lead": [],
           "value": "{ path = \"../plandb\" }"

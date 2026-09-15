@@ -823,6 +823,7 @@ dependencies = [
  "bsc-files",
  "bsc-fin",
  "bsc-fleet",
+ "bsc-formula",
  "bsc-github",
  "bsc-graph",
  "bsc-imagine",
@@ -1110,6 +1111,19 @@ dependencies = [
  "serde",
  "serde_json",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "bsc-formula"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-lane-rows",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
