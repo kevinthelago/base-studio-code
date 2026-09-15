@@ -588,6 +588,14 @@
             "# `bsc project rename` rewrites document-store records through the store, in lane main, since those stores are laned."
           ],
           "value": "{ path = \"../bsc-json-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-similar",
+          "lead": [
+            "# Document distance (TF-IDF cosine) — commands and requests know what they resemble."
+          ],
+          "value": "{ path = \"../bsc-similar\" }"
         }
       ],
       "lead": [

@@ -1,0 +1,478 @@
+[
+  {
+    "name": "plan",
+    "crate": "plandb",
+    "summary": "per-project plan store: issues, features, fleet, sections",
+    "store": "plan.db — per-project, $BSC_PLAN_DB",
+    "status": "active"
+  },
+  {
+    "name": "publish",
+    "crate": "bsc-publish",
+    "summary": "push a plan's GitHub structure — repos, board, one issue per plan row",
+    "store": "plan.db + GitHub",
+    "status": "active"
+  },
+  {
+    "name": "errors",
+    "crate": "errordb",
+    "summary": "per-project runtime-fault store: fingerprinted errors + alerts",
+    "store": "error.db — per-project hub",
+    "status": "active"
+  },
+  {
+    "name": "usage",
+    "crate": "usagedb",
+    "summary": "per-project usage-events store: record + query what users do (epic #3809)",
+    "store": "usage.db — per-project hub",
+    "status": "active"
+  },
+  {
+    "name": "project",
+    "crate": "bsc-project",
+    "summary": "cross-project hub: list local projects + the .published marker",
+    "store": "the project hub list + the .published marker",
+    "status": "active"
+  },
+  {
+    "name": "skill",
+    "crate": "skilldb",
+    "summary": "global skills + task-groups store",
+    "store": "skills.db — global",
+    "status": "active"
+  },
+  {
+    "name": "compliance",
+    "crate": "compliance",
+    "summary": "compliance standards corpus",
+    "store": "the packaged compliance corpus",
+    "status": "active"
+  },
+  {
+    "name": "atlas",
+    "crate": "atlasdb",
+    "summary": "product feature inventories: domains · products · capabilities (relational)",
+    "store": "atlas.db — global",
+    "status": "active"
+  },
+  {
+    "name": "blueprint",
+    "crate": "bsc-blueprint",
+    "summary": "user blueprint store",
+    "store": "blueprints/ — user",
+    "status": "active"
+  },
+  {
+    "name": "fin",
+    "crate": "bsc-fin",
+    "summary": "personal finance: statement ingest + position. LOCAL — reads the files you name and sends nothing anywhere",
+    "store": "finance.db — user",
+    "status": "active"
+  },
+  {
+    "name": "radio",
+    "crate": "bsc",
+    "summary": "the AIR as one noun: `radio rf` (LIVE capture off a wireless radio) · `radio bt` (OFFLINE analysis of a Bluetooth capture you supply). Both DEFENSIVE and PASSIVE — neither ever transmits",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "rf",
+    "crate": "bsc-rf",
+    "summary": "DEPRECATED → use `bsc radio rf`. DEFENSIVE RF monitoring: detect radio jamming from the radio's own telemetry. Read-only — it observes a medium it never transmits on",
+    "store": null,
+    "status": "deprecated"
+  },
+  {
+    "name": "bluetooth",
+    "crate": "bsc-bluetooth",
+    "summary": "DEPRECATED → use `bsc radio bt`. DEFENSIVE Bluetooth analysis: catch SPOOFING (address-twin · rssi/interval/service deviation from a learned baseline) and malicious signals (rogue scan · unwanted tracker) from the advertising plane, passively",
+    "store": null,
+    "status": "deprecated"
+  },
+  {
+    "name": "persona",
+    "crate": "bsc-persona",
+    "summary": "user persona store: agent identities (prompt + skills + model over a role)",
+    "store": "personas/ — user",
+    "status": "active"
+  },
+  {
+    "name": "sound",
+    "crate": "bsc-sound",
+    "summary": "user sound-kit store: synthesized cues (primitives + voices + cues)",
+    "store": "sounds/ — user",
+    "status": "active"
+  },
+  {
+    "name": "teams",
+    "crate": "bsc-teams",
+    "summary": "user teams store: persona-relationship graph (positions + relationships)",
+    "store": "orgs/ — user; the on-disk dir keeps its pre-rename name",
+    "status": "active"
+  },
+  {
+    "name": "network",
+    "crate": "bsc-network",
+    "summary": "user network store: a DOMAIN owning a set of projects and one architect session",
+    "store": "networks/ — user; membership is the `network` column on the project row",
+    "status": "active"
+  },
+  {
+    "name": "secret",
+    "crate": "bsc-secret",
+    "summary": "credential store: which services we are paired with and whether those pairings still work (metadata + derived status; NO verb reads a secret back)",
+    "store": "secrets.db — user; the VALUE lives in the OS keychain, not here",
+    "status": "active"
+  },
+  {
+    "name": "studio",
+    "crate": "bsc-studio",
+    "summary": "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)",
+    "store": "the Studio snapshot store — user",
+    "status": "active"
+  },
+  {
+    "name": "org",
+    "crate": "bsc-teams",
+    "summary": "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)",
+    "store": "orgs/ — the same store `bsc teams` serves",
+    "status": "deprecated"
+  },
+  {
+    "name": "component",
+    "crate": "bsc-component",
+    "summary": "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)",
+    "store": "the component library — the same store `bsc ui` serves",
+    "status": "deprecated"
+  },
+  {
+    "name": "ui",
+    "crate": "bsc-ui",
+    "summary": "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)",
+    "store": "the component library + themes + released kits — graph/components.db committed",
+    "status": "active"
+  },
+  {
+    "name": "logs",
+    "crate": "logs",
+    "summary": "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control",
+    "store": "the unified log / perf / cost engine",
+    "status": "active"
+  },
+  {
+    "name": "files",
+    "crate": "bsc-files",
+    "summary": "read-only file toolkit: tree (folder structure) · stat · read · refs",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "shot",
+    "crate": "bsc-shot",
+    "summary": "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "navigate",
+    "crate": "bsc-navigate",
+    "summary": "steer the RUNNING app to a view — so a capture can target something",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "fleet",
+    "crate": "bsc-fleet",
+    "summary": "which fleet panes are ACTUALLY alive — real liveness + pid from the running app",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "sandbox",
+    "crate": "bsc-sandbox",
+    "summary": "a caged session's rendered launch argv: inspect or replay it outside the app (#135)",
+    "store": "the pane's sandbox-stores dir — per-session, cleared with the pane",
+    "status": "active"
+  },
+  {
+    "name": "session",
+    "crate": "bsc-session",
+    "summary": "a session, both halves: MANAGE the app-owned system ones (start · stop · list) and INSPECT what any session gets (perms · skills · mcp · argv)",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "metrics",
+    "crate": "logs",
+    "summary": "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project",
+    "store": "the unified log / perf / cost engine",
+    "status": "active"
+  },
+  {
+    "name": "perf",
+    "crate": "logs",
+    "summary": "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)",
+    "store": "the frontend instrumentation store",
+    "status": "active"
+  },
+  {
+    "name": "cost",
+    "crate": "bsc-mem",
+    "summary": "the RESOURCE-COST surface — build wall-clock, build memory, the app's JS heap / DOM / listeners, a session's RSS slope (read-only)",
+    "store": "the project run store + the browser harness",
+    "status": "active"
+  },
+  {
+    "name": "mem",
+    "crate": "bsc-mem",
+    "summary": "DEPRECATED → use `bsc cost` (the resource-cost surface, renamed so `bsc memory` can be the session-memory surface)",
+    "store": "the project run store + the browser harness",
+    "status": "deprecated"
+  },
+  {
+    "name": "memory",
+    "crate": "bsc-memory",
+    "summary": "session memory: capture findings, decisions, lessons and parked threads — tagged and linkable, so what a session learns is traversable, not lost",
+    "store": "memory.db — user",
+    "status": "active"
+  },
+  {
+    "name": "imprint",
+    "crate": "bsc-imprint",
+    "summary": "how the user WRITES — a read-only style profile (casing, apostrophes, habitual misspellings, emoticon vocabulary). The written half of the imprint `bsc ear` builds for the voice. It DECIDES NOTHING: no verdict, no score, and no record of any comparison",
+    "store": "the written-style profile",
+    "status": "active"
+  },
+  {
+    "name": "work",
+    "crate": "bsc-work",
+    "summary": "the work loop: run the gate and RECORD what it actually did on the change record",
+    "store": "the per-project plan store — the change record's gate evidence + the known-red declarations",
+    "status": "active"
+  },
+  {
+    "name": "self",
+    "crate": "bsc-self",
+    "summary": "this binary and its siblings: is the `bsc` you are about to run trustworthy, and which one would be used",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "resolve",
+    "crate": "bsc-resolve",
+    "summary": "what a session RECEIVES: its resolved skills and MCP servers (read-only)",
+    "store": "skills.db + the packaged mcp/builtin-servers.json",
+    "status": "active"
+  },
+  {
+    "name": "disk",
+    "crate": "bsc-disk",
+    "summary": "reclaim build-tree disk: gc, prune, sweep, and dedupe across worktrees",
+    "store": "target/ - per-checkout build output",
+    "status": "active"
+  },
+  {
+    "name": "worktree",
+    "crate": "bsc-disk",
+    "summary": "the worktree pool: list every tree, cap the parked/merged ones (DESTRUCTIVE)",
+    "store": "the checkout's git worktree list",
+    "status": "active"
+  },
+  {
+    "name": "debug",
+    "crate": "bsc-debug",
+    "summary": "inspect the RUNNING app's live DOM + preview state (read-only)",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "llm",
+    "crate": "bsc-llm",
+    "summary": "the LOCAL model runtime: what slot count and context ollama actually GRANTED, vs what was asked",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "loop",
+    "crate": "bsc-loop",
+    "summary": "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)",
+    "store": "the conversation-loop store — user",
+    "status": "active"
+  },
+  {
+    "name": "request",
+    "crate": "bsc-request",
+    "summary": "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)",
+    "store": "the improvement-request store — user",
+    "status": "active"
+  },
+  {
+    "name": "runtime",
+    "crate": "bsc-runtime",
+    "summary": "runtime attestations: which RECORD actually served each module while the app ran",
+    "store": "the runtime-attestation store",
+    "status": "active"
+  },
+  {
+    "name": "graph",
+    "crate": "bsc-graph",
+    "summary": "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)",
+    "store": "the record ledger — graph/algorithms.db committed, knowledge/graph.db runtime, $BSC_GRAPH_STORE",
+    "status": "active"
+  },
+  {
+    "name": "cad",
+    "crate": "bsc-cad",
+    "summary": "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "widget",
+    "crate": "bsc-widget",
+    "summary": "toggleable UI surfaces: one NODE per widget and the stream it subscribes to",
+    "store": "a closed set in code — an id selects a node, never a path",
+    "status": "active"
+  },
+  {
+    "name": "ear",
+    "crate": "bsc-ear",
+    "summary": "always-on local capture: speech-only segments inside an enforced retention window (the listening half of `say`)",
+    "store": "audio + state under ~/.base-studio-code/ear",
+    "status": "active"
+  },
+  {
+    "name": "imagine",
+    "crate": "bsc-imagine",
+    "summary": "what the ear hears, as pictures: one entry per thought, bounded and local",
+    "store": "feed + images under ~/.base-studio-code/imagination",
+    "status": "active"
+  },
+  {
+    "name": "say",
+    "crate": "bsc-say",
+    "summary": "speak text aloud: kokoro (neural, phoneme-level) when installed, then piper, then the OS voice (NOT `sound`, which is the synthesis kit store)",
+    "store": "no store — voices in ~/.base-studio-code/voices and models/kokoro",
+    "status": "active"
+  },
+  {
+    "name": "lan",
+    "crate": "bsc-lan",
+    "summary": "the emit-only LAN sensor: what a host exposes · its keys · what it would send (NOT `network`, which is the user domain store)",
+    "store": "no store yet — keys are printed, never written",
+    "status": "active"
+  },
+  {
+    "name": "deploy",
+    "crate": "bsc-deploy",
+    "summary": "ship a binary to a device and take it back: status · push · rollback (push-only; LAB has no egress)",
+    "store": "the device roster — deploy/devices.json",
+    "status": "active"
+  },
+  {
+    "name": "capability",
+    "crate": "bsc-capability",
+    "summary": "the USE layer: what a network can DO right now, and how fresh each answer is",
+    "store": "derived — reads `bsc project network` + `bsc deploy`",
+    "status": "active"
+  },
+  {
+    "name": "data",
+    "crate": "bsc-data",
+    "summary": "canonical data model (DuckDB): model · scan · tables · connector",
+    "store": "the canonical data model — DuckDB",
+    "status": "active"
+  },
+  {
+    "name": "security",
+    "crate": "bsc-security",
+    "summary": "the security surface: scan a repo for vulnerable dependencies AND leaked credentials (tree + git history), as one ranked finding list",
+    "store": "the OSV.dev advisory cache",
+    "status": "active"
+  },
+  {
+    "name": "cve",
+    "crate": "bsc-security",
+    "summary": "→ `bsc security deps`. The vulnerability half of the security surface; kept because its exit-code contract gates CI and the install hook",
+    "store": "the OSV.dev advisory cache",
+    "status": "deprecated"
+  },
+  {
+    "name": "news",
+    "crate": "bsc-news",
+    "summary": "low-trust news layer: poll outlets · brief an event (corroboration · framing · agency deletion). NOT `research` — an article is a claim, a paper is a source",
+    "store": "the news store — every fetched article version, $BSC_NEWS_DB",
+    "status": "active"
+  },
+  {
+    "name": "survival",
+    "crate": "bsc-survival",
+    "summary": "the caveman network's OFFLINE survival corpus: procedures ranked by the materials in your hands · natural remedies by function and location · compile the lot into one field manual",
+    "store": "the survival corpus — packaged + user-owned, $BSC_SURVIVAL_STORE",
+    "status": "active"
+  },
+  {
+    "name": "surface",
+    "crate": "bsc",
+    "summary": "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks",
+    "store": "the command-surface catalog, compiled into this binary",
+    "status": "active"
+  },
+  {
+    "name": "mcp",
+    "crate": "bsc",
+    "summary": "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "hook",
+    "crate": "bsc",
+    "summary": "internal PreToolUse deny hooks (run by Claude Code, not by hand)",
+    "store": null,
+    "status": "internal"
+  },
+  {
+    "name": "serve",
+    "crate": "bsc",
+    "summary": "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it",
+    "store": null,
+    "status": "internal"
+  },
+  {
+    "name": "version",
+    "crate": "bsc",
+    "summary": "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)",
+    "store": null,
+    "status": "active"
+  },
+  {
+    "name": "config",
+    "crate": "bsc-config",
+    "summary": "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)",
+    "store": "~/.base-studio-code/config/ — the runtime config-seed mirror",
+    "status": "active"
+  },
+  {
+    "name": "github",
+    "crate": "bsc-github",
+    "summary": "GitHub rules a session can ask about: issue provenance, REST path routing, board shape (read-only)",
+    "store": "no store - derived rules over a GitHub payload; it never reads a credential back",
+    "status": "active"
+  },
+  {
+    "name": "perms",
+    "crate": "bsc-perms",
+    "summary": "what a session role actually resolves to: capability, denies, tool rules, write scope (read-only)",
+    "store": "the frozen role-capability baseline + the packaged permission data",
+    "status": "active"
+  },
+  {
+    "name": "app",
+    "crate": "bsc-app",
+    "summary": "the APP's own lifecycle: status, promote (develop -> main at the root), rebuild, release, hooks",
+    "store": "the repo root's git refs + the built app binary",
+    "status": "active"
+  }
+]
