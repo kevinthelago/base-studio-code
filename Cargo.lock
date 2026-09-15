@@ -1558,7 +1558,10 @@ dependencies = [
 name = "bsc-schedule"
 version = "0.1.0"
 dependencies = [
+ "bsc-appchan",
+ "bsc-capacity",
  "bsc-cli-util",
+ "bsc-fleet",
  "bsc-util",
  "plandb",
  "serde",
