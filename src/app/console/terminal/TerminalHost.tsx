@@ -17,6 +17,7 @@ import {
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { isStudioSessionPaneId, isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
+import { systemSessionDef } from "@/shared/lib/session/systemSessionDefs";
 import { useAppStore } from "@/store";
 
 /** The terminal props a slot supplies to the shared <TerminalView>. The console cell is the `primary`
@@ -381,7 +382,10 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         // Without this, a viewer claiming one of those panes first launches it with `initialCwd` and
         // `initCmd` UNDEFINED — reproduced in this file's test, and worse than it sounds: an empty cwd
         // also skips `ensure_session_settings`, so the session runs with no role gate at all.
-        const awaitsItsMount = isStudioSessionPaneId(paneId) || isFullCapabilitySession(paneId);
+        // A SYSTEM session (`system-sessions-run-projects-and-start-when-visited`) waits for its mount too: the
+        // console's slot must not spawn it before `bsc session prepare` has made its directory.
+        const awaitsItsMount = isStudioSessionPaneId(paneId) || isFullCapabilitySession(paneId)
+          || systemSessionDef(paneId)?.paneId === paneId;
         if (!primaryClaim && awaitsItsMount && !containersRef.current.has(paneId)) return null;
         const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
