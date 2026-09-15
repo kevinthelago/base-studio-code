@@ -1682,11 +1682,13 @@ dependencies = [
  "bsc-cli-util",
  "bsc-formula",
  "bsc-lane-rows",
+ "bsc-llm",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

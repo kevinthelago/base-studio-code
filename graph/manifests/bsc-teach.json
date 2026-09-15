@@ -121,6 +121,22 @@
             "# Viz math samples a function or a gradient-descent objective written in the formula grammar (the-stem-logic-runs-in-rust)."
           ],
           "value": "{ path = \"../bsc-formula\" }"
+        },
+        {
+          "cont": [],
+          "key": "llm",
+          "lead": [
+            "# Feedback on a graded answer comes from a LOCAL model through the one provider layer (answers-are-graded-by-code-and-explained-by-the-model)."
+          ],
+          "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
+        },
+        {
+          "cont": [],
+          "key": "tokio",
+          "lead": [
+            "# The provider layer is async; a grade asks for feedback on a current-thread runtime and blocks on it."
+          ],
+          "value": "{ version = \"1\", features = [\"rt\"] }"
         }
       ],
       "lead": [
