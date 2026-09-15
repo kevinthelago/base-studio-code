@@ -113,6 +113,14 @@
             "# `Lane`, the branch-derived lane a store opens in, and `scratch` for tests."
           ],
           "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-formula",
+          "lead": [
+            "# Viz math samples a function or a gradient-descent objective written in the formula grammar (the-stem-logic-runs-in-rust)."
+          ],
+          "value": "{ path = \"../bsc-formula\" }"
         }
       ],
       "lead": [

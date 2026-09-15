@@ -1680,6 +1680,7 @@ name = "bsc-teach"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-formula",
  "bsc-lane-rows",
  "bsc-sqlite-util",
  "bsc-util",
