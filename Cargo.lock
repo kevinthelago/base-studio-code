@@ -1370,6 +1370,7 @@ name = "bsc-memory"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-graph-layout",
  "bsc-json-store",
  "bsc-similar",
  "bsc-sqlite-read",

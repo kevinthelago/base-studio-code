@@ -122,6 +122,14 @@
             "# Document distance (TF-IDF cosine) - a memory knows what it resembles."
           ],
           "value": "{ path = \"../bsc-similar\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-graph-layout",
+          "lead": [
+            "# The force layout bsc memory graph serves positions from, so the Memory page only draws."
+          ],
+          "value": "{ path = \"../bsc-graph-layout\" }"
         }
       ],
       "lead": [
