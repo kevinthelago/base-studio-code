@@ -36,7 +36,7 @@ bsc ui list [--kit <k>]      # the components that exist
 bsc ui get <id>              # one component's record
 ```
 
-`bsc ui set` / `bsc ui remove` (and the `bsc component` alias) are **denied** to you, not merely
+`bsc ui set` / `bsc ui remove` are **denied** to you, not merely
 un-granted — the designer owns that store the way you own this one.
 
 They exist for ONE question: **is this candidate already a component?** A React component is the

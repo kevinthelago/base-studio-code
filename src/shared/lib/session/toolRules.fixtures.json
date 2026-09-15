@@ -513,7 +513,6 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc component",
           "bsc shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -535,7 +534,6 @@
       },
       "allowedCommands": [
         "bsc ui",
-        "bsc component",
         "bsc shot preview",
         "bsc loop new",
         "bsc loop say",
@@ -965,7 +963,6 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc component",
           "bsc shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -987,7 +984,6 @@
       },
       "allowedCommands": [
         "bsc ui",
-        "bsc component",
         "bsc shot preview",
         "bsc loop new",
         "bsc loop say",
@@ -1961,7 +1957,6 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc component",
           "bsc shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -1983,7 +1978,6 @@
       },
       "allowedCommands": [
         "bsc ui",
-        "bsc component",
         "bsc shot preview",
         "bsc loop new",
         "bsc loop say",
@@ -2052,7 +2046,6 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc component",
           "bsc shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -2074,7 +2067,6 @@
       },
       "allowedCommands": [
         "bsc ui",
-        "bsc component",
         "bsc shot preview",
         "bsc loop new",
         "bsc loop say",

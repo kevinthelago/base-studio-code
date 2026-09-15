@@ -814,7 +814,6 @@ dependencies = [
  "bsc-capability",
  "bsc-capacity",
  "bsc-cli-util",
- "bsc-component",
  "bsc-config",
  "bsc-data",
  "bsc-debug",

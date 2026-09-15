@@ -1,5 +1,5 @@
 // #2469: the component-library + kit-usage bridges call the MERGED `bsc ui …` surface (the former
-// `bsc component` verbs now mount under `bsc ui`; `bsc component` is a deprecated alias). These tests
+// `component` verbs now mount under `bsc ui`, and that old noun is removed). These tests
 // pin the exact argv so a regression back to the alias — or a verb typo — is caught here, not at runtime.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

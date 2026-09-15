@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"The MEMORY surface (`bsc mem`) — app heap and build cost, the counterpart to `bsc perf`.\""
+          "value": "\"The resource-COST surface (`bsc cost`) — app heap and build cost, the counterpart to `bsc perf`.\""
         }
       ],
       "lead": [],

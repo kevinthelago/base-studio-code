@@ -113,7 +113,7 @@ export interface Relationship {
 }
 
 /** An org — a named composition of positions wired by relationships (like a blueprint composes stages).
- *  The unit the `bsc org` store round-trips and the Team designer edits. */
+ *  The unit the `bsc teams` store round-trips and the Team designer edits. */
 export interface Team {
   id: string;
   name: string;
