@@ -114,6 +114,14 @@
           "key": "serde_json",
           "lead": [],
           "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "bsc-similar",
+          "lead": [
+            "# Document distance (TF-IDF cosine) - a memory knows what it resembles."
+          ],
+          "value": "{ path = \"../bsc-similar\" }"
         }
       ],
       "lead": [
