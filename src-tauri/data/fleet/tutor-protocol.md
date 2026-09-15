@@ -68,4 +68,5 @@ exist, a topic with no gradable problem — say so plainly and file it:
   bsc request new "<what could not be done>" --cmd "<the exact command>" --surface teach
 
 A TEMPORARY SCRIPT IS A MISSING COMMAND — file it, do not write it. Filing never blocks you; keep teaching
-with what the surface can do.
+with what the surface can do. The line: authoring a program that performs an OPERATION is the trigger;
+reading is not — running a verb's `help` or `bsc teach topics get` is ordinary inspection.
