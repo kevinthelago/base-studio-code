@@ -848,6 +848,7 @@ dependencies = [
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-say",
+ "bsc-schedule",
  "bsc-secret",
  "bsc-security",
  "bsc-self",
@@ -1535,6 +1536,17 @@ dependencies = [
  "bsc-util",
  "hound",
  "ort",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-schedule"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "plandb",
  "serde",
  "serde_json",
 ]
