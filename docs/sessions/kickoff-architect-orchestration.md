@@ -90,4 +90,4 @@ test · cargo where Rust changed, plus the kit regen. Record what each gate **ac
 gate is recorded as skipped. Stop at `complete` — the actor that wrote the change does not verify it.
 No pushes, no GitHub writes.
 
-`bsc shot take` works against the running app and is the only way to see layout or cascade.
+`bsc app shot take` works against the running app and is the only way to see layout or cascade.

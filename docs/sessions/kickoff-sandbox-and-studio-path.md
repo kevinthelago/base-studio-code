@@ -101,7 +101,7 @@ supplied flags — that was the defect that blocked 17 entries.
 
 The graph migration is otherwise **complete**: 12/12 pages render from the graph, 0 drift, 0 unbound,
 `shared/ui` at 53/53. Follow the established recipe — page → graph source, behavior stays registered
-code — and verify live (`bsc shot` + the `graph-loader` log), not compile-only.
+code — and verify live (`bsc app shot` + the `graph-loader` log), not compile-only.
 
 ### ⚠ REQUIRED CHECK — is the UI system routed into the project planner pane?
 
