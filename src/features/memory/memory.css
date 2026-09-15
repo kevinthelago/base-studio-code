@@ -65,6 +65,10 @@
 .mem-edge[data-rel="narrows"] .mem-edge-arrow { fill: color-mix(in srgb, var(--accent, #58a6ff) 55%, var(--border)); }
 .mem-edge[data-rel="part-of"] path { stroke: color-mix(in srgb, var(--violet, #a371f7) 55%, var(--border)); }
 .mem-edge[data-rel="part-of"] .mem-edge-arrow { fill: color-mix(in srgb, var(--violet, #a371f7) 55%, var(--border)); }
+/* A SIMILARITY edge joins each memory to its nearest few: a score, not a link anyone wrote, so it is drawn faint
+   and dashed until the selection lights it. */
+.mem-edge[data-rel="similar"] path { stroke-dasharray: 3 4; opacity: 0.4; }
+.mem-edge[data-rel="similar"][data-lit="true"] path { opacity: 1; }
 .mem-edge[data-lit="true"] path { stroke: var(--accent, #58a6ff); }
 .mem-edge[data-lit="true"] .mem-edge-arrow { fill: var(--accent, #58a6ff); }
 .mem-edgelabel {
