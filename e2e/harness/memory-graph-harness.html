@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>memory graph harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      /* Stand in for the app shell above a Workspace: a bounded flex column the Screen fills. */
+      #root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <!-- The REAL MemoryWorkspace, mounted in real Chromium: real layout, real cascade, real SVG. Only the
+         backend round-trip is a fixture — see memoryGraphHarness.ts. -->
+    <div id="root"></div>
+    <script type="module" src="./memoryGraphHarness.ts"></script>
+  </body>
+</html>
