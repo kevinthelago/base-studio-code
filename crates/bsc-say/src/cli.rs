@@ -178,10 +178,11 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
         name: "analyze",
         summary: "measure a clip's pitch and formants, and place it between the female and male voices",
         usage: "\
-bsc say analyze clip.wav [more.wav ...] [--against <audition dir>] [--json|--pretty]
+bsc say analyze clip.wav [more.wav ...] [--against <audition dir>] [--anchor judged.wav] [--json|--pretty]
 
-Median pitch (F0), the fraction of speech that was voiced, F1–F3, and formant dispersion (ΔF) — the
-spacing of the vocal tract's resonances, which is what its length sounds like. No model.
+Median pitch (F0), the fraction of speech that was voiced, F1–F3, formant dispersion (ΔF) — the
+spacing of the vocal tract's resonances, which is what its length sounds like — intonation range in
+semitones, and brightness. No model. Each grading `bsc say audition` ranks by is scored too.
 
 PLACEMENT NEEDS A REFERENCE. When the audition directory (default ~/.base-studio-code/say-audition)
 holds reference clips, each clip is also placed on a pitch axis and a formant axis, the female
@@ -194,15 +195,21 @@ FOR SYNTHETIC VOICES. This measures blends; it is not a reading of a person.",
         name: "audition",
         summary: "render many random voice blends, measure each, and rank the most androgynous first",
         usage: "\
-bsc say audition [--count 200] [--seed 1] [--top 20] [--include specs.txt] [--out <dir>] [--json]
+bsc say audition [--count 200] [--seed 1] [--top 5] [--include specs.txt] [--anchor <spec>] [--out <dir>] [--json]
 bsc say audition \"different words\" --out <another dir>
 
 1. Renders every English Kokoro voice once as the REFERENCE, labelled by its f/m prefix, so the
    centroids are derived from these voices rather than assumed from population averages.
 2. Draws --count seeded random blends, each crossing the labels: one or two female voices with one
    or two male ones, at random weights. --include adds specs you already like, one per line.
-3. Renders each blend reading the same sentence, measures it (see `bsc say analyze`), and ranks by
-   distance from perfectly between.
+3. Renders each blend reading the same sentence, measures it (see `bsc say analyze`), and prints the
+   top of EACH grading — different questions, so different winners:
+
+   midpoint      pitch and formant spacing both halfway (asks about two cues only)
+   all-cues      halfway on every cue that separates the voices: intonation range and brightness too
+   discriminant  a linear classifier cannot tell; opposing cues may cancel
+   neighbours    as close to the nearest female voices as to the nearest male ones
+   anchored      closest to --anchor, a blend you judged ambiguous by ear
 
 A RERUN IS CHEAP: clips already on disk are measured, not re-rendered, so raising --count or adding a
 seed only renders what is new. A directory holds ONE text; different words need a different --out.
@@ -242,6 +249,8 @@ struct Args {
     include: Option<String>,
     /// `analyze`: the audition directory whose reference clips place a measurement.
     against: Option<String>,
+    /// `analyze`/`audition`: a blend spec or a wav judged ambiguous by ear, for the anchored grading.
+    anchor: Option<String>,
     positional: Vec<String>,
 }
 
@@ -263,6 +272,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--out" => a.out = Some(rest.value("--out needs a path to write a wav to")?),
             "--include" => a.include = Some(rest.value("--include needs a file of blend specs, one per line")?),
             "--against" => a.against = Some(rest.value("--against needs an audition directory")?),
+            "--anchor" => a.anchor = Some(rest.value("--anchor needs a blend spec or a wav judged ambiguous")?),
             "--count" => {
                 a.count = Some(
                     rest.value("--count needs a number of blends")?
@@ -1215,30 +1225,61 @@ fn emit_json(pretty: bool, v: &serde_json::Value) -> Result<(), String> {
 }
 
 fn placement_json(p: &crate::acoustics::Profile, place: Option<&crate::acoustics::Placement>) -> serde_json::Value {
+    use crate::acoustics::{Grading, FEATURES};
+    let positions: serde_json::Map<String, serde_json::Value> = FEATURES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.to_string(), json!(place.map(|x| x.positions[i]))))
+        .collect();
+    let scores: serde_json::Map<String, serde_json::Value> =
+        Grading::ALL.iter().map(|g| (g.name().to_string(), json!(place.and_then(|x| x.score(*g))))).collect();
     json!({
         "f0Hz": p.f0_hz,
         "voiced": p.voiced,
         "formantsHz": p.formants,
         "dispersionHz": p.dispersion_hz,
-        "pitch": place.map(|x| x.pitch),
-        "formant": place.map(|x| x.formant),
-        "distance": place.map(|x| x.distance),
+        "intonationSt": p.f0_spread_st,
+        "brightnessHz": p.brightness_hz,
+        "positions": positions,
+        "scores": scores,
         "lean": place.map(|x| x.lean),
     })
 }
 
-fn reference_json(r: &crate::acoustics::Reference) -> serde_json::Value {
+fn centroid_json(c: &crate::acoustics::Centroid) -> serde_json::Value {
     json!({
-        "female": { "f0Hz": r.female.f0_hz, "dispersionHz": r.female.dispersion_hz, "voices": r.female.voices },
-        "male": { "f0Hz": r.male.f0_hz, "dispersionHz": r.male.dispersion_hz, "voices": r.male.voices },
+        "f0Hz": c.f0_hz,
+        "dispersionHz": c.dispersion_hz,
+        "intonationSt": c.centre[2],
+        "brightnessHz": c.centre[3].exp(),
+        "voices": c.voices,
     })
 }
 
+fn separating_cues(r: &crate::acoustics::Reference) -> Vec<&'static str> {
+    crate::acoustics::FEATURES.iter().zip(r.separating).filter(|(_, s)| *s).map(|(n, _)| *n).collect()
+}
+
+fn reference_json(r: &crate::acoustics::Reference) -> serde_json::Value {
+    json!({ "female": centroid_json(&r.female), "male": centroid_json(&r.male), "separatingCues": separating_cues(r) })
+}
+
 fn print_reference(r: &crate::acoustics::Reference) {
-    println!(
-        "reference  female {:.0} Hz, ΔF {:.0} ({} voices)   male {:.0} Hz, ΔF {:.0} ({} voices)",
-        r.female.f0_hz, r.female.dispersion_hz, r.female.voices, r.male.f0_hz, r.male.dispersion_hz, r.male.voices
-    );
+    for (label, c) in [("female", &r.female), ("male", &r.male)] {
+        println!(
+            "{label:<7} {:.0} Hz, ΔF {:.0}, intonation {:.1} st, brightness {:.0} Hz ({} voices)",
+            c.f0_hz,
+            c.dispersion_hz,
+            c.centre[2],
+            c.centre[3].exp(),
+            c.voices
+        );
+    }
+    println!("cues that separate them: {}", separating_cues(r).join(", "));
+}
+
+fn semitones(v: Option<f32>) -> String {
+    v.map(|x| format!("{x:.1}")).unwrap_or_else(|| "-".into())
 }
 
 fn cmd_analyze(a: &Args) -> Result<(), String> {
@@ -1253,11 +1294,19 @@ fn cmd_analyze(a: &Args) -> Result<(), String> {
     // A missing reference is not a failure to MEASURE — the raw numbers stand on their own, and the
     // report says why there is no placement rather than omitting it silently.
     let reference = measure_references(&dir.join("ref"));
+    let anchor = match &a.anchor {
+        Some(path) => {
+            let (samples, rate) = read_wav(std::path::Path::new(path))
+                .map_err(|e| format!("--anchor for analyze is a wav judged ambiguous: {e}"))?;
+            Some(crate::acoustics::profile(&samples, rate))
+        }
+        None => None,
+    };
     let mut rows = Vec::new();
     for f in files {
         let (samples, rate) = read_wav(std::path::Path::new(f))?;
         let measured = crate::acoustics::profile(&samples, rate);
-        let place = reference.as_ref().ok().and_then(|r| r.place(&measured));
+        let place = reference.as_ref().ok().and_then(|r| r.place_anchored(&measured, anchor.as_ref()));
         rows.push((f, measured, place));
     }
 
@@ -1281,14 +1330,32 @@ fn cmd_analyze(a: &Args) -> Result<(), String> {
         Ok(r) => print_reference(r),
         Err(e) => println!("no placement: {e}"),
     }
-    println!("{:>6} {:>6} {:>16} {:>6} {:>7} {:>8}  file", "F0", "ΔF", "F1/F2/F3", "pitch", "formant", "distance");
+    use crate::acoustics::Grading;
+    let score_header = Grading::ALL.iter().map(|g| format!("{:>6}", g.short())).collect::<Vec<_>>().join(" ");
+    println!(
+        "{:>5} {:>5} {:>5} {:>5} │ {:>6} {:>6} {:>6} {:>6} │ {score_header}  file",
+        "F0", "ΔF", "inton", "brite", "pitch", "form", "inton", "brite"
+    );
     for (f, p, place) in &rows {
-        let formants = p.formants.iter().map(|x| hz(*x)).collect::<Vec<_>>().join("/");
-        let (pitch, formant, distance) = match place {
-            Some(x) => (format!("{:+.2}", x.pitch), format!("{:+.2}", x.formant), format!("{:.2}", x.distance)),
-            None => ("-".into(), "-".into(), "-".into()),
+        let dash = |n: usize| vec![format!("{:>6}", "-"); n].join(" ");
+        let (cues, scores) = match place {
+            Some(x) => (
+                x.positions.iter().map(|v| format!("{v:>+6.2}")).collect::<Vec<_>>().join(" "),
+                Grading::ALL
+                    .iter()
+                    .map(|g| x.score(*g).map(|s| format!("{s:>6.2}")).unwrap_or_else(|| format!("{:>6}", "-")))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+            None => (dash(4), dash(Grading::ALL.len())),
         };
-        println!("{:>6} {:>6} {:>16} {:>6} {:>7} {:>8}  {f}", hz(p.f0_hz), hz(p.dispersion_hz), formants, pitch, formant, distance);
+        println!(
+            "{:>5} {:>5} {:>5} {:>5} │ {cues} │ {scores}  {f}",
+            hz(p.f0_hz),
+            hz(p.dispersion_hz),
+            semitones(p.f0_spread_st),
+            hz(p.brightness_hz)
+        );
     }
     Ok(())
 }
@@ -1361,6 +1428,25 @@ fn cmd_audition(a: &Args) -> Result<(), String> {
         }
     }
     let reference = measure_references(&dir.join("ref"))?;
+    // An anchor is best given as a SPEC: it is then rendered reading this directory's text, so
+    // intonation — which depends on the words — is compared like for like.
+    let anchor = match &a.anchor {
+        None => None,
+        Some(given) => {
+            let clip = if std::path::Path::new(given).is_file() {
+                PathBuf::from(given)
+            } else {
+                let spec = audition::spec_of(&kokoro::parse_blend(given)?);
+                let clip = dir.join("blends").join(audition::clip_name(&spec));
+                if !clip.is_file() {
+                    render(&blend_bytes(&paths.voices, &spec)?, &clip)?;
+                }
+                clip
+            };
+            let (samples, rate) = read_wav(&clip)?;
+            Some(acoustics::profile(&samples, rate))
+        }
+    };
 
     let mut specs: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -1398,7 +1484,7 @@ fn cmd_audition(a: &Args) -> Result<(), String> {
         }
         let (samples, rate) = read_wav(&clip)?;
         let measured = acoustics::profile(&samples, rate);
-        match reference.place(&measured) {
+        match reference.place_anchored(&measured, anchor.as_ref()) {
             Some(place) => ranked.push((spec, clip, measured, place)),
             None => unplaced += 1,
         }
@@ -1406,38 +1492,67 @@ fn cmd_audition(a: &Args) -> Result<(), String> {
             eprintln!("bsc say audition: {}/{} clips measured ({:.0}s)", i + 1, specs.len(), started.elapsed().as_secs_f32());
         }
     }
-    ranked.sort_by(|x, y| x.3.distance.total_cmp(&y.3.distance));
+    use acoustics::{Grading, FEATURES};
+    let gradings: Vec<Grading> =
+        Grading::ALL.into_iter().filter(|g| ranked.iter().any(|r| r.3.score(*g).is_some())).collect();
+    let ordered = |g: Grading| {
+        let mut order: Vec<usize> = (0..ranked.len()).collect();
+        let key = |i: usize| ranked[i].3.score(g).unwrap_or(f32::MAX);
+        order.sort_by(|x, y| key(*x).total_cmp(&key(*y)));
+        order
+    };
 
-    let mut tsv = String::from("rank\tdistance\tpitch\tformant\tf0_hz\tdispersion_hz\tincluded\tspec\tclip\n");
-    for (i, (spec, clip, m, p)) in ranked.iter().enumerate() {
+    // The file holds EVERY grading's score, ordered by all-cues; sort it by another column to read a
+    // different grading's ranking.
+    let mut tsv = String::from("spec\tincluded\tf0_hz\tdispersion_hz\tintonation_st\tbrightness_hz");
+    for n in FEATURES {
+        tsv.push_str(&format!("\t{n}_position"));
+    }
+    for g in &gradings {
+        tsv.push_str(&format!("\t{}", g.name()));
+    }
+    tsv.push_str("\tclip\n");
+    for i in ordered(Grading::AllCues) {
+        let (spec, clip, m, p) = &ranked[i];
         tsv.push_str(&format!(
-            "{}\t{:.3}\t{:+.3}\t{:+.3}\t{}\t{}\t{}\t{spec}\t{}\n",
-            i + 1,
-            p.distance,
-            p.pitch,
-            p.formant,
+            "{spec}\t{}\t{}\t{}\t{}\t{}",
+            included.contains(*spec),
             hz(m.f0_hz),
             hz(m.dispersion_hz),
-            included.contains(*spec),
-            clip.display()
+            semitones(m.f0_spread_st),
+            hz(m.brightness_hz)
         ));
+        for v in p.positions {
+            tsv.push_str(&format!("\t{v:+.3}"));
+        }
+        for g in &gradings {
+            tsv.push_str(&format!("\t{:.3}", p.score(*g).unwrap_or(f32::NAN)));
+        }
+        tsv.push_str(&format!("\t{}\n", clip.display()));
     }
     let ranking = dir.join("ranking.tsv");
     std::fs::write(&ranking, tsv).map_err(|e| format!("could not write {}: {e}", ranking.display()))?;
 
-    let top = a.top.unwrap_or(20).min(ranked.len());
+    let top = a.top.unwrap_or(5).min(ranked.len());
     if a.json || a.pretty {
-        let rows: Vec<_> = ranked
+        let sections: Vec<_> = gradings
             .iter()
-            .take(top)
-            .enumerate()
-            .map(|(i, (spec, clip, m, p))| {
-                let mut v = placement_json(m, Some(p));
-                v["rank"] = json!(i + 1);
-                v["spec"] = json!(spec);
-                v["clip"] = json!(clip.display().to_string());
-                v["included"] = json!(included.contains(*spec));
-                v
+            .map(|g| {
+                let rows: Vec<_> = ordered(*g)
+                    .into_iter()
+                    .take(top)
+                    .enumerate()
+                    .map(|(rank, i)| {
+                        let (spec, clip, m, p) = &ranked[i];
+                        let mut v = placement_json(m, Some(p));
+                        v["rank"] = json!(rank + 1);
+                        v["spec"] = json!(spec);
+                        v["clip"] = json!(clip.display().to_string());
+                        v["included"] = json!(included.contains(*spec));
+                        v
+                    })
+                    .collect();
+                json!({ "grading": g.name(), "asks": g.describe(), "top": rows })
             })
             .collect();
         return emit_json(
@@ -1447,24 +1562,21 @@ fn cmd_audition(a: &Args) -> Result<(), String> {
                 "measured": ranked.len(),
                 "unplaced": unplaced,
                 "ranking": ranking.display().to_string(),
-                "top": rows,
+                "gradings": sections,
             }),
         );
     }
     print_reference(&reference);
-    println!("measured {} blends ({} could not be placed); * marks an --include spec\n", ranked.len(), unplaced);
-    println!("{:>4} {:>8} {:>6} {:>7} {:>5} {:>5}  blend", "rank", "distance", "pitch", "formant", "F0", "ΔF");
-    for (i, (spec, _, m, p)) in ranked.iter().take(top).enumerate() {
-        let mark = if included.contains(*spec) { "*" } else { " " };
-        println!(
-            "{:>4} {:>8.3} {:>+6.2} {:>+7.2} {:>5} {:>5} {mark}{spec}",
-            i + 1,
-            p.distance,
-            p.pitch,
-            p.formant,
-            hz(m.f0_hz),
-            hz(m.dispersion_hz)
-        );
+    println!("measured {} blends ({} could not be placed); * marks an --include spec", ranked.len(), unplaced);
+    for g in &gradings {
+        println!("\n── {} — {}", g.name(), g.describe());
+        println!("{:>4} {:>6}  {:>6} {:>6} {:>6} {:>6}  blend", "rank", "score", "pitch", "form", "inton", "brite");
+        for (rank, i) in ordered(*g).into_iter().take(top).enumerate() {
+            let (spec, _, _, p) = &ranked[i];
+            let mark = if included.contains(*spec) { "*" } else { " " };
+            let cues = p.positions.iter().map(|v| format!("{v:>+6.2}")).collect::<Vec<_>>().join(" ");
+            println!("{:>4} {:>6.3}  {cues}  {mark}{spec}", rank + 1, p.score(*g).unwrap_or(f32::NAN));
+        }
     }
     println!("\nfull ranking: {}\nclips: {}", ranking.display(), dir.join("blends").display());
     Ok(())

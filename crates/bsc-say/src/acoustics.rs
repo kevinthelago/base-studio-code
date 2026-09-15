@@ -46,6 +46,14 @@ pub struct Profile {
     pub formants: [Option<f32>; 3],
     /// Median per-frame formant dispersion — the vocal-tract-length cue.
     pub dispersion_hz: Option<f32>,
+    /// How much the pitch MOVES, in semitones (a robust spread around the median). Intonation range
+    /// is a cue of its own, and not the direction folklore expects: measured 2026-09-15 on Kokoro's
+    /// English voices, the MALE median moved more (4.3 st against 3.5).
+    pub f0_spread_st: Option<f32>,
+    /// The RMS frequency of voiced speech — how bright or dark the tone is, independent of pitch.
+    /// Measured the same day it did NOT separate the labels (female 715 Hz, male 657 Hz, inside one
+    /// spread), so a reference built from those voices leaves it out of every grading.
+    pub brightness_hz: Option<f32>,
 }
 
 /// Measure a clip.
@@ -54,12 +62,38 @@ pub fn profile(samples: &[f32], sample_rate: u32) -> Profile {
     let spoken = track.iter().filter(|f| f.is_some()).count();
     let voiced_frames: Vec<f32> = track.iter().filter_map(|f| f.flatten()).collect();
     let voiced = if spoken == 0 { 0.0 } else { voiced_frames.len() as f32 / spoken as f32 };
-    let f0_hz = median(voiced_frames);
+    let f0_hz = median(voiced_frames.clone());
+    let f0_spread_st = f0_hz.and_then(|m| {
+        if voiced_frames.len() < 5 {
+            return None;
+        }
+        // Median absolute deviation, scaled to a standard deviation: one octave error in a sentence
+        // must not read as a sing-song voice.
+        median(voiced_frames.iter().map(|f| (12.0 * (f / m).log2()).abs()).collect()).map(|d| d * 1.4826)
+    });
+
+    // RMS frequency from the ratio of the first difference's energy to the signal's: for a sinusoid
+    // it is exactly 2·sin(πf/fs), so no FFT is needed to ask how bright a sound is.
+    let len = pitch_frame_len(sample_rate);
+    let hop = ((sample_rate as f32 * HOP_SECS) as usize).max(1);
+    let (mut energy, mut slope) = (0.0f64, 0.0f64);
+    for (i, frame) in track.iter().enumerate() {
+        if matches!(frame, Some(Some(_))) {
+            for w in samples[i * hop..i * hop + len].windows(2) {
+                energy += (w[1] as f64).powi(2);
+                slope += (w[1] as f64 - w[0] as f64).powi(2);
+            }
+        }
+    }
+    let brightness_hz = (energy > 0.0).then(|| {
+        let ratio = ((slope / energy).sqrt() / 2.0).min(1.0);
+        (sample_rate as f64 / std::f64::consts::PI * ratio.asin()) as f32
+    });
 
     let per_frame = formant_track(samples, sample_rate, &track);
     let pick = |i: usize| median(per_frame.iter().map(|f| f[i]).collect());
     let dispersion_hz = median(per_frame.iter().map(dispersion).collect());
-    Profile { f0_hz, voiced, formants: [pick(0), pick(1), pick(2)], dispersion_hz }
+    Profile { f0_hz, voiced, formants: [pick(0), pick(1), pick(2)], dispersion_hz, f0_spread_st, brightness_hz }
 }
 
 fn median(mut v: Vec<f32>) -> Option<f32> {
@@ -336,73 +370,218 @@ fn resonances(a: &[f64], rate: u32) -> Option<[f32; 3]> {
 /// A median, not a mean, because one odd voice must not move the axis: measured 2026-09-15, Kokoro's
 /// `af_nicole` whispers, has almost no voicing to find formants in, and measured ΔF 1541 Hz against
 /// every other female voice's 1105–1302.
+/// The cues a voice is placed on, in [`features`] order.
+pub const FEATURES: [&str; 4] = ["pitch", "formant", "intonation", "brightness"];
+
+/// The cues on scales where a step means the same thing everywhere: pitch, spacing and brightness as
+/// logs, because they are heard as ratios; intonation is already in semitones.
+pub fn features(p: &Profile) -> Option<[f32; 4]> {
+    Some([p.f0_hz?.ln(), p.dispersion_hz?.ln(), p.f0_spread_st?, p.brightness_hz?.ln()])
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Centroid {
     pub f0_hz: f32,
     pub dispersion_hz: f32,
     pub voices: usize,
+    /// The median of each cue, in [`features`] units.
+    pub centre: [f32; 4],
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub female: Centroid,
     pub male: Centroid,
+    /// A robust spread per cue — the median absolute deviation within each group, pooled — which is
+    /// what "a big difference" means for that cue.
+    pub scale: [f32; 4],
+    /// The cues that separate the groups by at least half a spread. A cue both groups share is not
+    /// evidence either way, and dividing by its tiny gap would let noise decide every score. Pitch and
+    /// formant spacing always count: the placement is built on them.
+    pub separating: [bool; 4],
+    female_points: Vec<[f32; 4]>,
+    male_points: Vec<[f32; 4]>,
 }
 
-/// A clip's position between the two centroids.
+/// The ways "androgynous" is scored. Each is a DIFFERENT QUESTION, which is the point of having
+/// several: the first one asked only about pitch and spacing, and a listener heard its winners as
+/// female because other cues — how much the pitch moves, how bright the tone is — were never asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grading {
+    Midpoint,
+    AllCues,
+    Discriminant,
+    Neighbours,
+    Anchored,
+}
+
+impl Grading {
+    pub const ALL: [Grading; 5] =
+        [Grading::Midpoint, Grading::AllCues, Grading::Discriminant, Grading::Neighbours, Grading::Anchored];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Grading::Midpoint => "midpoint",
+            Grading::AllCues => "all-cues",
+            Grading::Discriminant => "discriminant",
+            Grading::Neighbours => "neighbours",
+            Grading::Anchored => "anchored",
+        }
+    }
+
+    /// A column-width label.
+    pub const fn short(self) -> &'static str {
+        match self {
+            Grading::Midpoint => "mid",
+            Grading::AllCues => "cues",
+            Grading::Discriminant => "disc",
+            Grading::Neighbours => "nbrs",
+            Grading::Anchored => "anchor",
+        }
+    }
+
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Grading::Midpoint => "pitch and formant spacing both halfway between the centroids",
+            Grading::AllCues => "halfway on EVERY cue that separates the voices, intonation and brightness included",
+            Grading::Discriminant => "a linear classifier cannot tell — opposing cues may cancel",
+            Grading::Neighbours => "as close to the nearest female voices as to the nearest male ones",
+            Grading::Anchored => "closest to a blend a listener already judged ambiguous (--anchor)",
+        }
+    }
+
+    const fn index(self) -> usize {
+        match self {
+            Grading::Midpoint => 0,
+            Grading::AllCues => 1,
+            Grading::Discriminant => 2,
+            Grading::Neighbours => 3,
+            Grading::Anchored => 4,
+        }
+    }
+}
+
+/// A clip's position between the two centroids, and its score under each grading. Every score reads
+/// the same way: 0 is fully androgynous, and larger is further from it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Placement {
-    /// −1 at the male centroid's pitch, +1 at the female's, 0 exactly between.
+    /// Per cue: −1 at the male centroid, +1 at the female, 0 exactly between.
+    pub positions: [f32; 4],
+    /// `positions[0]` and `[1]`, named, because they are the two the midpoint grading uses.
     pub pitch: f32,
-    /// The same scale for formant dispersion.
     pub formant: f32,
-    /// How far from perfectly between, on both axes at once: 0 is fully androgynous, 1 is as far
-    /// out as a centroid. Root-mean-square, so a high pitch through a long tract — which reads as a
+    /// The midpoint score. Root-mean-square, so a high pitch through a long tract — which reads as a
     /// man speaking high, not as ambiguous — is NOT scored as neutral just because the two cancel.
     pub distance: f32,
-    /// The mean of the two positions: which way the clip leans, when it leans.
+    /// The mean of the pitch and formant positions: which way the clip leans, when it leans.
     pub lean: f32,
+    scores: [Option<f32>; 5],
 }
 
-fn centroid(group: &[Profile]) -> Option<Centroid> {
-    let usable: Vec<(f32, f32)> = group.iter().filter_map(|p| Some((p.f0_hz?, p.dispersion_hz?))).collect();
-    if usable.is_empty() {
-        return None;
+impl Placement {
+    /// `None` only for [`Grading::Anchored`] when no anchor was given.
+    pub fn score(&self, g: Grading) -> Option<f32> {
+        self.scores[g.index()]
     }
-    Some(Centroid {
-        f0_hz: median(usable.iter().map(|(f, _)| *f).collect())?,
-        dispersion_hz: median(usable.iter().map(|(_, d)| *d).collect())?,
-        voices: usable.len(),
-    })
+}
+
+fn centroid(points: &[[f32; 4]]) -> Option<Centroid> {
+    let mut centre = [0.0f32; 4];
+    for i in 0..4 {
+        centre[i] = median(points.iter().map(|p| p[i]).collect())?;
+    }
+    Some(Centroid { f0_hz: centre[0].exp(), dispersion_hz: centre[1].exp(), voices: points.len(), centre })
 }
 
 impl Reference {
     pub fn from_groups(female: &[Profile], male: &[Profile]) -> Result<Reference, String> {
-        let female = centroid(female).ok_or("no female reference voice measured a pitch and formants")?;
-        let male = centroid(male).ok_or("no male reference voice measured a pitch and formants")?;
-        let gap = |f: f32, m: f32| (f.ln() - m.ln()).abs();
-        if gap(female.f0_hz, male.f0_hz) < 0.01 || gap(female.dispersion_hz, male.dispersion_hz) < 0.001 {
+        let female_points: Vec<[f32; 4]> = female.iter().filter_map(features).collect();
+        let male_points: Vec<[f32; 4]> = male.iter().filter_map(features).collect();
+        let female = centroid(&female_points).ok_or("no female reference voice measured every cue")?;
+        let male = centroid(&male_points).ok_or("no male reference voice measured every cue")?;
+        let gap = |i: usize| (female.centre[i] - male.centre[i]).abs();
+        if gap(0) < 0.01 || gap(1) < 0.001 {
             return Err(format!(
                 "the reference groups do not separate (female {:.0} Hz / ΔF {:.0}, male {:.0} Hz / ΔF {:.0}) — there is no axis to place anything on",
                 female.f0_hz, female.dispersion_hz, male.f0_hz, male.dispersion_hz
             ));
         }
-        Ok(Reference { female, male })
+        let mut scale = [0.0f32; 4];
+        let mut separating = [true; 4];
+        for i in 0..4 {
+            let deviations = female_points
+                .iter()
+                .map(|p| (p[i] - female.centre[i]).abs())
+                .chain(male_points.iter().map(|p| (p[i] - male.centre[i]).abs()))
+                .collect();
+            scale[i] = (median(deviations).unwrap_or(0.0) * 1.4826).max(1e-3);
+            if i >= 2 {
+                separating[i] = gap(i) >= 0.5 * scale[i];
+            }
+        }
+        Ok(Reference { female, male, scale, separating, female_points, male_points })
+    }
+
+    fn positions(&self, x: &[f32; 4]) -> [f32; 4] {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            let half = (self.female.centre[i] - self.male.centre[i]) / 2.0;
+            let mid = (self.female.centre[i] + self.male.centre[i]) / 2.0;
+            out[i] = if half.abs() > f32::EPSILON { (x[i] - mid) / half } else { 0.0 };
+        }
+        out
     }
 
     pub fn place(&self, p: &Profile) -> Option<Placement> {
-        let axis = |v: f32, f: f32, m: f32| {
-            let mid = (f.ln() + m.ln()) / 2.0;
-            let half = (f.ln() - m.ln()) / 2.0;
-            (v.ln() - mid) / half
+        self.place_anchored(p, None)
+    }
+
+    /// Place a clip and score it under every grading; `anchor` enables [`Grading::Anchored`].
+    pub fn place_anchored(&self, p: &Profile, anchor: Option<&Profile>) -> Option<Placement> {
+        let x = features(p)?;
+        let pos = self.positions(&x);
+        let used: Vec<usize> = (0..4).filter(|i| self.separating[*i]).collect();
+        let rms = |sq: f32| (sq / used.len() as f32).sqrt();
+        let (pitch, formant) = (pos[0], pos[1]);
+        let distance = ((pitch * pitch + formant * formant) / 2.0).sqrt();
+        let all_cues = rms(used.iter().map(|i| pos[*i] * pos[*i]).sum());
+
+        // A diagonal linear discriminant: each cue weighted by its gap over its spread squared, the
+        // projection normalised so a centroid lands at ±1. Unlike every other grading here, opposing
+        // cues CANCEL — it asks whether a classifier could tell, not whether each cue is neutral.
+        let weight = |i: usize| (self.female.centre[i] - self.male.centre[i]) / (self.scale[i] * self.scale[i]);
+        let half: f32 = used.iter().map(|i| weight(*i) * (self.female.centre[*i] - self.male.centre[*i]) / 2.0).sum();
+        let projection: f32 = used
+            .iter()
+            .map(|i| weight(*i) * (x[*i] - (self.female.centre[*i] + self.male.centre[*i]) / 2.0))
+            .sum();
+        let discriminant = (projection / half).abs();
+
+        // Mean distance to the three nearest voices of each label, in spread units.
+        let nearest = |points: &[[f32; 4]]| {
+            let mut d: Vec<f32> = points
+                .iter()
+                .map(|q| used.iter().map(|i| ((x[*i] - q[*i]) / self.scale[*i]).powi(2)).sum::<f32>().sqrt())
+                .collect();
+            d.sort_by(f32::total_cmp);
+            let k = d.len().clamp(1, 3);
+            d.iter().take(k).sum::<f32>() / k as f32
         };
-        let pitch = axis(p.f0_hz?, self.female.f0_hz, self.male.f0_hz);
-        let formant = axis(p.dispersion_hz?, self.female.dispersion_hz, self.male.dispersion_hz);
+        let (to_female, to_male) = (nearest(&self.female_points), nearest(&self.male_points));
+        let neighbours =
+            if to_female + to_male > 0.0 { (to_female - to_male).abs() / (to_female + to_male) } else { 0.0 };
+
+        let anchored = anchor.and_then(features).map(|a| {
+            let at = self.positions(&a);
+            rms(used.iter().map(|i| (pos[*i] - at[*i]).powi(2)).sum())
+        });
         Some(Placement {
+            positions: pos,
             pitch,
             formant,
-            distance: ((pitch * pitch + formant * formant) / 2.0).sqrt(),
+            distance,
             lean: (pitch + formant) / 2.0,
+            scores: [Some(distance), Some(all_cues), Some(discriminant), Some(neighbours), anchored],
         })
     }
 }
@@ -415,9 +594,24 @@ mod tests {
 
     /// A glottal pulse train through three two-pole resonators: a vowel with KNOWN pitch and formants.
     fn vowel(f0: f32, formants: [f32; 3], secs: f32) -> Vec<f32> {
+        glide(f0, f0, formants, secs)
+    }
+
+    /// The same, with the pitch moving linearly from `from` to `to` — a voice with intonation.
+    fn glide(from: f32, to: f32, formants: [f32; 3], secs: f32) -> Vec<f32> {
         let n = (SR as f32 * secs) as usize;
-        let period = SR as f32 / f0;
-        let mut x: Vec<f64> = (0..n).map(|i| if (i as f32 % period) < 1.0 { 1.0 } else { 0.0 }).collect();
+        let mut phase = 0.0f32;
+        let mut x: Vec<f64> = (0..n)
+            .map(|i| {
+                phase += (from + (to - from) * i as f32 / n as f32) / SR as f32;
+                if phase >= 1.0 {
+                    phase -= 1.0;
+                    1.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
         for f in formants {
             let r = (-std::f64::consts::PI * 80.0 / SR as f64).exp();
             let theta = 2.0 * std::f64::consts::PI * f as f64 / SR as f64;
@@ -481,8 +675,112 @@ mod tests {
         assert!((dispersion(&[500.0, 1500.0, 2500.0]) - 1000.0).abs() < 1e-3);
     }
 
+    #[test]
+    fn a_moving_pitch_measures_more_intonation_than_a_steady_one() {
+        let steady = profile(&vowel(140.0, [600.0, 1700.0, 2700.0], 0.8), SR);
+        let moving = profile(&glide(100.0, 170.0, [600.0, 1700.0, 2700.0], 0.8), SR);
+        let (s, m) = (steady.f0_spread_st.unwrap(), moving.f0_spread_st.unwrap());
+        assert!(s < 0.3, "a held note barely moves: {s}");
+        assert!(m > 1.5, "a glide across nine semitones moves: {m}");
+    }
+
+    #[test]
+    fn higher_resonances_measure_brighter_at_the_same_pitch() {
+        let dark = profile(&vowel(130.0, [500.0, 1400.0, 2400.0], 0.5), SR).brightness_hz.unwrap();
+        let bright = profile(&vowel(130.0, [750.0, 2100.0, 3300.0], 0.5), SR).brightness_hz.unwrap();
+        assert!(bright > dark * 1.1, "dark {dark}, bright {bright}");
+    }
+
     fn measured(f0: f32, df: f32) -> Profile {
-        Profile { f0_hz: Some(f0), voiced: 1.0, formants: [None, None, None], dispersion_hz: Some(df) }
+        cued(f0, df, 2.0, 1500.0)
+    }
+
+    fn cued(f0: f32, df: f32, spread: f32, brightness: f32) -> Profile {
+        Profile {
+            f0_hz: Some(f0),
+            voiced: 1.0,
+            formants: [None, None, None],
+            dispersion_hz: Some(df),
+            f0_spread_st: Some(spread),
+            brightness_hz: Some(brightness),
+        }
+    }
+
+    /// Two voices per label, slightly apart, differing on all four cues.
+    fn four_cue_reference() -> Reference {
+        Reference::from_groups(
+            &[cued(195.0, 1190.0, 3.1, 1950.0), cued(205.0, 1210.0, 2.9, 2050.0)],
+            &[cued(98.0, 990.0, 1.6, 1380.0), cued(102.0, 1010.0, 1.4, 1420.0)],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn every_grading_scores_a_voice_exactly_between_as_zero() {
+        let r = four_cue_reference();
+        assert_eq!(r.separating, [true; 4], "all four cues separate this reference");
+        let between = cued((200.0f32 * 100.0).sqrt(), (1200.0f32 * 1000.0).sqrt(), 2.25, (2000.0f32 * 1400.0).sqrt());
+        let p = r.place_anchored(&between, Some(&between)).unwrap();
+        for g in Grading::ALL {
+            let s = p.score(g).unwrap();
+            assert!(s < 0.02, "{} scored {s}", g.name());
+        }
+    }
+
+    #[test]
+    fn a_centroid_scores_one_on_the_centroid_scaled_gradings() {
+        let r = four_cue_reference();
+        let female = cued(200.0, 1200.0, 3.0, 2000.0);
+        let p = r.place(&female).unwrap();
+        for g in [Grading::Midpoint, Grading::AllCues, Grading::Discriminant] {
+            assert!((p.score(g).unwrap() - 1.0).abs() < 0.02, "{} scored {:?}", g.name(), p.score(g));
+        }
+        assert!(p.score(Grading::Neighbours).unwrap() > 0.5, "right among the female voices");
+        assert_eq!(p.score(Grading::Anchored), None, "no anchor, no anchored score");
+    }
+
+    #[test]
+    fn midpoint_ignores_the_cues_that_all_cues_catches() {
+        let r = four_cue_reference();
+        // Halfway on pitch and spacing, female on intonation and brightness: the case a listener
+        // heard as female while the first grading called it neutral.
+        let p = r
+            .place(&cued((200.0f32 * 100.0).sqrt(), (1200.0f32 * 1000.0).sqrt(), 3.0, 2000.0))
+            .unwrap();
+        assert!(p.score(Grading::Midpoint).unwrap() < 0.02);
+        assert!(p.score(Grading::AllCues).unwrap() > 0.6, "{:?}", p.score(Grading::AllCues));
+    }
+
+    #[test]
+    fn only_the_discriminant_lets_opposing_cues_cancel() {
+        let r = four_cue_reference();
+        let conflicted = r.place(&cued(200.0, 1200.0, 1.5, 1400.0)).unwrap();
+        let all = conflicted.score(Grading::AllCues).unwrap();
+        let disc = conflicted.score(Grading::Discriminant).unwrap();
+        assert!(all > 0.9, "every cue is at a centroid: {all}");
+        assert!(disc < all * 0.6, "female on two, male on two, and the classifier is torn: {disc}");
+    }
+
+    #[test]
+    fn the_anchor_scores_zero_and_the_far_side_does_not() {
+        let r = four_cue_reference();
+        let anchor = cued(140.0, 1080.0, 2.0, 1600.0);
+        assert!(r.place_anchored(&anchor, Some(&anchor)).unwrap().score(Grading::Anchored).unwrap() < 1e-4);
+        let far = r.place_anchored(&cued(200.0, 1200.0, 3.0, 2000.0), Some(&anchor)).unwrap();
+        assert!(far.score(Grading::Anchored).unwrap() > 0.5);
+    }
+
+    #[test]
+    fn a_cue_both_labels_share_does_not_count() {
+        let r = Reference::from_groups(
+            &[cued(195.0, 1190.0, 2.0, 1500.0), cued(205.0, 1210.0, 2.4, 1600.0)],
+            &[cued(98.0, 990.0, 2.2, 1550.0), cued(102.0, 1010.0, 2.1, 1520.0)],
+        )
+        .unwrap();
+        assert_eq!(r.separating, [true, true, false, false]);
+        // Wildly off on the shared cues, halfway on the real ones: still neutral.
+        let p = r.place(&cued((200.0f32 * 100.0).sqrt(), (1200.0f32 * 1000.0).sqrt(), 9.0, 4000.0)).unwrap();
+        assert!(p.score(Grading::AllCues).unwrap() < 0.02, "{:?}", p.score(Grading::AllCues));
     }
 
     #[test]
