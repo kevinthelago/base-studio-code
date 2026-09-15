@@ -62,6 +62,7 @@
       "../target/bundle-resources/data/personas/surface-operator.json": "data/personas/surface-operator.json",
       "../target/bundle-resources/data/personas/tester.json": "data/personas/tester.json",
       "../target/bundle-resources/data/personas/triage.json": "data/personas/triage.json",
+      "../target/bundle-resources/data/personas/tutor.json": "data/personas/tutor.json",
       "../target/bundle-resources/data/personas/worker.json": "data/personas/worker.json",
       "../target/bundle-resources/data/skills/audit-consent-scaffold.json": "data/skills/audit-consent-scaffold.json",
       "../target/bundle-resources/data/skills/author-accessible-components.json": "data/skills/author-accessible-components.json",

@@ -740,6 +740,7 @@
   "@data/personas/surface-operator.json",
   "@data/personas/tester.json",
   "@data/personas/triage.json",
+  "@data/personas/tutor.json",
   "@data/personas/worker.json",
   "@data/planner/autopilot-sim.json",
   "@data/planner/stage-registry.json",

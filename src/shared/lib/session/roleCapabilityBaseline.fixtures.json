@@ -11,7 +11,8 @@
     "a-network-gets-a-root-session-that-can-use-what-it-owns (2026-09-04): ADDS the `steward` role — a network's ROOT SESSION, which uses what the network has already built, as opposed to the architect that plans what it will build next. Both can exist for one network. This is an ADDITION, not a widening: no existing role's capability moved on any axis, and the new role is `none` on every axis (github/git/code/net/ui/graph) with writeGlobs `scratch/**` — the same floor the architect, designer and librarian carry. IT IS DELIBERATELY NOT `operator`. `surface-operator-runs-confined-to-its-own-noun` (verified) uses that word for a session confined to ONE `bsc` noun which reports what that noun COSTS — a measurement role over a command surface. A steward ranges across a whole domain's finished systems and can be asked to act on them, so one word for both would put 'may drive the network's deployed machines' and 'may measure one CLI' behind the same grant. READ-ONLY BY DEFAULT IS EXPRESSED AS AN ALLOW-LIST, not a deny. Its 20 allowed verbs are all reads (bsc capability, bsc deploy devices|status, bsc project/plan/fleet reads, bsc logs, bsc mem) plus the tooling-request queue. A mutating verb is ABSENT rather than denied, so it falls through to the default posture's prompt and the human decides per action — denying it outright would make it unreachable even when the user wants it.",
     "every-session-can-write-memory (2026-09-10): allow += `bsc memory` on all 8 restricted roles (architect, curator, designer, integrator, librarian, operator, sound-designer, steward). DELIBERATE, and it closes a hole rather than widening one: `bsc memory` is the session-memory store and NO role's allow-list named it, so exactly the sessions scoped to a single noun could neither read what earlier sessions learned about that noun nor write what they learned themselves. The `bsc mem` entry these lists already carry is the DEPRECATED alias for `bsc cost` — renamed precisely so `bsc memory` could take the name — so the omission read as coverage rather than as a gap. No access axis moves: memory is a local user store with no verb that destroys anything (`edit` keeps the previous text on the record, `done` is a status, and there is no `remove`), and it reaches no network, no git and no code. The prefix is granted BARE rather than per-verb, unlike the studio grants above, because the loop this surface exists for is read-at-start / write-during: a session that may read what it is told and not record what it found leaves the store accumulating from one direction only. Also: `bsc mem` -> `bsc cost` on the operator (its charter is the only thing that used it, and now says `bsc cost build`), and steward.allow += `bsc cost` beside the `bsc mem` it keeps. Same code — `mem` dispatches straight to it — so no capability moves; what changes is that the LIVE name is reachable, which the operator's own charter now tells it to run. The alias stays so nothing that already worked stops. `every_allowed_surface_in_the_capability_baseline_is_live` is the gate that now pins all of it.",
     "rename-the-profile-to-permissions-on-the-persona (2026-09-10): the persona's `floor` is now `permissions`, and the retired `AgentProfile` (src-tauri/data/roles/*.json) is folded into it — so one object on one record answers \"what may this agent do\" instead of two stores with two vocabularies. NO ACCESS AXIS MOVED and no role was added or removed; every github/git/code/net/ui/graph value, every writeGlobs, allow, surfaces and harvestRoots list is byte-identical to the row above it. What is NEW is the six fields each row gained from the profile its ROLE already resolved to at launch (roleProfileId: worker/documentor/marketer/debugger -> pf_auto, planner -> sys_planner, every other role -> pf_review): `mode`, `tools`, `commands`, `allowGlobs` and `denyGlobs` (the profile's paths.allow / paths.deny) and `netAllow` (its net.allow). These were ALREADY being applied to these sessions — they were simply applied from a file the persona could not see, which is why `bsc persona set` could never change them, and why they sat outside the narrow-only clamp entirely. VERIFIED FIELD FOR FIELD: for all 20 packaged personas, each of the six now equals what `resolveProfileSettings(roleProfileId(role))` was reading, so the fold moves the SOURCE and not the VALUE. THE CLAMP NOW COVERS ALL SIX — `mode` and `tools` on the posture scale (deny<ask<allow, which is NOT the access-tier scale), `commands` and `netAllow` as subsets, `allowGlobs` by glob containment exactly as `writeGlobs`, and `denyGlobs` INVERTED, since dropping an ancestor's deny is the widening. `allowGlobs` is deliberately kept SEPARATE from `writeGlobs` rather than merged: they reach the launch through different rules (the role gate's write scope vs the verbatim Edit(<glob>) tool rules) and a session can hold one without the other.",
-    "the-lexicographer-has-its-own-role (2026-09-14): NEW role `lexicographer`, maintainer decision. The lexicographer ran on `director`, whose capability is far wider (git/GitHub reads, code write scoped to plan files, publish, teams, persona surfaces), and a built-in persona cannot share a role with different permissions. The new row is `none` on every access axis, mode deny, no write globs, the lexicographer surfaces (plan, surface, session, request, logs, errors) and an allow list of its language verbs PLUS the `bsc plan fleet` configuration verbs it needs to configure the streams it coordinates (list, get, stream add, model, provider, skills, writes) and `bsc skill list`, plus `bsc memory` (every confined role must be able to record what it learns). No existing role moved."
+    "the-lexicographer-has-its-own-role (2026-09-14): NEW role `lexicographer`, maintainer decision. The lexicographer ran on `director`, whose capability is far wider (git/GitHub reads, code write scoped to plan files, publish, teams, persona surfaces), and a built-in persona cannot share a role with different permissions. The new row is `none` on every access axis, mode deny, no write globs, the lexicographer surfaces (plan, surface, session, request, logs, errors) and an allow list of its language verbs PLUS the `bsc plan fleet` configuration verbs it needs to configure the streams it coordinates (list, get, stream add, model, provider, skills, writes) and `bsc skill list`, plus `bsc memory` (every confined role must be able to record what it learns). No existing role moved.",
+    "the-tutor-drives-learning-through-commands (2026-09-14): NEW role `tutor`, maintainer decision (the STEM harvest's tutor, run on a local model). It teaches its USER through `bsc teach` and `bsc formula`, and correctness comes from code, never from the model. The new row is `none` on every access axis, mode deny, no write globs, the tutor surfaces (help, teach, formula, request, persona, memory) and an allow list of VERBS, not nouns: the teach and formula reads, `bsc teach grade` (whose verdict `bsc formula` decides), `bsc teach notes`, capstone status/get/start, and `bsc memory`. It deliberately holds no verb that sets mastery, a review, a practice verdict or a capstone completion by hand, nor any content-authoring or store verb (problem add/seed, import, store, lane, settings, formula add/remove). No existing role moved."
   ],
   "roles": {
     "architect": {
@@ -821,6 +822,74 @@
         "bsc session start",
         "bsc session ask",
         "bsc session reply",
+        "bsc request new",
+        "bsc request list",
+        "bsc request get",
+        "bsc persona whatami",
+        "bsc memory"
+      ],
+      "denyGlobs": [
+        "**/*"
+      ],
+      "netAllow": [
+        "api.github.com"
+      ]
+    },
+    "tutor": {
+      "role": "tutor",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "none",
+      "ui": "none",
+      "graph": "none",
+      "mode": "deny",
+      "tools": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask",
+        "web": "ask",
+        "task": "allow"
+      },
+      "writeGlobs": [],
+      "surfaces": [
+        "help",
+        "teach",
+        "formula",
+        "request",
+        "persona",
+        "memory"
+      ],
+      "allow": [
+        "bsc help",
+        "bsc teach topics",
+        "bsc teach skills",
+        "bsc teach curriculum",
+        "bsc teach problem list",
+        "bsc teach problem get",
+        "bsc teach grade",
+        "bsc teach mastery get",
+        "bsc teach mastery score",
+        "bsc teach mastery next",
+        "bsc teach mastery weak",
+        "bsc teach mastery subjects",
+        "bsc teach review due",
+        "bsc teach practice list",
+        "bsc teach capstone status",
+        "bsc teach capstone get",
+        "bsc teach capstone start",
+        "bsc teach viz",
+        "bsc teach notes",
+        "bsc formula grammar",
+        "bsc formula tex",
+        "bsc formula check",
+        "bsc formula eval",
+        "bsc formula balance",
+        "bsc formula get",
+        "bsc formula list",
         "bsc request new",
         "bsc request list",
         "bsc request get",
