@@ -1,0 +1,2393 @@
+[
+  {
+    "name": "plan",
+    "crate": "plandb",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "snapshot",
+        "summary": "EVERY artifact the planner poll needs, in ONE read (#3842)"
+      },
+      {
+        "verb": "add",
+        "summary": "upsert issue(s) from JSON on stdin; prints ref(s)"
+      },
+      {
+        "verb": "amend",
+        "summary": "merge partial JSON onto ONE issue, preserving every other field"
+      },
+      {
+        "verb": "get",
+        "summary": "print one issue's FULL spec, or ONE field of it"
+      },
+      {
+        "verb": "summary",
+        "summary": "plan overview: totals + per-status/stream counts"
+      },
+      {
+        "verb": "list",
+        "summary": "the issue table (lean by default; filters + escalation flags)"
+      },
+      {
+        "verb": "grep",
+        "summary": "search issue text in ONE call, returning the matching line"
+      },
+      {
+        "verb": "mine",
+        "summary": "your stream's issues (alias for list --stream)"
+      },
+      {
+        "verb": "status",
+        "summary": "set an issue's status"
+      },
+      {
+        "verb": "note",
+        "summary": "append an observation to an issue (no change record needed)"
+      },
+      {
+        "verb": "link",
+        "summary": "record the GitHub issue an issue was published as"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete an issue"
+      },
+      {
+        "verb": "render",
+        "summary": "print the issues.json projection (full, unchanged)"
+      },
+      {
+        "verb": "surface",
+        "summary": "the SURFACES roster — one roster decision per crate (the lexicographer's section)"
+      },
+      {
+        "verb": "feature",
+        "summary": "the features roster + detail-fill (titles-first)"
+      },
+      {
+        "verb": "repo",
+        "summary": "repos linked to the project (durable in plan.db)"
+      },
+      {
+        "verb": "fleet",
+        "summary": "streams + per-stream permissions/flows + director/topology"
+      },
+      {
+        "verb": "deploy",
+        "summary": "the Deploy stage's structured config (one blob)"
+      },
+      {
+        "verb": "deps",
+        "summary": "the locked dependency manifest (one blob)"
+      },
+      {
+        "verb": "classify",
+        "summary": "the project's classification: UI mode + which optional stages it needs (one blob)"
+      },
+      {
+        "verb": "market",
+        "summary": "the Market stage's scored assessment (one blob)"
+      },
+      {
+        "verb": "transformation",
+        "summary": "the Transformations stage's list — the modification counterpart to features (#2509)"
+      },
+      {
+        "verb": "mcp",
+        "summary": "catalog MCP servers scoped to the project"
+      },
+      {
+        "verb": "blueprint",
+        "summary": "the blueprint an authoring project is designing (one blob)"
+      },
+      {
+        "verb": "ui",
+        "summary": "the app's UI pairing — the {kit, theme} the planned app ships on (one blob)"
+      },
+      {
+        "verb": "discovery",
+        "summary": "the Discovery stage's dynamic required-set"
+      },
+      {
+        "verb": "confirm",
+        "summary": "the durable stage-confirmation set (+ content fingerprints)"
+      },
+      {
+        "verb": "skip",
+        "summary": "the durable skipped-stage set (optional stages the user skipped)"
+      },
+      {
+        "verb": "integration",
+        "summary": "DEPRECATED (#1721) → use `bsc data connector`"
+      },
+      {
+        "verb": "change",
+        "summary": "local change records — the PR analogue, paired 1:1 with an issue by ref"
+      },
+      {
+        "verb": "integrate",
+        "summary": "merge <ref> into the current tree, serialized against every other integrate call on it (#185)"
+      },
+      {
+        "verb": "lesson",
+        "summary": "self-correction candidates (the review queue; #1362)"
+      },
+      {
+        "verb": "brief",
+        "summary": "hand a plan update DOWN a tier — the architect's one outbound channel (#2377)"
+      },
+      {
+        "verb": "request",
+        "summary": "tier-upward change requests (the project ask lane; #4000)"
+      },
+      {
+        "verb": "triage",
+        "summary": "per-repo triage-run markers + the since-marker issue delta (#1004)"
+      },
+      {
+        "verb": "stage",
+        "summary": "the project's flat prose files (goal/scope/stack/…)"
+      },
+      {
+        "verb": "automations",
+        "summary": "assign/list/remove project automations (+ the automations.md recipe doc)"
+      },
+      {
+        "verb": "startup",
+        "summary": "assign/list/remove per-repo startup (dev/triage) prompt scripts"
+      },
+      {
+        "verb": "github-context",
+        "summary": "read github_context.md (app-generated; read-only)"
+      },
+      {
+        "verb": "artifact",
+        "summary": "planner OUTPUT artifacts — durable content in plan.db, keyed by (kind, name) (#2997)"
+      }
+    ]
+  },
+  {
+    "name": "publish",
+    "crate": "bsc-publish",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "run",
+        "summary": "publish the plan in $BSC_PLAN_DB to GitHub (idempotent; safe to re-run)"
+      }
+    ]
+  },
+  {
+    "name": "errors",
+    "crate": "errordb",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "add",
+        "summary": "record a fault occurrence; prints its fingerprint"
+      },
+      {
+        "verb": "run",
+        "summary": "run a command; record a fault if it fails, clear its own if it passes"
+      },
+      {
+        "verb": "list",
+        "summary": "the fault table (lean TSV; newest-seen first)"
+      },
+      {
+        "verb": "tail",
+        "summary": "the most-recently-seen faults (list, limited)"
+      },
+      {
+        "verb": "projects",
+        "summary": "every project holding faults — the entry point when you know no ids"
+      },
+      {
+        "verb": "get",
+        "summary": "one fault's full record"
+      },
+      {
+        "verb": "resolve",
+        "summary": "mark a fault resolved by fingerprint"
+      }
+    ]
+  },
+  {
+    "name": "usage",
+    "crate": "usagedb",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "record",
+        "summary": "record one usage event"
+      },
+      {
+        "verb": "summary",
+        "summary": "per-event counts, most-fired first (the usage scoreboard)"
+      },
+      {
+        "verb": "list",
+        "summary": "recent raw occurrences"
+      },
+      {
+        "verb": "clear",
+        "summary": "empty the store"
+      }
+    ]
+  },
+  {
+    "name": "project",
+    "crate": "bsc-project",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "new",
+        "summary": "create a project from a NAME — creation begins where the conversation is"
+      },
+      {
+        "verb": "list",
+        "summary": "key + published + path for every local project"
+      },
+      {
+        "verb": "progress",
+        "summary": "issue counts (done/total) for EVERY local project, in one read (#4052)"
+      },
+      {
+        "verb": "triaged",
+        "summary": "the Glance TRIAGED marker — list / set / clear (#4088)"
+      },
+      {
+        "verb": "network",
+        "summary": "which NETWORK a project belongs to — list / set / clear"
+      },
+      {
+        "verb": "architect",
+        "summary": "which ARCHITECT owns a project — list / set / clear (#architects-own-projects)"
+      },
+      {
+        "verb": "published",
+        "summary": "read or set a project's .published marker"
+      },
+      {
+        "verb": "link",
+        "summary": "list / add / set / remove inter-app contracts (the Glance network edges, #2253/#3786)"
+      },
+      {
+        "verb": "github-state",
+        "summary": "read or replace the persisted last-known GitHub board state (#2446)"
+      },
+      {
+        "verb": "db",
+        "summary": "the durable projects store — add/get/list/remove/state over projects.db (#2995)"
+      },
+      {
+        "verb": "rename",
+        "summary": "move a project to a NEW KEY across every store that names it — dry by default, --apply to move"
+      },
+      {
+        "verb": "integrations",
+        "summary": "every project's DECLARED integrations, tagged by project — the Integrator's work list"
+      }
+    ]
+  },
+  {
+    "name": "skill",
+    "crate": "skilldb",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "navigate skills — facets, ranked, paginated (JSON)"
+      },
+      {
+        "verb": "add",
+        "summary": "upsert skill(s) from JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one skill (JSON, or null)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete one skill by id (no-op if absent)"
+      },
+      {
+        "verb": "group",
+        "summary": "task-group CRUD + membership (named, reusable skill bundles)"
+      },
+      {
+        "verb": "resolve",
+        "summary": "a group's member skills, ordered + paginated (JSON)"
+      },
+      {
+        "verb": "groups",
+        "summary": "find task groups + their live member counts (JSON)"
+      },
+      {
+        "verb": "use",
+        "summary": "record a use of a skill (bumps its usage counter)"
+      }
+    ]
+  },
+  {
+    "name": "compliance",
+    "crate": "compliance",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "standards",
+        "summary": "list/get the raw standards corpus"
+      },
+      {
+        "verb": "requirements",
+        "summary": "the applicable obligation set, scoped by jurisdiction + data"
+      },
+      {
+        "verb": "accessibility",
+        "summary": "the WCAG checklist a UI target must meet"
+      },
+      {
+        "verb": "privacy",
+        "summary": "privacy/data-protection obligations for given data types"
+      },
+      {
+        "verb": "meta",
+        "summary": "corpus version + last-updated stamp + standard count"
+      },
+      {
+        "verb": "reseed",
+        "summary": "re-apply the baseline corpus; prints count"
+      },
+      {
+        "verb": "upsert",
+        "summary": "upsert Standard(s) from JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a standard; prints whether a row existed"
+      }
+    ]
+  },
+  {
+    "name": "atlas",
+    "crate": "atlasdb",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "blueprint",
+    "crate": "bsc-blueprint",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every user blueprint's {id, name} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one blueprint (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from blueprint JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a blueprint (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "fin",
+    "crate": "bsc-fin",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "parse",
+        "summary": "read a statement export and report what it found — and every row it could NOT read"
+      },
+      {
+        "verb": "start",
+        "summary": "what to download, from where, and where to put it — the one command between nothing and a full picture"
+      },
+      {
+        "verb": "inbox",
+        "summary": "what statement exports are waiting, and with --ingest read them and claim them so none is read twice"
+      },
+      {
+        "verb": "account",
+        "summary": "what each account IS — and what is missing, with the capability each gap blocks"
+      },
+      {
+        "verb": "balance",
+        "summary": "record a balance AS THE STATEMENT PRINTS IT — the sign is derived from the account's kind, never typed"
+      },
+      {
+        "verb": "position",
+        "summary": "what is held and what is owed, from the statements read so far"
+      },
+      {
+        "verb": "recurring",
+        "summary": "the standing charges nobody is looking at, ANNUALISED — the figure that prompts a cancellation"
+      },
+      {
+        "verb": "duplicates",
+        "summary": "the same charge twice — SCORED and explained, because a false positive is how a report gets muted"
+      },
+      {
+        "verb": "income",
+        "summary": "what arrives, how regularly, and the WORST month — the number every plan has to survive"
+      },
+      {
+        "verb": "runway",
+        "summary": "how long the money lasts ON THE LOW INCOME BAND — and what a month more would cost to close"
+      },
+      {
+        "verb": "spending",
+        "summary": "where the money actually goes — with transfers and debt payments EXCLUDED, because neither is consumption"
+      },
+      {
+        "verb": "payoff",
+        "summary": "which debt first — avalanche against snowball, and what choosing the second costs in money and months"
+      },
+      {
+        "verb": "viable",
+        "summary": "the smallest income that holds, in TIERS, measured on the WORST month rather than the average"
+      },
+      {
+        "verb": "priority",
+        "summary": "where THIS month's spare money goes — minimums, then a buffer, then the rate, and a 0% promo inverts"
+      },
+      {
+        "verb": "brief",
+        "summary": "EVERY capability folded into one ranked list of what to do — dated work first, then what pays most PER HOUR"
+      },
+      {
+        "verb": "backtest",
+        "summary": "run the signal battery over a price series — costs charged, the bar raised for every signal tried, and refusals where the data cannot say"
+      },
+      {
+        "verb": "simulate",
+        "summary": "point the harness at data whose truth is already known — and count how many worthless signals clear a conventional bar"
+      },
+      {
+        "verb": "rate",
+        "summary": "what an hour has to earn — BILLABLE hours, grossed up, on the worst month; and whether an offered rate can reach a tier at all"
+      },
+      {
+        "verb": "short",
+        "summary": "what you can short, THE PRICE THAT ENDS IT, what the carry costs, and the same view expressed as a put instead"
+      },
+      {
+        "verb": "invoice",
+        "summary": "what you are owed, matched against the money that actually arrived — and every credit that fits more than one invoice"
+      },
+      {
+        "verb": "where",
+        "summary": "where you are earning, and what that place requires — rates carry their source and an expired one is REFUSED, never carried forward"
+      },
+      {
+        "verb": "tax",
+        "summary": "the year's revenue, the self-employment tax it carries, and what to set aside — income tax is NOT computed and the report says so"
+      },
+      {
+        "verb": "hurdle",
+        "summary": "what the market must return to beat paying your own debt — the decision that comes before every investing decision"
+      },
+      {
+        "verb": "session",
+        "summary": "whether each institution has a session worth reusing — and `<id> --established` after you have signed in by hand"
+      }
+    ]
+  },
+  {
+    "name": "radio",
+    "crate": "bsc",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "rf",
+        "summary": "LIVE CAPTURE off a wireless radio: enumerate radios, sample the band, score occupancy for jamming (was `bsc rf`)"
+      },
+      {
+        "verb": "bt",
+        "summary": "OFFLINE ANALYSIS of a Bluetooth capture you supply: spoofing + malicious-signal detectors (was `bsc bluetooth`)"
+      }
+    ]
+  },
+  {
+    "name": "rf",
+    "crate": "bsc-rf",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "devices",
+        "summary": "every wireless radio: driver, rfkill, monitor + spectral capability"
+      },
+      {
+        "verb": "survey",
+        "summary": "one channel-occupancy reading (Tier 1)"
+      },
+      {
+        "verb": "watch",
+        "summary": "sample occupancy over time and score it for jamming"
+      }
+    ]
+  },
+  {
+    "name": "bluetooth",
+    "crate": "bsc-bluetooth",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "analyze",
+        "summary": "run the spoofing + malicious-signal detectors over a capture"
+      },
+      {
+        "verb": "profile",
+        "summary": "learn the baseline (normal operation) from a clean capture"
+      },
+      {
+        "verb": "kinds",
+        "summary": "list the detector kinds and what each catches"
+      }
+    ]
+  },
+  {
+    "name": "persona",
+    "crate": "bsc-persona",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every persona's {id, name, role} (JSON)"
+      },
+      {
+        "verb": "reseed",
+        "summary": "restore every built-in's PERMISSIONS to the one the app ships with"
+      },
+      {
+        "verb": "get",
+        "summary": "print one persona (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from persona JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "rename",
+        "summary": "rename a persona in place — just the `name` field"
+      },
+      {
+        "verb": "model",
+        "summary": "set (or clear) the model a persona launches on — a local model or a Claude tier"
+      },
+      {
+        "verb": "use",
+        "summary": "run a pane as a different persona (relaunches it)"
+      },
+      {
+        "verb": "whatami",
+        "summary": "what THIS session is running as (persona + role)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a persona (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "sound",
+    "crate": "bsc-sound",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every kit's {id, name} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one kit (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from kit JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a kit (no-op if absent)"
+      },
+      {
+        "verb": "release",
+        "summary": "the versioned sound-kit release store — immutable id@version artifacts blueprints pin (#3371)"
+      }
+    ]
+  },
+  {
+    "name": "teams",
+    "crate": "bsc-teams",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every team's {id, name} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one team (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from team JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "model",
+        "summary": "set (or clear) the LLM tier ONE placement launches on"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a team (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "network",
+    "crate": "bsc-network",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "new",
+        "summary": "create a network from a NAME; mints its id and prints it"
+      },
+      {
+        "verb": "rename",
+        "summary": "change a network's display name (never its id)"
+      },
+      {
+        "verb": "list",
+        "summary": "every network's {id, name, architect} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one network (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from network JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a network (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "secret",
+    "crate": "bsc-secret",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every credential + its derived status"
+      },
+      {
+        "verb": "get",
+        "summary": "one credential + its derived status"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert credential METADATA from JSON on stdin"
+      },
+      {
+        "verb": "put",
+        "summary": "store a credential's SECRET in the OS keychain (value on stdin)"
+      },
+      {
+        "verb": "forget",
+        "summary": "delete a credential's secret, keeping its record"
+      },
+      {
+        "verb": "ok",
+        "summary": "stamp a credential as having just worked"
+      },
+      {
+        "verb": "fail",
+        "summary": "stamp a credential as having just failed"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a credential — record AND secret"
+      }
+    ]
+  },
+  {
+    "name": "studio",
+    "crate": "bsc-studio",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "save",
+        "summary": "snapshot the app's library state into a shareable Studio"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert a full Studio bundle from JSON on stdin; prints its id"
+      },
+      {
+        "verb": "apply",
+        "summary": "re-seed the app's libraries from a saved Studio (REPLACES the captured systems)"
+      },
+      {
+        "verb": "list",
+        "summary": "every saved Studio's {id, name} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one Studio bundle (JSON) or null"
+      },
+      {
+        "verb": "verify",
+        "summary": "re-check a saved backup WITHOUT restoring it"
+      },
+      {
+        "verb": "restore",
+        "summary": "put a backup's stores and plan stores back"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a Studio (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "org",
+    "crate": "bsc-teams",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every team's {id, name} (JSON)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one team (JSON, verbatim) or null"
+      },
+      {
+        "verb": "set",
+        "summary": "upsert from team JSON on stdin; prints id(s)"
+      },
+      {
+        "verb": "model",
+        "summary": "set (or clear) the LLM tier ONE placement launches on"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a team (no-op if absent)"
+      }
+    ]
+  },
+  {
+    "name": "component",
+    "crate": "bsc-component",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every component's {id, name, kitId, role, group, shapes} (JSON; --graph for the graph projection)"
+      },
+      {
+        "verb": "shapes",
+        "summary": "the data-shape vocabulary → each shape's ideal components (#2475)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one component (JSON, verbatim) or null — or ONE field with --field (#3162)"
+      },
+      {
+        "verb": "log",
+        "summary": "a record's change history — the current stamp + the per-write log (#3164/#3568)"
+      },
+      {
+        "verb": "revert",
+        "summary": "restore a record's srcText from the retained change history — undo a bad write"
+      },
+      {
+        "verb": "set",
+        "summary": "MERGE component JSON from stdin into the record (stamps rev/updatedAt/updatedBy); prints id(s)"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a component (no-op if absent)"
+      },
+      {
+        "verb": "suppress",
+        "summary": "PERMANENTLY remove a packaged builtin component — it won't re-seed (#3725)"
+      },
+      {
+        "verb": "unsuppress",
+        "summary": "remove a suppression tombstone so the builtin re-seeds (#3725)"
+      },
+      {
+        "verb": "export",
+        "summary": "dump every component to a folder tree — <dir>/<group>/<id>.json, lossless (#3606)"
+      },
+      {
+        "verb": "parity",
+        "summary": "does the app RENDER what it SHIPS? store vs seed, per record (#4246)"
+      },
+      {
+        "verb": "sync-seed",
+        "summary": "write a store record's current body back into its packaged seed file, by id (#139)"
+      },
+      {
+        "verb": "promote",
+        "summary": "write a genuinely NEW store record into its own file under the packaged seed (#162)"
+      },
+      {
+        "verb": "import",
+        "summary": "load a folder tree of component records into the store — the seed half (#3606)"
+      },
+      {
+        "verb": "rename",
+        "summary": "rename a component in place — sweeps every composes/rules reference (#3576)"
+      },
+      {
+        "verb": "merge",
+        "summary": "combine a duplicate INTO a survivor — repoints every reference, then removes it (#3592)"
+      },
+      {
+        "verb": "kit",
+        "summary": "operate on the KITS instead of the components"
+      },
+      {
+        "verb": "eslint-preset",
+        "summary": "emit the kit's lint rules as an eslint config (bake into an app, #2279)"
+      },
+      {
+        "verb": "usage",
+        "summary": "the consumer index — which projects use which kit (#2277)"
+      },
+      {
+        "verb": "dispatch",
+        "summary": "the durable kit-change QUEUE — the pending fan-out, per consumer project"
+      },
+      {
+        "verb": "backing",
+        "summary": "which component record backs a file — and the gate that keeps edits going to the record"
+      },
+      {
+        "verb": "library",
+        "summary": "verify a `doctor` @bsc/algorithms/<name> library-reference finding (bsc request #118)"
+      },
+      {
+        "verb": "test",
+        "summary": "materialize a record + its CLOSURE + its paired tests into an EMPTY dir and run them there — a pass proves every dependency is a record or the declared platform"
+      },
+      {
+        "verb": "doctor",
+        "summary": "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable + self-referential components (#2678)"
+      },
+      {
+        "verb": "dupes",
+        "summary": "the whole-library duplicate report — exact + fuzzy NEAR-duplicates (name + contract distance), propose-only (#3544)"
+      },
+      {
+        "verb": "similar",
+        "summary": "components most similar to <id> across the whole library (name + contract distance, or --shape for structure alone) — discover-before-authoring (#3544)"
+      },
+      {
+        "verb": "usage-scan",
+        "summary": "determine each component's usage from composes + host mounts + `provides`, over a DECLARED corpus (#3888)"
+      },
+      {
+        "verb": "crossgraph",
+        "summary": "the CROSS-PILLAR reference meter — every `@bsc/<segment>/<name>` a record actually imports, derived not stored"
+      },
+      {
+        "verb": "used-by",
+        "summary": "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)"
+      },
+      {
+        "verb": "refs",
+        "summary": "literal srcText cross-references to a component's NAME across every other component (#113)"
+      },
+      {
+        "verb": "exports",
+        "summary": "a record's PUBLIC SURFACE grouped into ITEMS — the one-record-one-item read (#a-record-holds-one-item-not-a-module-of-them)"
+      },
+      {
+        "verb": "patterns",
+        "summary": "the library's structural EQUIVALENCE CLASSES — the whole-library shape sweep, no seed needed (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found)"
+      },
+      {
+        "verb": "pattern",
+        "summary": "a convention with an ID — promote a cluster, then author INTO it instead of copying a sibling (#a-pattern-has-no-id-so-the-only-way-to-author-a-sibling-is-to-copy-one)"
+      },
+      {
+        "verb": "define-animation",
+        "summary": "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)"
+      },
+      {
+        "verb": "list-animations",
+        "summary": "print a component's authored animations array (#2869)"
+      },
+      {
+        "verb": "remove-animation",
+        "summary": "drop a named animation from a component (#2869)"
+      },
+      {
+        "verb": "set-src",
+        "summary": "replace ONLY a component's srcText from stdin (gated by the JSX syntax check) (#3162)"
+      },
+      {
+        "verb": "patch",
+        "summary": "set ONE field of a component by JSON pointer; value parsed as JSON (#3162)"
+      },
+      {
+        "verb": "tags",
+        "summary": "the TAG VOCABULARY — every tag with how many components carry it (discover, then search)"
+      },
+      {
+        "verb": "feature",
+        "summary": "feature rename <from> <to> — move a feature's components onto another name (dry by default)"
+      },
+      {
+        "verb": "features",
+        "summary": "report (and with --apply, backfill) which FEATURE owns each component, from its folder"
+      },
+      {
+        "verb": "refolder",
+        "summary": "re-derive every component's `group` as a folder path from its `src` (#3579)"
+      },
+      {
+        "verb": "preview-props",
+        "summary": "the schema-derived sample props the live preview passes a component, per state (#3165)"
+      },
+      {
+        "verb": "scan-cache",
+        "summary": "what the Design Studio's preview sweep already built, keyed by source signature"
+      },
+      {
+        "verb": "preview-errors",
+        "summary": "tail the live preview's captured runtime errors (#3165)"
+      },
+      {
+        "verb": "preview-error",
+        "summary": "record a preview runtime error — the frontend's durable append path (#3165)"
+      }
+    ]
+  },
+  {
+    "name": "ui",
+    "crate": "bsc-ui",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "schema",
+        "summary": "print the primitive contract (every component, its props + enums)"
+      },
+      {
+        "verb": "validate",
+        "summary": "validate a UI spec (file or stdin) against the primitive contract"
+      },
+      {
+        "verb": "tokens",
+        "summary": "list the semantic design tokens an LLM can set — the addressable design surface (#2568)"
+      },
+      {
+        "verb": "components",
+        "summary": "list the style-bearing components + the tokens/variants each exposes, or --coverage a token's reach + leaks (#2568/#2588/#2600)"
+      },
+      {
+        "verb": "component",
+        "summary": "address ONE component's tokens by short key (+variant) — the ergonomic set-token (#2569)"
+      },
+      {
+        "verb": "variants",
+        "summary": "list EVERY stored variant definition (what the frontend compiles into live CSS, #2569)"
+      },
+      {
+        "verb": "release",
+        "summary": "the global released-kit store — immutable id@version artifacts blueprints pin (#2465)"
+      },
+      {
+        "verb": "emit-css",
+        "summary": "emit a generated app's palette pair: the token contract + a theme.css (#2489)"
+      },
+      {
+        "verb": "theme",
+        "summary": "the kit THEME store — list/get themes, or author them via set/remove (#1852/#2488)"
+      },
+      {
+        "verb": "generate",
+        "summary": "generate coherent palette VALUES from a seed — the no-holes engine (#2634)"
+      },
+      {
+        "verb": "resolve",
+        "summary": "resolve a theme against a kit's tokens + report misses/holes — fall loudly (#2637)"
+      },
+      {
+        "verb": "tests",
+        "summary": "the per-node TEST manifest — harvest each component's colocated test file onto its node, pair ONE record, or adopt one into its SEED (#3907/#166/#109)"
+      },
+      {
+        "verb": "harvest",
+        "summary": "scan a repo and surface reusable COMPONENT candidates for the library (#3471)"
+      },
+      {
+        "verb": "env",
+        "summary": "show this session's scratch dir, write scopes, and the roots it may harvest (#3571)"
+      },
+      {
+        "verb": "emit",
+        "summary": "vendor a component (or the whole kit) as compilable source into a directory (#2800)"
+      },
+      {
+        "verb": "lift",
+        "summary": "reshape a preview-shaped component record into the MODULE its file stands for (#records)"
+      },
+      {
+        "verb": "refresh-seed",
+        "summary": "refresh a drifted packaged seed from the file it mirrors — only where nobody edited it (#records)"
+      },
+      {
+        "verb": "promote-seed",
+        "summary": "promote a live store record into the PACKAGED SEED — the step that makes its file retirable (#records)"
+      },
+      {
+        "verb": "retire",
+        "summary": "delete a module whose packaged record replaces it — refusals first (#records)"
+      },
+      {
+        "verb": "shadow",
+        "summary": "reconcile the shadow catalogue with what is on disk — step 3 of a retirement (#records)"
+      },
+      {
+        "verb": "retirable",
+        "summary": "which files a packaged seed can replace — the retirement census (#records)"
+      },
+      {
+        "verb": "imports",
+        "summary": "relative specifiers in the LIVE store — report, or --fix them to `@/…` (#record-imports)"
+      },
+      {
+        "verb": "diff",
+        "summary": "what differs between a record and the file it claims — the adjudication view (#claim-census)"
+      },
+      {
+        "verb": "census",
+        "summary": "which records CLAIM a module they are not — the provides audit (#claim-census)"
+      },
+      {
+        "verb": "changes",
+        "summary": "the RUNNING app's pending kit-change confirmations, read-only (#2951)"
+      },
+      {
+        "verb": "adopt",
+        "summary": "carry the running app's persisted kit state into the store bsc ui owns"
+      },
+      {
+        "verb": "store",
+        "summary": "the COMMITTED component store — graph/components.db (export · import · status)"
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "crate": "logs",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "sessions",
+        "summary": "every console session, one line each (the default)"
+      },
+      {
+        "verb": "session",
+        "summary": "one session's full, time-merged story"
+      },
+      {
+        "verb": "<stream>",
+        "summary": "one event category: audit|skill|mcp|hook|coord|activity|done|perm"
+      },
+      {
+        "verb": "cost",
+        "summary": "token + cost rollup"
+      },
+      {
+        "verb": "tail",
+        "summary": "the newest raw lines of one stream"
+      },
+      {
+        "verb": "coord",
+        "summary": "the WHOLE coordination state, folded from coord.log in one read"
+      },
+      {
+        "verb": "waiting",
+        "summary": "every session BLOCKED ON A HUMAN (the queue to clear)"
+      },
+      {
+        "verb": "pending",
+        "summary": "captured work awaiting YOUR routing (issues to assign, briefs to reconcile)"
+      },
+      {
+        "verb": "divergence",
+        "summary": "has a migrated surface's two implementations disagreed in the field?"
+      },
+      {
+        "verb": "pane-activity",
+        "summary": "each pane's latest run/idle turn state"
+      },
+      {
+        "verb": "done-panes",
+        "summary": "panes that self-reported done"
+      },
+      {
+        "verb": "perf",
+        "summary": "recent perf.db samples (rss/cpu/threads)"
+      },
+      {
+        "verb": "pss",
+        "summary": "system-wide memory by process category (PSS, not RSS) — the fleet-load sampler"
+      },
+      {
+        "verb": "summary",
+        "summary": "a one-line recap for a session"
+      },
+      {
+        "verb": "scope",
+        "summary": "toggle CONSOLE log scopes at runtime (the file/audit log is always kept)"
+      }
+    ]
+  },
+  {
+    "name": "files",
+    "crate": "bsc-files",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "tree",
+        "summary": "folder structure with sizes, file counts, language"
+      },
+      {
+        "verb": "stat",
+        "summary": "size + language (+ lines) for one path"
+      },
+      {
+        "verb": "read",
+        "summary": "one file's text (the whole file, or a line window)"
+      },
+      {
+        "verb": "refs",
+        "summary": "cross-file impact map (siblings, importers, usages, CSS) for one file"
+      }
+    ]
+  },
+  {
+    "name": "shot",
+    "crate": "bsc-shot",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "take",
+        "summary": "capture the app's webview; prints the PNG path"
+      },
+      {
+        "verb": "preview",
+        "summary": "capture JUST the Design Studio's component preview (auto-cropped)"
+      },
+      {
+        "verb": "analyze",
+        "summary": "capture, analyse and REAP — the verdict outlives the pixels"
+      },
+      {
+        "verb": "diff",
+        "summary": "compare two captures — how much changed, and WHERE (scalars only)"
+      },
+      {
+        "verb": "baseline",
+        "summary": "save a component's NAMED reference render — the thing `diff <component>` compares against"
+      },
+      {
+        "verb": "frame",
+        "summary": "capture the mounted preview of ONE named component — you choose what to look at"
+      },
+      {
+        "verb": "pending",
+        "summary": "unanswered channel requests (JSON) — what the app's watcher would serve"
+      },
+      {
+        "verb": "sweep",
+        "summary": "drop aged request/reply files (never the PNGs)"
+      },
+      {
+        "verb": "dir",
+        "summary": "the shots (PNG) directory and the channel directory"
+      }
+    ]
+  },
+  {
+    "name": "navigate",
+    "crate": "bsc-navigate",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "component",
+        "summary": "focus a Design Studio component (implies its workspace + page)"
+      },
+      {
+        "verb": "workspace",
+        "summary": "switch the rail destination"
+      },
+      {
+        "verb": "page",
+        "summary": "switch the page within the current workspace"
+      },
+      {
+        "verb": "theme",
+        "summary": "switch the kit theme (for a themed capture)"
+      },
+      {
+        "verb": "dismiss",
+        "summary": "clear an app notice (a banner) — or `all`"
+      },
+      {
+        "verb": "drill",
+        "summary": "drill into the active workspace's graph, or `back` out one level"
+      },
+      {
+        "verb": "select",
+        "summary": "select a target on the active page (`none` clears)"
+      },
+      {
+        "verb": "show",
+        "summary": "what the app is showing right now (read-only)"
+      }
+    ]
+  },
+  {
+    "name": "fleet",
+    "crate": "bsc-fleet",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every worker this project has, running or not — plan.db's membership joined onto real liveness"
+      },
+      {
+        "verb": "protocol",
+        "summary": "the director protocol's ON-DEMAND topics — list them, or print one when its moment comes"
+      },
+      {
+        "verb": "directors",
+        "summary": "every project's DIRECTOR, running or not — the architect's view of its tier"
+      },
+      {
+        "verb": "graph",
+        "summary": "a project's DRILL, resolved — nodes with their title, label and owner, edges with their archetype — for Glance to render"
+      },
+      {
+        "verb": "director",
+        "summary": "create a project's DIRECTOR, seeded with what the architect settled"
+      },
+      {
+        "verb": "start",
+        "summary": "launch a project's whole fleet — the director and every worker stream"
+      },
+      {
+        "verb": "warden-decide",
+        "summary": "who the warden should hard-pause, from a fleet report on stdin — no app running"
+      },
+      {
+        "verb": "launch-config",
+        "summary": "everything a pane's launch needs from the sidecar, in ONE call"
+      },
+      {
+        "verb": "worker-end",
+        "summary": "the resting-state verdict for a finished worker — from plan.db, with no app running"
+      },
+      {
+        "verb": "warden-sweep",
+        "summary": "what a live worker has attempted from the dangerous floor — runs with the app gone"
+      },
+      {
+        "verb": "doctor",
+        "summary": "the claims this fleet makes about itself that do not hold"
+      },
+      {
+        "verb": "clone",
+        "summary": "materialize the project's linked repos into its hub — the prerequisite for any worker"
+      },
+      {
+        "verb": "wake",
+        "summary": "wake a parked/reaped worker — the director's lever over a stopped session"
+      },
+      {
+        "verb": "provision",
+        "summary": "rewrite ONE stream's worktree settings.json and bring its pane up — no whole-fleet --force"
+      }
+    ]
+  },
+  {
+    "name": "sandbox",
+    "crate": "bsc-sandbox",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "replay",
+        "summary": "print or exec the exact bwrap/systemd-run argv a pane's caged launch used"
+      },
+      {
+        "verb": "repair-hooks",
+        "summary": "fix a settings.json whose PreToolUse hooks name the sandbox-only guest path (request #188)"
+      }
+    ]
+  },
+  {
+    "name": "session",
+    "crate": "bsc-session",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "activity",
+        "summary": "why each live session is or is not about to be reaped (readable with NO app UI)"
+      },
+      {
+        "verb": "list",
+        "summary": "every system session and whether it is actually running"
+      },
+      {
+        "verb": "start",
+        "summary": "bring up a system session (no-op if it is already running)"
+      },
+      {
+        "verb": "stop",
+        "summary": "end a system session you started (never a director)"
+      },
+      {
+        "verb": "reply",
+        "summary": "post a turn into an ask loop AND deliver it to the other participant"
+      },
+      {
+        "verb": "ask",
+        "summary": "put a request in front of a system session — delivered, not left to be found"
+      },
+      {
+        "verb": "perms",
+        "summary": "what a session ROLE resolves to: capability, denies, tool rules, write scope (was `bsc perms`)"
+      },
+      {
+        "verb": "skills",
+        "summary": "which library skills a session RECEIVES, for N sessions at once (was `bsc resolve skills`)"
+      },
+      {
+        "verb": "mcp",
+        "summary": "which MCP servers a session RECEIVES, and which survive a sandbox (was `bsc resolve mcp`)"
+      },
+      {
+        "verb": "argv",
+        "summary": "a CAGED session's rendered launch argv: replay it, or repair a stale hook path (was `bsc sandbox`)"
+      },
+      {
+        "verb": "launch-plan",
+        "summary": "everything a pane LAUNCHES with, resolved from the stores given only its pane id (read-only)"
+      },
+      {
+        "verb": "identity",
+        "summary": "what each pane IS — role · persona · profile · stream · project · cwd — for one pane or many (read-only)"
+      },
+      {
+        "verb": "choose",
+        "summary": "record what the USER chose for one pane — harness, model, profile, persona — where the launch reads it"
+      },
+      {
+        "verb": "choices",
+        "summary": "what session.db holds for every pane, or one; --import moves app-state.json's choices in"
+      },
+      {
+        "verb": "policy",
+        "summary": "the per-machine SESSION SETTINGS the launch reads — read them, set one, or move app-state.json's in"
+      },
+      {
+        "verb": "secrets",
+        "summary": "where each credential a launch names would come from — and --import moves app-state.json's into the keychain"
+      }
+    ]
+  },
+  {
+    "name": "metrics",
+    "crate": "logs",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "perf",
+    "crate": "logs",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "summary",
+        "summary": "all four readings at once — the default"
+      },
+      {
+        "verb": "commits",
+        "summary": "render commit distribution per surface (n · median · p90 · max · % over a frame)"
+      },
+      {
+        "verb": "phases",
+        "summary": "named derivations inside a render — runs · total · worst"
+      },
+      {
+        "verb": "jank",
+        "summary": "main-thread stall windows + the store writes that drove them"
+      },
+      {
+        "verb": "spawns",
+        "summary": "bsc child-process spawns — calls · total · worst · mean, per command"
+      },
+      {
+        "verb": "compare",
+        "summary": "split the log at a boundary and report both halves — did the change help?"
+      }
+    ]
+  },
+  {
+    "name": "cost",
+    "crate": "bsc-mem",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "build",
+        "summary": "what builds COST — count, median, worst, latest (time and peak memory)"
+      },
+      {
+        "verb": "compare",
+        "summary": "split at a boundary and report both halves — did the change help?"
+      },
+      {
+        "verb": "growth",
+        "summary": "is a live session's RSS climbing? — the leak question"
+      },
+      {
+        "verb": "headroom",
+        "summary": "how much provider budget this fleet has left — and how fast it is spending it"
+      },
+      {
+        "verb": "app",
+        "summary": "what the RUNNING app holds — JS heap, DOM nodes, listeners (needs the browser harness)"
+      }
+    ]
+  },
+  {
+    "name": "mem",
+    "crate": "bsc-mem",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "build",
+        "summary": "what builds COST — count, median, worst, latest (time and peak memory)"
+      },
+      {
+        "verb": "compare",
+        "summary": "split at a boundary and report both halves — did the change help?"
+      },
+      {
+        "verb": "growth",
+        "summary": "is a live session's RSS climbing? — the leak question"
+      },
+      {
+        "verb": "headroom",
+        "summary": "how much provider budget this fleet has left — and how fast it is spending it"
+      },
+      {
+        "verb": "app",
+        "summary": "what the RUNNING app holds — JS heap, DOM nodes, listeners (needs the browser harness)"
+      }
+    ]
+  },
+  {
+    "name": "memory",
+    "crate": "bsc-memory",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "add",
+        "summary": "capture a lesson / highlight / record note / ambient thought (--kind, --future for an idea)"
+      },
+      {
+        "verb": "list",
+        "summary": "list memories, newest first (--kind / --tag / --status / --link / --rel / --horizon / --json)"
+      },
+      {
+        "verb": "get",
+        "summary": "print one memory verbatim, as stored JSON (by name or id)"
+      },
+      {
+        "verb": "read",
+        "summary": "read a node — and a TOPIC reads as the index of its entry titles"
+      },
+      {
+        "verb": "edit",
+        "summary": "revise a node's text (or --title), keeping what it used to say"
+      },
+      {
+        "verb": "link",
+        "summary": "add a typed edge: connect a memory to related refs under one relationship"
+      },
+      {
+        "verb": "unlink",
+        "summary": "remove a typed edge — the other half of `link`, and what makes an edge revisable"
+      },
+      {
+        "verb": "neighbors",
+        "summary": "traverse: the typed edges out of a memory, and the ones that point back to it"
+      },
+      {
+        "verb": "horizon",
+        "summary": "reclassify a memory as now (applies to what is implemented) or future (an idea)"
+      },
+      {
+        "verb": "kind",
+        "summary": "reclassify a memory - lesson | highlight | record | ambient | note"
+      },
+      {
+        "verb": "brief",
+        "summary": "what a session touching these nodes should be told — the block written at launch"
+      },
+      {
+        "verb": "graph",
+        "summary": "the topic TREE: each topic with its sections, what attaches to it, and what reaches no topic"
+      },
+      {
+        "verb": "done",
+        "summary": "mark a memory handled / folded elsewhere"
+      }
+    ]
+  },
+  {
+    "name": "imprint",
+    "crate": "bsc-imprint",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "build",
+        "summary": "fold a corpus into the profile (ACCUMULATES, never replaces)"
+      },
+      {
+        "verb": "show",
+        "summary": "the stored profile: every dimension, its kind, and the corpus it rests on"
+      },
+      {
+        "verb": "explain",
+        "summary": "compare text against the profile, PER DIMENSION — no verdict, nothing stored"
+      },
+      {
+        "verb": "markers",
+        "summary": "measure text and print its feature vector, without touching the profile"
+      }
+    ]
+  },
+  {
+    "name": "work",
+    "crate": "bsc-work",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "gate",
+        "summary": "run the gate and record every leg's real result on this branch's change record"
+      },
+      {
+        "verb": "known-red",
+        "summary": "gate legs that are red for a reason no branch causes — each naming the item that owns it"
+      },
+      {
+        "verb": "seen",
+        "summary": "photograph the surface, read the pixels, and record the verdict on the change record"
+      }
+    ]
+  },
+  {
+    "name": "self",
+    "crate": "bsc-self",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "doctor",
+        "summary": "every `bsc` on this machine, and whether each can be trusted (#bsc-doctor)"
+      },
+      {
+        "verb": "which",
+        "summary": "the `bsc` that would actually be used, and the order it was chosen from"
+      }
+    ]
+  },
+  {
+    "name": "resolve",
+    "crate": "bsc-resolve",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "skills",
+        "summary": "which library skills resolve for each of N sessions"
+      },
+      {
+        "verb": "mcp",
+        "summary": "which MCP servers resolve for a persona, and which survive a sandbox"
+      }
+    ]
+  },
+  {
+    "name": "disk",
+    "crate": "bsc-disk",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "gc",
+        "summary": "the ONE entry point: prune + sweep this tree, at most once an hour"
+      },
+      {
+        "verb": "prune",
+        "summary": "sweep orphaned incremental-compilation dirs out of target/*/incremental"
+      },
+      {
+        "verb": "sweep",
+        "summary": "sweep orphaned dependency UNITS out of target/*/deps"
+      },
+      {
+        "verb": "dedupe",
+        "summary": "hard-link byte-identical dependency artifacts across worktrees (EXPLICIT, unix only)"
+      }
+    ]
+  },
+  {
+    "name": "worktree",
+    "crate": "bsc-disk",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every worktree, what it holds, and whether it could be collected"
+      },
+      {
+        "verb": "cap",
+        "summary": "remove parked/merged worktrees beyond the cap (DESTRUCTIVE — never automatic)"
+      },
+      {
+        "verb": "sweep-branches",
+        "summary": "delete local branch refs fully merged into develop (DESTRUCTIVE — never automatic)"
+      }
+    ]
+  },
+  {
+    "name": "debug",
+    "crate": "bsc-debug",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "hit",
+        "summary": "what element is at a viewport point — and what is covering it"
+      },
+      {
+        "verb": "probe",
+        "summary": "rect + event-relevant styles for a CSS selector, and whether it is really clickable"
+      },
+      {
+        "verb": "frames",
+        "summary": "every mounted component-preview iframe: host geometry + the in-iframe engine's own report"
+      }
+    ]
+  },
+  {
+    "name": "llm",
+    "crate": "bsc-llm",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "loop",
+    "crate": "bsc-loop",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "new",
+        "summary": "start a loop between two participants; prints its id"
+      },
+      {
+        "verb": "say",
+        "summary": "post your turn (must be your turn)"
+      },
+      {
+        "verb": "watch",
+        "summary": "block until it's your turn; print the awaited message"
+      },
+      {
+        "verb": "show",
+        "summary": "the transcript + per-turn cost"
+      },
+      {
+        "verb": "list",
+        "summary": "the loop table (newest first)"
+      },
+      {
+        "verb": "reap",
+        "summary": "close loops an unclean shutdown stranded (crash / kill / force-quit)"
+      },
+      {
+        "verb": "stop",
+        "summary": "halt a loop out-of-band (the participants cannot)"
+      }
+    ]
+  },
+  {
+    "name": "request",
+    "crate": "bsc-request",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "new",
+        "summary": "file an improvement request; prints its id"
+      },
+      {
+        "verb": "list",
+        "summary": "the request queue (lean TSV; newest first)"
+      },
+      {
+        "verb": "get",
+        "summary": "one request's full record"
+      },
+      {
+        "verb": "note",
+        "summary": "reply to a request WITHOUT closing it (append-only)"
+      },
+      {
+        "verb": "resolve",
+        "summary": "mark a request resolved (the debug session, after fixing it)"
+      },
+      {
+        "verb": "claim",
+        "summary": "atomically take the oldest open request to work"
+      },
+      {
+        "verb": "unclaim",
+        "summary": "return a claimed request to the open queue"
+      },
+      {
+        "verb": "pause",
+        "summary": "stop the app auto-spawning a debug session per claimed request"
+      },
+      {
+        "verb": "sessions",
+        "summary": "the GLOBAL off switch for debug sessions — policy, not a pause"
+      },
+      {
+        "verb": "resume",
+        "summary": "let the app auto-spawn debug sessions again"
+      },
+      {
+        "verb": "paused",
+        "summary": "is auto-spawn paused? (the state the app reads)"
+      },
+      {
+        "verb": "prune",
+        "summary": "remove resolved requests that carry no answer; prints the count"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete ONE request by id, any status"
+      }
+    ]
+  },
+  {
+    "name": "runtime",
+    "crate": "bsc-runtime",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "attestations, most recently seen first"
+      },
+      {
+        "verb": "get",
+        "summary": "every attestation for ONE record"
+      },
+      {
+        "verb": "summary",
+        "summary": "the one-screen picture: sessions, records seen, outcome counts"
+      },
+      {
+        "verb": "prune",
+        "summary": "delete attestations older than N days"
+      },
+      {
+        "verb": "hash",
+        "summary": "the source hash of a file, for comparing against what ran"
+      }
+    ]
+  },
+  {
+    "name": "graph",
+    "crate": "bsc-graph",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "cad",
+    "crate": "bsc-cad",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "mesh",
+        "summary": "mesh a spec.json into an STL or glTF; prints the stats"
+      }
+    ]
+  },
+  {
+    "name": "widget",
+    "crate": "bsc-widget",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every widget node: what it is, and what feeds it"
+      },
+      {
+        "verb": "open",
+        "summary": "put a widget on screen in its own window"
+      },
+      {
+        "verb": "close",
+        "summary": "take a widget off screen"
+      },
+      {
+        "verb": "toggle",
+        "summary": "open a closed widget, close an open one — and say which"
+      }
+    ]
+  },
+  {
+    "name": "ear",
+    "crate": "bsc-ear",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "devices",
+        "summary": "what can capture on this machine, and which one is the default"
+      },
+      {
+        "verb": "start",
+        "summary": "begin listening in the background"
+      },
+      {
+        "verb": "stop",
+        "summary": "stop listening, and confirm it actually stopped"
+      },
+      {
+        "verb": "status",
+        "summary": "listening or not, since when, and how much audio is held"
+      },
+      {
+        "verb": "listen",
+        "summary": "listen in the foreground, printing every boundary as it happens"
+      },
+      {
+        "verb": "levels",
+        "summary": "which devices actually HEAR anything — the one that tells a dead input from a quiet room"
+      },
+      {
+        "verb": "liveness",
+        "summary": "tell a voice in the room from one played at the microphone — per device, never assumed"
+      },
+      {
+        "verb": "floor",
+        "summary": "measure the capture chain from its own silence — the mic and room, not the device name"
+      },
+      {
+        "verb": "classify",
+        "summary": "what KIND of sound this is — learned from labelled examples, not written down"
+      },
+      {
+        "verb": "features",
+        "summary": "the raw acoustic measurements behind classification — level, modulation, crest, flux, centroid"
+      },
+      {
+        "verb": "prosody",
+        "summary": "how something was said: pitch, loudness, effort, rate — and arousal against the speaker's own habit"
+      },
+      {
+        "verb": "transcribe",
+        "summary": "turn captured segments into words — one pass, batched, never blocking capture"
+      },
+      {
+        "verb": "transcripts",
+        "summary": "what was said, newest first"
+      },
+      {
+        "verb": "segments",
+        "summary": "the audio currently held, newest first"
+      },
+      {
+        "verb": "diarize",
+        "summary": "who spoke when — cluster a recording's turns into distinct voices"
+      },
+      {
+        "verb": "attribute",
+        "summary": "the transcript, stitched onto the voices — who said what, line by line"
+      },
+      {
+        "verb": "imprint",
+        "summary": "teach the app YOUR voice, so it can tell your speech from everyone else's"
+      },
+      {
+        "verb": "embed",
+        "summary": "speaker-embedding cosine distances between clips (ECAPA-TDNN via ort) — the recognition validator"
+      },
+      {
+        "verb": "clean",
+        "summary": "strip handling thumps and stationary noise (rain/hiss) from a recording"
+      },
+      {
+        "verb": "room",
+        "summary": "host this ear's own relay room and record what a paired phone streams into it"
+      },
+      {
+        "verb": "pair",
+        "summary": "what a phone needs to pair with this ear — a DURABLE identity, unlike the app's"
+      }
+    ]
+  },
+  {
+    "name": "imagine",
+    "crate": "bsc-imagine",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "once",
+        "summary": "draw ONE thought from text you supply"
+      },
+      {
+        "verb": "watch",
+        "summary": "follow the ear's transcripts and draw each new one"
+      },
+      {
+        "verb": "status",
+        "summary": "the feed, and whether a renderer actually answers"
+      },
+      {
+        "verb": "sweep",
+        "summary": "enforce the bound now — trim the log and delete the evicted images"
+      }
+    ]
+  },
+  {
+    "name": "say",
+    "crate": "bsc-say",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "speak",
+        "summary": "say something out loud (the verb is optional — `bsc say \"hello\"` is the same thing)"
+      },
+      {
+        "verb": "all",
+        "summary": "say it on every eligible output at once — one voice, the whole room"
+      },
+      {
+        "verb": "devices",
+        "summary": "playback devices, and which one speech will actually come out of"
+      },
+      {
+        "verb": "voice",
+        "summary": "the voice speech uses by default — print it, or remember one"
+      },
+      {
+        "verb": "voices",
+        "summary": "what this machine can actually speak with, and which provider would answer"
+      }
+    ]
+  },
+  {
+    "name": "lan",
+    "crate": "bsc-lan",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "posture",
+        "summary": "what THIS host exposes to the network"
+      },
+      {
+        "verb": "keygen",
+        "summary": "the sensor signing key and the group key"
+      },
+      {
+        "verb": "watch",
+        "summary": "subscribe to a sensor's multicast stream and report what it says — and what it stops saying"
+      },
+      {
+        "verb": "estate",
+        "summary": "what is actually on a segment, from what the sensor saw — and what should not be"
+      },
+      {
+        "verb": "spectrum",
+        "summary": "what the radio hears across the band, from the spectral FFT"
+      },
+      {
+        "verb": "sense",
+        "summary": "read the spectrum on a cadence and emit it, sealed, to a configured destination"
+      },
+      {
+        "verb": "dry-run",
+        "summary": "what the sensor WOULD emit for a real EVE file, without a socket"
+      },
+      {
+        "verb": "config",
+        "summary": "the key files this host reads, with every secret redacted"
+      },
+      {
+        "verb": "unit",
+        "summary": "the systemd unit that makes the sensor a service, printed"
+      }
+    ]
+  },
+  {
+    "name": "deploy",
+    "crate": "bsc-deploy",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "devices",
+        "summary": "the roster — every machine this app deploys to"
+      },
+      {
+        "verb": "status",
+        "summary": "what each device is RUNNING, and whether it is behind (answers, never acts)"
+      },
+      {
+        "verb": "push",
+        "summary": "ship the artifact to a device: stage, verify THERE, swap, restart, probe, roll back on failure"
+      },
+      {
+        "verb": "rollback",
+        "summary": "put a device back on its previous binary"
+      }
+    ]
+  },
+  {
+    "name": "capability",
+    "crate": "bsc-capability",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "get",
+        "summary": "what a network can DO right now — its projects, its devices, and when each was last observed"
+      },
+      {
+        "verb": "networks",
+        "summary": "every network that has capabilities to report"
+      }
+    ]
+  },
+  {
+    "name": "data",
+    "crate": "bsc-data",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "model",
+        "summary": "read/write the canonical Data Model"
+      },
+      {
+        "verb": "shapes",
+        "summary": "infer each entity's ideal data shape from the Data Model (#2478)"
+      },
+      {
+        "verb": "scan",
+        "summary": "read/write the Platform Behavior Summary (PlatformScan)"
+      },
+      {
+        "verb": "tables",
+        "summary": "list entity tables + row counts"
+      },
+      {
+        "verb": "rows",
+        "summary": "sample rows from an entity table (default 20)"
+      },
+      {
+        "verb": "count",
+        "summary": "row count for an entity"
+      },
+      {
+        "verb": "nulls",
+        "summary": "NULL counts — all fields, or just <field>"
+      },
+      {
+        "verb": "lineage",
+        "summary": "per-row + per-field lineage counts for an entity"
+      },
+      {
+        "verb": "connector",
+        "summary": "runtime REST connector presets + dev-loop (no --db needed)"
+      }
+    ]
+  },
+  {
+    "name": "security",
+    "crate": "bsc-security",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "scan",
+        "summary": "run every detector over a repo and rank what they found"
+      },
+      {
+        "verb": "secrets",
+        "summary": "leaked credentials only — working tree and git history"
+      },
+      {
+        "verb": "deps",
+        "summary": "dependencies against OSV.dev — the former `bsc cve scan`"
+      },
+      {
+        "verb": "rules",
+        "summary": "what the secrets detector can and cannot recognize"
+      }
+    ]
+  },
+  {
+    "name": "cve",
+    "crate": "bsc-security",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "scan",
+        "summary": "scan a lockfile/manifest for known-vulnerable packages"
+      },
+      {
+        "verb": "check",
+        "summary": "advisories affecting one package/version"
+      },
+      {
+        "verb": "get",
+        "summary": "one advisory's full record by id"
+      }
+    ]
+  },
+  {
+    "name": "news",
+    "crate": "bsc-news",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "outlets",
+        "summary": "the roster: twelve institutions, three per bloc, one wire agency each"
+      },
+      {
+        "verb": "poll",
+        "summary": "fetch every feed, appending a version wherever the text changed"
+      },
+      {
+        "verb": "brief",
+        "summary": "the digest for one event: corroboration, framing, agency deletion"
+      },
+      {
+        "verb": "find",
+        "summary": "articles about a person, a place or a circumstance"
+      },
+      {
+        "verb": "entities",
+        "summary": "what is IN the corpus: people, places and circumstances, ranked"
+      },
+      {
+        "verb": "history",
+        "summary": "every stored version of one article URL — the stealth-edit view"
+      }
+    ]
+  },
+  {
+    "name": "survival",
+    "crate": "bsc-survival",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "list",
+        "summary": "every procedure, or one category"
+      },
+      {
+        "verb": "get",
+        "summary": "one record's full text — procedure or remedy"
+      },
+      {
+        "verb": "search",
+        "summary": "free-text search across both kinds"
+      },
+      {
+        "verb": "have",
+        "summary": "THE INVERSE LOOKUP: what these materials let you do"
+      },
+      {
+        "verb": "remedy",
+        "summary": "the natural remedies, by FUNCTION and by LOCATION"
+      },
+      {
+        "verb": "functions",
+        "summary": "the function vocabulary, with counts"
+      },
+      {
+        "verb": "regions",
+        "summary": "the region vocabulary, with counts"
+      },
+      {
+        "verb": "categories",
+        "summary": "the procedure-category vocabulary, with counts"
+      },
+      {
+        "verb": "compile",
+        "summary": "the whole corpus as one offline markdown field manual"
+      },
+      {
+        "verb": "meta",
+        "summary": "corpus version + counts + last-updated stamp"
+      },
+      {
+        "verb": "reseed",
+        "summary": "re-apply the packaged corpus; keeps rows you added"
+      },
+      {
+        "verb": "upsert",
+        "summary": "add your own records from JSON on stdin"
+      },
+      {
+        "verb": "remove",
+        "summary": "delete a record; prints whether a row existed"
+      }
+    ]
+  },
+  {
+    "name": "surface",
+    "crate": "bsc",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "mcp",
+    "crate": "bsc",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "hook",
+    "crate": "bsc",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "serve",
+    "crate": "bsc",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "version",
+    "crate": "bsc",
+    "catalog": "unreachable",
+    "verbs": null
+  },
+  {
+    "name": "config",
+    "crate": "bsc-config",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "status",
+        "summary": "every config file NOT in sync with the packaged seed, classified"
+      },
+      {
+        "verb": "diff",
+        "summary": "the diff between one file's on-disk copy and the packaged seed"
+      },
+      {
+        "verb": "reset",
+        "summary": "adopt the packaged copy of one file, overwriting the on-disk edit"
+      }
+    ]
+  },
+  {
+    "name": "github",
+    "crate": "bsc-github",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "provenance",
+        "summary": "the issue-provenance label and the `gh issue list` selector triage should use"
+      },
+      {
+        "verb": "repo-for",
+        "summary": "which `owner/name` a GitHub REST path targets, or nothing when it is not repo-scoped"
+      },
+      {
+        "verb": "board",
+        "summary": "parse a projectsV2 GraphQL payload: the Status options, and which items are real issues"
+      }
+    ]
+  },
+  {
+    "name": "perms",
+    "crate": "bsc-perms",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "roles",
+        "summary": "every role in the frozen capability baseline"
+      },
+      {
+        "verb": "show",
+        "summary": "one role's capability and everything derived from it"
+      },
+      {
+        "verb": "all",
+        "summary": "every role's whole chain, in ONE read — the batch a UI reader needs"
+      }
+    ]
+  },
+  {
+    "name": "app",
+    "crate": "bsc-app",
+    "catalog": "projected",
+    "verbs": [
+      {
+        "verb": "shot",
+        "summary": "capture the RUNNING app's real pixels (was `bsc shot`)"
+      },
+      {
+        "verb": "go",
+        "summary": "steer the RUNNING app to a view, so a capture can target something (was `bsc navigate`)"
+      },
+      {
+        "verb": "view",
+        "summary": "the AGENT's own window — the same verbs as `go`, without moving the user's view"
+      },
+      {
+        "verb": "probe",
+        "summary": "inspect the RUNNING app's live DOM and preview state (was `bsc debug`)"
+      },
+      {
+        "verb": "status",
+        "summary": "is the built app behind main? (answers, never acts)"
+      },
+      {
+        "verb": "promote",
+        "summary": "fast-forward main to develop AT THE REPO ROOT — explicit, never on your behalf"
+      },
+      {
+        "verb": "rebuild",
+        "summary": "rebuild + relaunch the app from cold, for when something is wedged"
+      },
+      {
+        "verb": "release",
+        "summary": "cut a release: bump both version files, stamp the CHANGELOG, commit, tag, push"
+      },
+      {
+        "verb": "hooks",
+        "summary": "install the repo's git hooks into the COMMON .git/hooks (governs every worktree)"
+      }
+    ]
+  }
+]

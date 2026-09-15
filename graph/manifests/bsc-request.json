@@ -132,6 +132,14 @@
             "# `Lane`, the branch-derived lane a store opens in."
           ],
           "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-similar",
+          "lead": [
+            "# Document distance (TF-IDF cosine) — commands and requests know what they resemble."
+          ],
+          "value": "{ path = \"../bsc-similar\" }"
         }
       ],
       "lead": [

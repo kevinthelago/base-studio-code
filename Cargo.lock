@@ -854,6 +854,7 @@ dependencies = [
  "bsc-self",
  "bsc-session",
  "bsc-shot",
+ "bsc-similar",
  "bsc-sound",
  "bsc-studio",
  "bsc-survival",
@@ -1490,6 +1491,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-lane-rows",
+ "bsc-similar",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",
@@ -1639,6 +1641,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-similar"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
