@@ -93,6 +93,28 @@
           "key": "bsc-util",
           "lead": [],
           "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-fleet",
+          "lead": [
+            "# the app round trips a tick rides: which panes are live, and the one wake path that brings a pane up"
+          ],
+          "value": "{ path = \"../bsc-fleet\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-appchan",
+          "lead": [],
+          "value": "{ path = \"../bsc-appchan\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-capacity",
+          "lead": [
+            "# admission to a machine red line — the tick never starts a build session past it"
+          ],
+          "value": "{ path = \"../bsc-capacity\" }"
         }
       ],
       "lead": [
