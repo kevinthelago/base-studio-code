@@ -5,6 +5,8 @@
 //! process. The pure half is where the failures that matter live — a provider substituted without
 //! saying so, a rate mapped onto the wrong scale, or spoken text reaching something that parses it.
 
+pub mod acoustics;
+pub mod audition;
 pub mod cli;
 pub mod kokoro;
 pub mod voice;

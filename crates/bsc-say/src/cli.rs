@@ -174,6 +174,42 @@ one sounds like — so the machine has to be able to say which engine it used an
 INSTALLING A NEUTRAL VOICE: put a piper `.onnx` model (and its `.onnx.json` companion) in the voice
 directory this prints, and put the `piper` binary on PATH. Both are then found with no configuration.",
     },
+    CmdDoc {
+        name: "analyze",
+        summary: "measure a clip's pitch and formants, and place it between the female and male voices",
+        usage: "\
+bsc say analyze clip.wav [more.wav ...] [--against <audition dir>] [--json|--pretty]
+
+Median pitch (F0), the fraction of speech that was voiced, F1–F3, and formant dispersion (ΔF) — the
+spacing of the vocal tract's resonances, which is what its length sounds like. No model.
+
+PLACEMENT NEEDS A REFERENCE. When the audition directory (default ~/.base-studio-code/say-audition)
+holds reference clips, each clip is also placed on a pitch axis and a formant axis, the female
+voices' centre at +1 and the male's at -1, and given a DISTANCE from perfectly between: 0 is fully
+androgynous, 1 is as far out as a centroid. Run `bsc say audition` once to render the reference.
+
+FOR SYNTHETIC VOICES. This measures blends; it is not a reading of a person.",
+    },
+    CmdDoc {
+        name: "audition",
+        summary: "render many random voice blends, measure each, and rank the most androgynous first",
+        usage: "\
+bsc say audition [--count 200] [--seed 1] [--top 20] [--include specs.txt] [--out <dir>] [--json]
+bsc say audition \"different words\" --out <another dir>
+
+1. Renders every English Kokoro voice once as the REFERENCE, labelled by its f/m prefix, so the
+   centroids are derived from these voices rather than assumed from population averages.
+2. Draws --count seeded random blends, each crossing the labels: one or two female voices with one
+   or two male ones, at random weights. --include adds specs you already like, one per line.
+3. Renders each blend reading the same sentence, measures it (see `bsc say analyze`), and ranks by
+   distance from perfectly between.
+
+A RERUN IS CHEAP: clips already on disk are measured, not re-rendered, so raising --count or adding a
+seed only renders what is new. A directory holds ONE text; different words need a different --out.
+
+The whole ranking is written to <dir>/ranking.tsv; the clips are under <dir>/blends, so the top of
+the list can be listened to directly.",
+    },
 ];
 
 #[derive(Default, Debug, Clone)]
@@ -198,6 +234,14 @@ struct Args {
     rate: Option<f32>,
     voice: Option<String>,
     out: Option<String>,
+    /// `audition`: how many random blends to draw, from which seed, and how many to print.
+    count: Option<u32>,
+    seed: Option<u64>,
+    top: Option<usize>,
+    /// `audition`: a file of blend specs, one per line, measured alongside the random ones.
+    include: Option<String>,
+    /// `analyze`: the audition directory whose reference clips place a measurement.
+    against: Option<String>,
     positional: Vec<String>,
 }
 
@@ -217,6 +261,29 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--provider" => a.provider = Some(rest.value("--provider needs 'system' or 'piper'")?),
             "--voice" => a.voice = Some(rest.value("--voice needs a voice name")?),
             "--out" => a.out = Some(rest.value("--out needs a path to write a wav to")?),
+            "--include" => a.include = Some(rest.value("--include needs a file of blend specs, one per line")?),
+            "--against" => a.against = Some(rest.value("--against needs an audition directory")?),
+            "--count" => {
+                a.count = Some(
+                    rest.value("--count needs a number of blends")?
+                        .parse()
+                        .map_err(|_| "--count needs a whole number of blends".to_string())?,
+                );
+            }
+            "--seed" => {
+                a.seed = Some(
+                    rest.value("--seed needs a number")?
+                        .parse()
+                        .map_err(|_| "--seed needs a whole number".to_string())?,
+                );
+            }
+            "--top" => {
+                a.top = Some(
+                    rest.value("--top needs how many to print")?
+                        .parse()
+                        .map_err(|_| "--top needs a whole number".to_string())?,
+                );
+            }
             "--rate" => {
                 a.rate = Some(
                     rest.value("--rate needs a multiplier, 1.0 being normal")?
@@ -662,18 +729,7 @@ fn speak_with_kokoro(
         Some(p) => PathBuf::from(p),
         None => std::env::temp_dir().join(format!("bsc-say-k-{}.wav", std::process::id())),
     };
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: kokoro::SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut w = hound::WavWriter::create(&target, spec)
-        .map_err(|e| format!("could not write {}: {e}", target.display()))?;
-    for s in &samples {
-        w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16).map_err(|e| e.to_string())?;
-    }
-    w.finalize().map_err(|e| e.to_string())?;
+    write_wav(&target, &samples)?;
     if keep {
         return Ok(());
     }
@@ -1081,6 +1137,339 @@ fn blend_bytes(dir: &std::path::Path, spec: &str) -> Result<Vec<u8>, String> {
     crate::kokoro::blend_voices(&sources)
 }
 
+/// Write mono samples as the 16-bit wav every player here accepts.
+fn write_wav(target: &std::path::Path, samples: &[f32]) -> Result<(), String> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: crate::kokoro::SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(target, spec)
+        .map_err(|e| format!("could not write {}: {e}", target.display()))?;
+    for s in samples {
+        w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16).map_err(|e| e.to_string())?;
+    }
+    w.finalize().map_err(|e| e.to_string())
+}
+
+/// The first channel of a wav, as floats in [-1, 1], with its rate.
+fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
+    let mut r = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let spec = r.spec();
+    let channels = spec.channels.max(1) as usize;
+    let all: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => r.samples::<f32>().collect::<Result<_, _>>(),
+        hound::SampleFormat::Int => {
+            let scale = (1i64 << (spec.bits_per_sample.max(1) - 1)) as f32;
+            r.samples::<i32>().map(|s| s.map(|v| v as f32 / scale)).collect::<Result<_, _>>()
+        }
+    }
+    .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((all.into_iter().step_by(channels).collect(), spec.sample_rate))
+}
+
+/// The sentence every audition clip reads: mostly voiced and vowel-rich, so pitch and formants have
+/// many frames to measure. One text for every clip, so a difference is the voice and not the words.
+const AUDITION_TEXT: &str =
+    "Hello, I am your assistant. Where would you like to begin our work today? I was reading while you were away.";
+
+fn default_audition_dir() -> Result<PathBuf, String> {
+    bsc_util::bsc_base_dir()
+        .map(|b| b.join("say-audition"))
+        .ok_or_else(|| "no home directory to keep auditions in — pass a directory".to_string())
+}
+
+/// Measure the labelled reference clips in `dir` into female and male centroids.
+fn measure_references(dir: &std::path::Path) -> Result<crate::acoustics::Reference, String> {
+    use crate::audition::{label_of, Label};
+    let rd = std::fs::read_dir(dir)
+        .map_err(|_| format!("no reference clips in {} — `bsc say audition` renders them", dir.display()))?;
+    let mut clips: Vec<PathBuf> =
+        rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect();
+    clips.sort();
+    let (mut female, mut male) = (Vec::new(), Vec::new());
+    for clip in clips {
+        let Some(label) = clip.file_stem().and_then(|s| s.to_str()).and_then(label_of) else {
+            continue;
+        };
+        let (samples, rate) = read_wav(&clip)?;
+        let measured = crate::acoustics::profile(&samples, rate);
+        match label {
+            Label::Female => female.push(measured),
+            Label::Male => male.push(measured),
+        }
+    }
+    crate::acoustics::Reference::from_groups(&female, &male)
+}
+
+fn hz(v: Option<f32>) -> String {
+    v.map(|x| format!("{x:.0}")).unwrap_or_else(|| "-".into())
+}
+
+fn emit_json(pretty: bool, v: &serde_json::Value) -> Result<(), String> {
+    let rendered = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) }
+        .map_err(|e| format!("could not render the report: {e}"))?;
+    println!("{rendered}");
+    Ok(())
+}
+
+fn placement_json(p: &crate::acoustics::Profile, place: Option<&crate::acoustics::Placement>) -> serde_json::Value {
+    json!({
+        "f0Hz": p.f0_hz,
+        "voiced": p.voiced,
+        "formantsHz": p.formants,
+        "dispersionHz": p.dispersion_hz,
+        "pitch": place.map(|x| x.pitch),
+        "formant": place.map(|x| x.formant),
+        "distance": place.map(|x| x.distance),
+        "lean": place.map(|x| x.lean),
+    })
+}
+
+fn reference_json(r: &crate::acoustics::Reference) -> serde_json::Value {
+    json!({
+        "female": { "f0Hz": r.female.f0_hz, "dispersionHz": r.female.dispersion_hz, "voices": r.female.voices },
+        "male": { "f0Hz": r.male.f0_hz, "dispersionHz": r.male.dispersion_hz, "voices": r.male.voices },
+    })
+}
+
+fn print_reference(r: &crate::acoustics::Reference) {
+    println!(
+        "reference  female {:.0} Hz, ΔF {:.0} ({} voices)   male {:.0} Hz, ΔF {:.0} ({} voices)",
+        r.female.f0_hz, r.female.dispersion_hz, r.female.voices, r.male.f0_hz, r.male.dispersion_hz, r.male.voices
+    );
+}
+
+fn cmd_analyze(a: &Args) -> Result<(), String> {
+    let files = &a.positional[1..];
+    if files.is_empty() {
+        return Err("nothing to analyze — `bsc say analyze clip.wav [more.wav ...]`".into());
+    }
+    let dir = match &a.against {
+        Some(d) => PathBuf::from(d),
+        None => default_audition_dir()?,
+    };
+    // A missing reference is not a failure to MEASURE — the raw numbers stand on their own, and the
+    // report says why there is no placement rather than omitting it silently.
+    let reference = measure_references(&dir.join("ref"));
+    let mut rows = Vec::new();
+    for f in files {
+        let (samples, rate) = read_wav(std::path::Path::new(f))?;
+        let measured = crate::acoustics::profile(&samples, rate);
+        let place = reference.as_ref().ok().and_then(|r| r.place(&measured));
+        rows.push((f, measured, place));
+    }
+
+    if a.json || a.pretty {
+        let clips: Vec<_> = rows
+            .iter()
+            .map(|(f, p, place)| {
+                let mut v = placement_json(p, place.as_ref());
+                v["file"] = json!(f);
+                v
+            })
+            .collect();
+        let v = match &reference {
+            Ok(r) => json!({ "reference": reference_json(r), "clips": clips }),
+            Err(e) => json!({ "reference": null, "referenceError": e, "clips": clips }),
+        };
+        return emit_json(a.pretty, &v);
+    }
+
+    match &reference {
+        Ok(r) => print_reference(r),
+        Err(e) => println!("no placement: {e}"),
+    }
+    println!("{:>6} {:>6} {:>16} {:>6} {:>7} {:>8}  file", "F0", "ΔF", "F1/F2/F3", "pitch", "formant", "distance");
+    for (f, p, place) in &rows {
+        let formants = p.formants.iter().map(|x| hz(*x)).collect::<Vec<_>>().join("/");
+        let (pitch, formant, distance) = match place {
+            Some(x) => (format!("{:+.2}", x.pitch), format!("{:+.2}", x.formant), format!("{:.2}", x.distance)),
+            None => ("-".into(), "-".into(), "-".into()),
+        };
+        println!("{:>6} {:>6} {:>16} {:>6} {:>7} {:>8}  {f}", hz(p.f0_hz), hz(p.dispersion_hz), formants, pitch, formant, distance);
+    }
+    Ok(())
+}
+
+fn cmd_audition(a: &Args) -> Result<(), String> {
+    use crate::audition::{self, Label};
+    use crate::{acoustics, kokoro};
+    let platform = host_platform()?;
+    let (setup, availability) = probe_kokoro(platform, None);
+    let (paths, _, espeak, espeak_data) = setup.ok_or(availability.detail)?;
+    let dir = match &a.out {
+        Some(d) => PathBuf::from(d),
+        None => default_audition_dir()?,
+    };
+    let text = if a.positional.len() > 1 { a.positional[1..].join(" ") } else { AUDITION_TEXT.to_string() };
+    for sub in ["ref", "blends"] {
+        std::fs::create_dir_all(dir.join(sub)).map_err(|e| format!("could not create {}: {e}", dir.join(sub).display()))?;
+    }
+    // One directory is one experiment. Clips reading different words would be measuring the words.
+    let text_file = dir.join("text.txt");
+    match std::fs::read_to_string(&text_file) {
+        Ok(existing) if existing != text => {
+            return Err(format!(
+                "{} was rendered reading \"{existing}\" — pass a different directory for different words",
+                dir.display()
+            ))
+        }
+        Ok(_) => {}
+        Err(_) => std::fs::write(&text_file, &text).map_err(|e| format!("could not write {}: {e}", text_file.display()))?,
+    }
+
+    let (mut female, mut male) = (Vec::new(), Vec::new());
+    let mut installed: Vec<String> = std::fs::read_dir(&paths.voices)
+        .map_err(|e| format!("{}: {e}", paths.voices.display()))?
+        .filter_map(|e| e.ok()?.file_name().into_string().ok()?.strip_suffix(".bin").map(str::to_string))
+        .collect();
+    installed.sort();
+    for v in installed {
+        match audition::label_of(&v) {
+            Some(Label::Female) => female.push(v),
+            Some(Label::Male) => male.push(v),
+            None => {}
+        }
+    }
+    if female.is_empty() || male.is_empty() {
+        return Err(format!("an audition needs English female and male voices; found {} and {}", female.len(), male.len()));
+    }
+
+    let ipa = kokoro::phonemize(&espeak, &espeak_data, &text, "en-us")?;
+    // Loaded on first use, so a rerun whose clips are all on disk never pays for the model.
+    let mut model: Option<kokoro::Voice> = None;
+    let mut render = |bytes: &[u8], target: &std::path::Path| -> Result<(), String> {
+        if model.is_none() {
+            model = Some(kokoro::Voice::load(&paths)?);
+        }
+        let m = model.as_mut().ok_or("the model did not load")?;
+        let (samples, _) = m.speak(&ipa, bytes, 1.0)?;
+        // Written aside and renamed, so an interrupted run never leaves a truncated clip that a
+        // rerun would then trust and measure.
+        let partial = target.with_extension("partial");
+        write_wav(&partial, &samples)?;
+        std::fs::rename(&partial, target).map_err(|e| format!("could not place {}: {e}", target.display()))
+    };
+
+    for v in female.iter().chain(&male) {
+        let target = dir.join("ref").join(format!("{v}.wav"));
+        if !target.is_file() {
+            let bytes = std::fs::read(paths.voices.join(format!("{v}.bin"))).map_err(|e| format!("{v}: {e}"))?;
+            render(&bytes, &target)?;
+        }
+    }
+    let reference = measure_references(&dir.join("ref"))?;
+
+    let mut specs: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut included = std::collections::HashSet::new();
+    if let Some(file) = &a.include {
+        let raw = std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+        for line in raw.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let spec = audition::spec_of(&kokoro::parse_blend(line)?);
+            if seen.insert(spec.clone()) {
+                included.insert(spec.clone());
+                specs.push(spec);
+            }
+        }
+    }
+    let want = a.count.unwrap_or(200) as usize;
+    let mut rng = audition::Rng::new(a.seed.unwrap_or(1));
+    let (mut drawn, mut attempts) = (0, 0);
+    // Bounded, because a small pool runs out of distinct blends and an unbounded draw never returns.
+    while drawn < want && attempts < want.saturating_mul(50) {
+        attempts += 1;
+        let spec = audition::spec_of(&audition::random_blend(&mut rng, &female, &male));
+        if seen.insert(spec.clone()) {
+            specs.push(spec);
+            drawn += 1;
+        }
+    }
+
+    let started = std::time::Instant::now();
+    let mut ranked = Vec::new();
+    let mut unplaced = 0;
+    for (i, spec) in specs.iter().enumerate() {
+        let clip = dir.join("blends").join(audition::clip_name(spec));
+        if !clip.is_file() {
+            render(&blend_bytes(&paths.voices, spec)?, &clip)?;
+        }
+        let (samples, rate) = read_wav(&clip)?;
+        let measured = acoustics::profile(&samples, rate);
+        match reference.place(&measured) {
+            Some(place) => ranked.push((spec, clip, measured, place)),
+            None => unplaced += 1,
+        }
+        if (i + 1) % 25 == 0 {
+            eprintln!("bsc say audition: {}/{} clips measured ({:.0}s)", i + 1, specs.len(), started.elapsed().as_secs_f32());
+        }
+    }
+    ranked.sort_by(|x, y| x.3.distance.total_cmp(&y.3.distance));
+
+    let mut tsv = String::from("rank\tdistance\tpitch\tformant\tf0_hz\tdispersion_hz\tincluded\tspec\tclip\n");
+    for (i, (spec, clip, m, p)) in ranked.iter().enumerate() {
+        tsv.push_str(&format!(
+            "{}\t{:.3}\t{:+.3}\t{:+.3}\t{}\t{}\t{}\t{spec}\t{}\n",
+            i + 1,
+            p.distance,
+            p.pitch,
+            p.formant,
+            hz(m.f0_hz),
+            hz(m.dispersion_hz),
+            included.contains(*spec),
+            clip.display()
+        ));
+    }
+    let ranking = dir.join("ranking.tsv");
+    std::fs::write(&ranking, tsv).map_err(|e| format!("could not write {}: {e}", ranking.display()))?;
+
+    let top = a.top.unwrap_or(20).min(ranked.len());
+    if a.json || a.pretty {
+        let rows: Vec<_> = ranked
+            .iter()
+            .take(top)
+            .enumerate()
+            .map(|(i, (spec, clip, m, p))| {
+                let mut v = placement_json(m, Some(p));
+                v["rank"] = json!(i + 1);
+                v["spec"] = json!(spec);
+                v["clip"] = json!(clip.display().to_string());
+                v["included"] = json!(included.contains(*spec));
+                v
+            })
+            .collect();
+        return emit_json(
+            a.pretty,
+            &json!({
+                "reference": reference_json(&reference),
+                "measured": ranked.len(),
+                "unplaced": unplaced,
+                "ranking": ranking.display().to_string(),
+                "top": rows,
+            }),
+        );
+    }
+    print_reference(&reference);
+    println!("measured {} blends ({} could not be placed); * marks an --include spec\n", ranked.len(), unplaced);
+    println!("{:>4} {:>8} {:>6} {:>7} {:>5} {:>5}  blend", "rank", "distance", "pitch", "formant", "F0", "ΔF");
+    for (i, (spec, _, m, p)) in ranked.iter().take(top).enumerate() {
+        let mark = if included.contains(*spec) { "*" } else { " " };
+        println!(
+            "{:>4} {:>8.3} {:>+6.2} {:>+7.2} {:>5} {:>5} {mark}{spec}",
+            i + 1,
+            p.distance,
+            p.pitch,
+            p.formant,
+            hz(m.f0_hz),
+            hz(m.dispersion_hz)
+        );
+    }
+    println!("\nfull ranking: {}\nclips: {}", ranking.display(), dir.join("blends").display());
+    Ok(())
+}
+
 fn cmd_voices(a: &Args) -> Result<(), String> {
     let platform = host_platform()?;
     let probed = probe(platform, a.voice.as_deref());
@@ -1176,6 +1565,8 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("devices") => cmd_devices(&a),
         Some("voice") => cmd_voice(&a),
         Some("voices") => cmd_voices(&a),
+        Some("analyze") => cmd_analyze(&a),
+        Some("audition") => cmd_audition(&a),
         Some("all") if a.positional.len() == 1 => {
             Err("nothing to say — `bsc say all \"some text\"`".into())
         }
@@ -1200,7 +1591,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["speak", "all", "devices", "voice", "voices"]);
+        assert_eq!(names, vec!["speak", "all", "devices", "voice", "voices", "analyze", "audition"]);
     }
 
     /// `all` speaks to the real choices, not to one card listed eight ways.
