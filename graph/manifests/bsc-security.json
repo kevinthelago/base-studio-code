@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"The CVE / vulnerability data layer for base-studio-code (supply-chain #2433, #3797) — queries OSV.dev for known advisories against a package/version or a whole lockfile, caches results in SQLite, and is reachable from any live session as `bsc cve …` + the `bsc mcp cve` server. The data layer the install-time `bsc-supply` hook builds on.\""
+          "value": "\"The CVE / vulnerability data layer for base-studio-code (supply-chain #2433, #3797) — queries OSV.dev for known advisories against a package/version or a whole lockfile, caches results in SQLite, and is reachable from any live session as `bsc security deps` + the `bsc mcp cve` server. The data layer the install-time `bsc-supply` hook builds on.\""
         }
       ],
       "lead": [],

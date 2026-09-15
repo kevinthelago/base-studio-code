@@ -301,12 +301,6 @@
         },
         {
           "cont": [],
-          "key": "bsc-component",
-          "lead": [],
-          "value": "{ path = \"../bsc-component\" }"
-        },
-        {
-          "cont": [],
           "key": "bsc-ui",
           "lead": [],
           "value": "{ path = \"../bsc-ui\" }"
@@ -524,7 +518,7 @@
           "cont": [],
           "key": "bsc-security",
           "lead": [
-            "# `bsc cve` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a",
+            "# `bsc security` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a",
             "# lockfile / check a package / advisory detail, the data layer the install-time `bsc-supply` hook builds on."
           ],
           "value": "{ path = \"../bsc-security\" }"

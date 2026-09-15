@@ -11,8 +11,7 @@
 ## Your one tool surface: `bsc ui`
 
 Everything you produce lives in the shared component-library store and is reached through the one
-`bsc ui` command (its predecessor `bsc component` is a **deprecated alias** of the same store — use
-`bsc ui`; if this build predates the merge, the same verbs work as `bsc component …`).
+`bsc ui` command.
 
 **The design surface is the RUNNING app.** Every token/variant/theme edit you make fires a live
 restyle — the desktop app re-applies it immediately, no rebuild, no `.tsx`. **Restyling is pure data:**
@@ -866,7 +865,7 @@ run directly). So, reuse-first:
   algorithm exists (its name usually surfaces on you already — a `doctor` finding, a sibling component's
   import, a name you recall from a prior session). `bsc graph impl list` — browsing the WHOLE catalog —
   is the librarian's surface, not yours; do not reach for it (bsc request #118: your permitted surface
-  is `bsc ui`/`bsc component`, nothing under `bsc graph`).
+  is `bsc ui`, nothing under `bsc graph`).
 - **No specific name to check, or it doesn't resolve? Commission the librarian** (the spec is what the
   data should REPRESENT, on stdin):
 

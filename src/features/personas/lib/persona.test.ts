@@ -75,8 +75,8 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     expect(designer.role).toBe("designer");
     expect(designer.builtin).toBe(true);
     // The start prompt IS the session kickoff (baked into the launch arg by useDesignerTerminal):
-    // it must anchor the session to the bsc ui contract + CRUD and the deprecated alias.
-    for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "bsc component", "composes"]) {
+    // it must anchor the session to the bsc ui contract + CRUD.
+    for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "composes"]) {
       expect(designer.startPrompt).toContain(needle);
     }
     // ...and teach the graduated bsc ui ladder (#2585): the discover verbs, the per-rung edit

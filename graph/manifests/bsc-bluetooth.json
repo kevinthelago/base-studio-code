@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"bsc bluetooth — DEFENSIVE Bluetooth intrusion analysis (#bluetooth). The RADIO-FREE brain: an Observation model (one BLE advertising-plane packet), a learned per-device baseline of NORMAL operation, and passive detectors for the two threats worth caring about — SPOOFING (address-twin, rssi-deviation, interval-anomaly, service-mismatch) and malicious/abusive signals (rogue active-scan, unwanted-tracker non-rotation). Everything that DECIDES is pure and needs no radio to test; capture (BlueZ) and the widget feed it later. Its Observation/Finding types are the wire contract the radio-analyzer widget renders.\""
+          "value": "\"bsc radio bt — DEFENSIVE Bluetooth intrusion analysis (#bluetooth). The RADIO-FREE brain: an Observation model (one BLE advertising-plane packet), a learned per-device baseline of NORMAL operation, and passive detectors for the two threats worth caring about — SPOOFING (address-twin, rssi-deviation, interval-anomaly, service-mismatch) and malicious/abusive signals (rogue active-scan, unwanted-tracker non-rotation). Everything that DECIDES is pure and needs no radio to test; capture (BlueZ) and the widget feed it later. Its Observation/Finding types are the wire contract the radio-analyzer widget renders.\""
         }
       ],
       "lead": [],

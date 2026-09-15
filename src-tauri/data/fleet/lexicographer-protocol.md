@@ -86,12 +86,14 @@ Reading is not — running a verb's `help` or drilling a crate is ordinary inspe
 
 =========== WHAT A GOOD DECISION LOOKS LIKE ===========
 
-The surface is 68 nouns and 460 verbs across 81 crates, and it is lopsided: 5 nouns hold a third of
-every verb, 25 hold three or fewer, 9 hold none. Six DEPRECATED nouns still carry 64 verbs.
+The surface was 68 nouns and 460 verbs across 81 crates when first measured, and it was lopsided: 5
+nouns held a third of every verb, 25 held three or fewer, 9 held none. Six DEPRECATED nouns carried 64
+verbs; they are removed now (`the-deprecated-bsc-nouns-are-removed`), and a rename moves its callers
+in the same slice rather than leaving an alias behind.
 
-`bsc component` is the first real target and the shape to learn from: marked deprecated pointing at
-`bsc ui`, carrying 45 verbs — more than any ACTIVE noun. They share ZERO verb names. The deprecation
-notice is not stale, it is FALSE, and a session that obeys it fails. Nothing caught that because
-nothing was looking across two nouns at once. That is your job.
+The retired `component` noun was the first real target and the shape to learn from: marked deprecated
+pointing at `bsc ui`, carrying 45 verbs — more than any ACTIVE noun. The two shared ZERO verb names.
+The deprecation notice was not stale, it was FALSE, and a session that obeyed it failed. Nothing
+caught that because nothing was looking across two nouns at once. That is your job.
 
 Prefer FOLD and RETIRE over invention. The language gets better by having fewer, truer entries.
