@@ -424,7 +424,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc shot preview",
+          "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
           "bsc loop watch",
@@ -814,7 +814,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc shot preview",
+          "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
           "bsc loop watch",

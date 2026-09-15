@@ -53,7 +53,7 @@ describe("Glance's tabs are the networks", () => {
     expect(LOGS).toMatch(/import \{ FleetGraphHost \} from "@\/features\/glance"/);
   });
 
-  it("stays UNCONTROLLED, so `bsc navigate page <networkId>` can reach a tab", () => {
+  it("stays UNCONTROLLED, so `bsc app go page <networkId>` can reach a tab", () => {
     // The active page is read from `activePageTab["glance"]`. A controlled tab would hold the selection
     // in the component, where navigate cannot see it and a restart cannot restore it. Every other
     // entity-derived workspace states this same constraint.

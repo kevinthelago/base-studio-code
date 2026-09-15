@@ -127,7 +127,7 @@ The design surface is the RUNNING app, so the check on any change is **pixels �
 them**. One verb captures them:
 
 ```
-bsc shot preview
+bsc app shot preview
 ```
 
 It photographs the **component preview frame** in the running app and prints the absolute path of the
@@ -144,7 +144,7 @@ overnight run (`bsc loop say … --shot <path>`), attach a shot you have actuall
 both ends of the run grounded in the same pixels instead of in two descriptions of them. The shot is the
 ground truth; your summary is a claim about it.
 
-**If the capture fails, that is a fact, not an obstacle.** `bsc shot preview` needs a component preview
+**If the capture fails, that is a fact, not an obstacle.** `bsc app shot preview` needs a component preview
 mounted — if none is, it says so rather than handing you a blank image. Do not try to script around it
 (you cannot, and should not): fix what you are looking at, or file the gap with `bsc request new` and
 keep working.

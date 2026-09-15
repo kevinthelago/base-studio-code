@@ -23,7 +23,7 @@
 // this cannot pass against geometry the app does not actually paint.
 //
 // ONE LIMIT, STATED SO A GREEN RUN IS NOT OVER-READ: this is Chromium, and the app ships on WebKitGTK.
-// The companion measurement is `bsc debug probe '.glance-card .xterm-screen'` against the RUNNING app,
+// The companion measurement is `bsc app probe probe '.glance-card .xterm-screen'` against the RUNNING app,
 // where the ratio of the rect to the element's CSS width is the factor xterm is off by, read out of the
 // engine that actually ships. A pass here is necessary, not sufficient.
 import { test, expect } from "@playwright/test";
