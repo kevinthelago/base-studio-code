@@ -37,7 +37,9 @@ describe("the plan model is not persisted", () => {
     // `paneCwds`, not `paneViews`: the console tab grid's keys left the allowlist with the grid
     // (`project-fleet-panes-live-only-in-glance`).
     expect(PERSIST).toMatch(/^\s*paneCwds:/m);
-    expect(PERSIST).toMatch(/^\s*reposPublic:/m);
+    // `repoPublic`, not `reposPublic`: the visibility DEFAULT is a user setting that moved to session.db
+    // (`settings-and-last-navigation-live-in-user-settings`); the per-repo overrides are still persisted.
+    expect(PERSIST).toMatch(/^\s*repoPublic:/m);
     expect(PERSIST).toMatch(/^\s*pinnedContext:/m);
   });
 
