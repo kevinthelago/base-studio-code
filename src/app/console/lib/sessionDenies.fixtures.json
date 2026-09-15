@@ -785,7 +785,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc shot preview",
+          "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
           "bsc loop watch",
@@ -1987,6 +1987,23 @@
         }
       ],
       "names": []
+    },
+    {
+      "label": "a HOST row contributes each verb as `<noun> <verb>` after the noun (running-app-instruments-are-one-noun)",
+      "rows": [
+        {
+          "name": "app",
+          "verbs": [
+            "shot",
+            "rebuild"
+          ]
+        }
+      ],
+      "names": [
+        "app",
+        "app shot",
+        "app rebuild"
+      ]
     },
     {
       "label": "empty",
