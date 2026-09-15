@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
 import { locationCrumb } from "@/app/chrome/locationCrumb";
-import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
@@ -24,7 +23,6 @@ import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { RequestSessionsMount } from "@/features/debug";
 import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
-import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
@@ -142,23 +140,18 @@ export default function App() {
       <Box className="shell">
         <Rail active={activeWorkspace} onNavigate={setWorkspace} />
         <Box className="main">
-          {activeWorkspace === "console" && <Tabstrip {...consoleTabs.tabstripProps} />}
-          {/* ConsoleWorkspace stays mounted across all screen navigations so xterm
+          {/* No project Tabstrip: the console hosts SYSTEM sessions (`system-sessions-run-projects-and-start-when-visited`).
+              ConsoleWorkspace stays mounted across all screen navigations so xterm
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
           <Box className="page">
           <ErrorBoundary label="this view" resetKeys={[activeWorkspace]}>
-          {tabs.length > 0 && (
-            <Box style={{
-              display: activeWorkspace === "console" ? "flex" : "none",
-              flex: 1, flexDirection: "column", minHeight: 0,
-            }}>
-              <ConsoleGraphHost />
-            </Box>
-          )}
-          {activeWorkspace === "console" && tabs.length === 0 && (
-            <ConsoleEmptyState onNew={consoleTabs.openNewTab} />
-          )}
+          <Box style={{
+            display: activeWorkspace === "console" ? "flex" : "none",
+            flex: 1, flexDirection: "column", minHeight: 0,
+          }}>
+            <ConsoleGraphHost />
+          </Box>
           {/* THE FIVE GRAPHS (`five-graphs-become-rail-workspaces`) get the SAME keep-mounted treatment
               as Projects, and for the same reason: each docks an always-on studio session (the designer,
               librarian, architect and sound-designer), and a screen that unmounts on every rail click
