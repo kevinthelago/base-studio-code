@@ -435,6 +435,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-teach",
+          "lead": [
+            "# `bsc teach` — the STEM curriculum and the learner model a tutoring session teaches from (epic-stem-is-harvested-into-the-app-as-a-learning-widget)."
+          ],
+          "value": "{ path = \"../bsc-teach\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-formula",
           "lead": [
             "# `bsc formula` — formulas stored as code: parse, TeX, eval, and check an answer (STEM harvest)."
