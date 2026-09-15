@@ -90,6 +90,13 @@ const EXEMPT: Record<string, string> = {
   fleet_session_set_status: "fleet_sessions stays on main by design: no lane triggers watch it",
   fleet_session_remove: "fleet_sessions stays on main by design: no lane triggers watch it",
   fleet_write_record: "fleet_writes is main-only audit, not a laned table",
+  // `bsc-plan-claim-takes-an-issue-atomically`: a claim is live coordination between concurrent sessions, so
+  // `issue_claims` is unlaned exactly like `fleet_sessions` — every lane must see one claim at once.
+  in_claim_transaction: "issue_claims stays on main by design: BEGIN IMMEDIATE / COMMIT around an unlaned write",
+  insert_claim: "issue_claims stays on main by design: no lane triggers watch it",
+  unclaim_issue: "issue_claims stays on main by design: no lane triggers watch it",
+  drop_issue_claim: "issue_claims stays on main by design: no lane triggers watch it",
+  clear_issue_claims: "issue_claims stays on main by design: no lane triggers watch it",
 };
 
 const lastIndex = (body: string, re: RegExp) => Math.max(-1, ...[...body.matchAll(re)].map((m) => m.index!));
