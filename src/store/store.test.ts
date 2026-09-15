@@ -845,16 +845,16 @@ describe("repository resolution", () => {
 // ── Triage ────────────────────────────────────────────────────────────────────
 
 describe("triageStartProject", () => {
-  it("launches a pane per repo (cwd under projects/<key>) and disables the empty grid cells", () => {
+  it("launches a pane per repo (cwd under projects/<key>) and starts each, with no console tab", () => {
     // A published project (has a board id) → its hub lives under projects/ (#904).
-    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
-    const before = useAppStore.getState().tabs.length;
-    // 5 repos → 3×2 grid = 6 cells, so the 6th cell (index 5) is empty.
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", paneLaunchGen: {} });
+    const tabsBefore = useAppStore.getState().tabs;
     const repos = ["o/a", "o/b", "o/c", "o/d", "o/e"];
     useAppStore.getState().triageStartProject("proj", repos);
 
-    const { tabs, activeTabIdx, paneCwds, paneInitCmds, disabledPanes } = useAppStore.getState();
-    expect(tabs[activeTabIdx].layout).toBe("3×2");
+    const { tabs, paneCwds, paneInitCmds, disabledPanes, paneLaunchGen } = useAppStore.getState();
+    // `project-fleet-panes-live-only-in-glance`: triage panes live in Glance, so no tab is written.
+    expect(tabs).toBe(tabsBefore);
 
     const { paneRepos } = useAppStore.getState();
     // The 5 real repos are wired up (clone path) and left enabled.
@@ -865,11 +865,10 @@ describe("triageStartProject", () => {
       expect(disabledPanes[key]).toBeUndefined();
       // Bound to its repo so the triage session's GH_TOKEN is repo-scoped (#158).
       expect(paneRepos[key]).toBe(repos[i]);
+      // STARTED: the launch generation is what `TerminalHost` holds and mounts — the path that used to
+      // launch only because a console tab cell claimed it.
+      expect(paneLaunchGen[key]).toBe(1);
     }
-    // The single empty cell keeps a positional id and starts disabled (no shell spawned).
-    expect(disabledPanes[`t${before}p5`]).toBe(true);
-    expect(paneCwds[`t${before}p5`]).toBeUndefined();
-    expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
   it("uses a Rust-resolved clonePaths cwd even when bscBaseDir is empty (#1819)", () => {
@@ -911,33 +910,22 @@ describe("triageStartProject", () => {
     expect(paneCheckpointDocs[tri("ckpt", "o/api")]).toBe("projects/ckpt/prompts/api-checkpoint.md");
   });
 
-  it("re-runs in place: reuses the existing triage tab and bumps its runId", () => {
+  it("re-runs by bumping each pane's launch generation, never adding a tab", () => {
+    useAppStore.setState({ paneLaunchGen: {} });
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
-    const idx = useAppStore.getState().tabs.length - 1;
-    expect(idx).toBe(before);
-    expect(useAppStore.getState().tabs[idx].runId).toBe(0);
+    expect(useAppStore.getState().paneLaunchGen[tri("rerun", "o/a")]).toBe(1);
 
-    // Pressing triage again rebuilds the SAME tab (no new tab) with a bumped runId,
-    // which remounts the panes so killed sessions relaunch.
+    // Pressing triage again bumps the SAME panes' generations, which relaunches them so killed
+    // sessions start fresh.
     useAppStore.getState().triageStartProject("rerun", ["o/a", "o/b"]);
-    expect(useAppStore.getState().tabs.length).toBe(before + 1); // no new tab added
-    expect(useAppStore.getState().tabs[idx].runId).toBe(1);
-    expect(useAppStore.getState().activeTabIdx).toBe(idx);
+    expect(useAppStore.getState().paneLaunchGen[tri("rerun", "o/a")]).toBe(2);
+    expect(useAppStore.getState().paneLaunchGen[tri("rerun", "o/b")]).toBe(2);
+    expect(useAppStore.getState().tabs.length).toBe(before); // no tab added
+    expect(useAppStore.getState().activeWorkspace).toBe("glance");
   });
 
-  it("disables no cells when the grid is exactly filled", () => {
-    // 4 repos → 2×2 grid = 4 cells, no empties.
-    const repos = ["o/a", "o/b", "o/c", "o/d"];
-    useAppStore.getState().triageStartProject("full", repos);
-
-    const { disabledPanes } = useAppStore.getState();
-    for (let i = 0; i < 4; i++) {
-      expect(disabledPanes[tri("full", repos[i])]).toBeUndefined();
-    }
-  });
-
-  it("clears stale disabled state on the reused tab for real repos", () => {
+  it("clears a stale disabled flag on a re-run", () => {
     // Simulate a leftover disabled flag on the identity id this triage tab will reuse.
     useAppStore.setState({ disabledPanes: { [tri("reuse", "o/a")]: true } });
     useAppStore.getState().triageStartProject("reuse", ["o/a", "o/b"]);
@@ -1207,39 +1195,38 @@ describe("agent fleet store", () => {
     expect((rm![1] as { projectKey: string | null }).projectKey).toBeNull();
   });
 
-  it("fleetStartProject opens a build tab with the director and worker panes", () => {
+  it("fleetStartProject wires and starts the director and worker panes, with no console tab", () => {
     // A published project (has a board id) → director hub lives under projects/ (#904).
-    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
-    useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", paneLaunchGen: {} });
+    const tabsBefore = useAppStore.getState().tabs;
+    const roster = useAppStore.getState().fleetStartProject("Proj", fleet, "proj-key");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("proj-key"); // found by stable projectKey, not name (#457)
-    expect(idx).toBe(3);
-    expect(st.tabs[idx].name).toBe("Proj · build");
-    expect(st.tabs[idx].projectKey).toBe("proj-key");
-    expect(st.tabs[idx].kind).toBe("build");
-    // director + 4 lanes + 2 workers = 7 panes. The fixture spans TWO repos (own/web, own/api) and
-    // the commons are a property of a repo ROOT — one lane cannot hold two `.gitignore`s, since it
-    // gets one worktree — so a multi-repo fleet pays for a pair of lanes per repo
-    // (#funnel-commons-and-integration-streams). A single-repo fleet, which is nearly all of them,
-    // pays for exactly one pair.
-    expect(st.tabs[idx].layout).toBe("3×3");
+    // `project-fleet-panes-live-only-in-glance`: the fleet lives in Glance, so no build tab is written, and
+    // every session is STARTED by its launch generation instead. The fixture spans TWO repos (own/web,
+    // own/api) and the commons are a property of a repo ROOT — one lane cannot hold two `.gitignore`s, since
+    // it gets one worktree — so a multi-repo fleet pays for a pair of lanes per repo
+    // (#funnel-commons-and-integration-streams): director + 4 lanes + 2 workers = 7 sessions.
+    expect(st.tabs).toBe(tabsBefore);
+    expect(st.activeWorkspace).toBe("glance");
+    expect(Object.entries(st.paneLaunchGen).filter(([id, gen]) => id.startsWith("proj-key:") && gen === 1)).toHaveLength(7);
 
-    // pane 0 = director at the project hub, doc-based kickoff
+    // the director at the project hub, doc-based kickoff
     expect(st.paneCwds[directorPaneId("proj-key")]).toBe("/base/projects/proj-key");
     expect(st.paneStartupPromptDocs[directorPaneId("proj-key")]).toBe("projects/proj-key/prompts/director-kickoff.md");
-    expect(st.paneNames[idx][0]).toBe("director");
 
-    // panes 1..4 = the lanes, which lead the launch order because Phase 0 is what "first" means:
-    // both commons lanes (no deps) ahead of both integration lanes (each waits on its own commons).
-    expect([1, 2, 3, 4].map((i) => st.paneNames[idx][i])).toEqual([
-      "Commons (own/web)", "Commons (own/api)", "Integration (own/web)", "Integration (own/api)",
+    // the launch ORDER is the roster's: director, then the lanes, which lead because Phase 0 is what
+    // "first" means — both commons lanes (no deps) ahead of both integration lanes (each waits on its own
+    // commons) — then the feature workers.
+    expect(roster.map((r) => r.split("\t")[1])).toEqual([
+      "director", "commons--own-web", "commons--own-api", "integration--own-web", "integration--own-api", "auth-ui", "api",
     ]);
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "commons--own-web")].name).toBe("Commons (own/web)");
 
-    // the feature workers follow, each in its OWN git worktree (outside the hub, #844), with its
+    // the feature workers, each in its OWN git worktree (outside the hub, #844), with its
     // planner-authored kickoff doc
     expect(st.paneCwds[fleetPaneId("proj-key", "auth-ui")]).toBe("/base/worktrees/proj-key/web--auth-ui");
     expect(st.paneStartupPromptDocs[fleetPaneId("proj-key", "auth-ui")]).toBe("projects/proj-key/prompts/auth-ui-kickoff.md");
-    expect(st.paneNames[idx][5]).toBe("Auth UI");
+    expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].name).toBe("Auth UI");
 
     // pane 2 = second worker (own worktree) with no kickoff doc → generated text
     expect(st.paneCwds[fleetPaneId("proj-key", "api")]).toBe("/base/worktrees/proj-key/api--api");
@@ -1270,12 +1257,8 @@ describe("agent fleet store", () => {
     // first launch starts fresh — no --continue
     expect(st.paneContinue[fleetPaneId("proj-key", "auth-ui")]).toBe(false);
 
-    // empty grid cell starts disabled — 7 sessions fill t3p0..t3p6 of a 3×3, so t3p7 is the first
-    // empty one.
-    expect(st.disabledPanes["t3p7"]).toBe(true);
-
     // fleetPaneStreams bridges pane id → stream for the coordinator (#199 AC#7):
-    // worker panes are recorded by their stream; the director + empty cells are not.
+    // worker panes are recorded by their stream; the director is not.
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].id).toBe("auth-ui");
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "auth-ui")].owns).toEqual(["src/auth/**"]);
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "api")].id).toBe("api");
@@ -1284,7 +1267,6 @@ describe("agent fleet store", () => {
     // `bsc-assign <commons lane>` reach a real session rather than a sentinel.
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "commons--own-web")].id).toBe("commons--own-web");
     expect(st.fleetPaneStreams[fleetPaneId("proj-key", "integration--own-web")].owns).toEqual([]);
-    expect(st.fleetPaneStreams["t3p8"]).toBeUndefined(); // empty cell (7 sessions in a 3×3)
   });
 
   it("fleetStartProject sets the pane provider from fleetHarness (#1078 P5)", () => {
@@ -1466,39 +1448,33 @@ describe("agent fleet store", () => {
     expect(st2.paneContinue[kApi]).toBe(true);
   });
 
-  it("spreads a fleet larger than one tab across multiple build tabs", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+  it("starts every session of a fleet larger than the old 16-pane tab, with no overflow tab", () => {
+    useAppStore.setState({ bscBaseDir: "/base", paneLaunchGen: {} });
     const streams = Array.from({ length: 20 }, (_, i) => ({
       id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
     }));
     const bigFleet: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
+    const tabsBefore = useAppStore.getState().tabs.length;
     useAppStore.getState().fleetStartProject("Big", bigFleet, "big");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("big");
-    // 20 workers + the commons and integration lanes = 22 sessions → 16 in tab 1, 6 in tab 2.
-    // (One repo here, so ONE pair of lanes.)
-    expect(st.tabs[idx].name).toBe("Big · build");
-    expect(st.tabs[idx].layout).toBe("4×4");
-    expect(st.tabs[idx + 1].name).toBe("Big · build 2");
-    expect(st.tabs[idx + 1].layout).toBe("3×2");
-    // The lanes lead: tab 1 is [commons, integration, s0..s13], so tab 2 opens on s14.
-    expect(st.paneNames[idx][0]).toBe("Commons");
-    expect(st.paneNames[idx][1]).toBe("Integration");
-    expect(st.paneNames[idx + 1][0]).toBe("S14");
+    // 20 workers + the commons and integration lanes = 22 sessions, every one started. It used to spill into
+    // a second "· build 2" tab past 16 panes; there is no tab to spill into now.
+    expect(Object.keys(st.paneLaunchGen).filter((id) => id.startsWith("big:"))).toHaveLength(22);
+    expect(st.paneLaunchGen[fleetPaneId("big", "s19")]).toBe(1);
+    expect(st.tabs.length).toBe(tabsBefore);
     expect(st.paneCwds[fleetPaneId("big", "s14")]).toBe("/base/worktrees/big/web--s14");
   });
 
   // #479 — no silent drop: ALL workers launch regardless of the recommended count.
   it("fleetStartProject launches ALL workers even when recommended < stream count", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+    useAppStore.setState({ bscBaseDir: "/base", paneLaunchGen: {} });
     // fleet has 2 streams; launch with recommended=1 — both should still launch.
     useAppStore.getState().fleetStartProject("Cap", { ...fleet, recommended: 1 }, "k");
     const st = useAppStore.getState();
-    const idx = st.findFleetTabIdx("k");
-    // director + both workers = 3 panes
-    expect(st.paneNames[idx][0]).toBe("director");
-    expect(st.paneNames[idx][1]).not.toBeUndefined();
-    expect(st.paneNames[idx][2]).not.toBeUndefined();
+    // director + both workers = 3 started sessions
+    expect(st.paneLaunchGen[directorPaneId("k")]).toBe(1);
+    expect(st.paneLaunchGen[fleetPaneId("k", "auth-ui")]).toBe(1);
+    expect(st.paneLaunchGen[fleetPaneId("k", "api")]).toBe(1);
   });
 
   it("fleetStartProject sets focusTarget based on fleet structure (#459)", () => {
@@ -1536,71 +1512,41 @@ describe("agent fleet store", () => {
     expect(feature[0][0]).toBe(fleetPaneId("roster-key", "auth-ui")); // stable identity pane id (#1176)
   });
 
-  // #457 — the "two directors" bug: a project rename froze tab.name, so the
-  // reuse lookup (by name) missed the existing tab and forked a duplicate
-  // "· build" tab with its own director. Matching on the stable projectKey fixes it.
-  it("reuses the SAME build tab across a project rename (no duplicate director) and relabels it", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
+  // #457 — the "two directors" bug: a project rename froze tab.name, so the reuse lookup (by name) missed
+  // the existing tab and forked a duplicate "· build" tab with its own director. Panes are keyed by the
+  // stable projectKey and no tab is involved any more, so a rename relaunches the SAME panes.
+  it("relaunches the SAME panes across a project rename (no duplicate director), resuming them", () => {
+    useAppStore.setState({ bscBaseDir: "/base", paneLaunchGen: {} });
     const before = useAppStore.getState().tabs.length;
-    // Launch for "Alpha" under a stable key.
     useAppStore.getState().fleetStartProject("Alpha", fleet, "stable-key");
-    const idx = useAppStore.getState().findFleetTabIdx("stable-key");
-    expect(useAppStore.getState().tabs.length).toBe(before + 1);
-    expect(useAppStore.getState().tabs[idx].name).toBe("Alpha · build");
-    expect(useAppStore.getState().tabs[idx].runId).toBe(0);
+    expect(useAppStore.getState().paneLaunchGen[directorPaneId("stable-key")]).toBe(1);
 
     // Rename the project (display name changes, key is stable) and relaunch.
     useAppStore.getState().fleetStartProject("Beta", fleet, "stable-key");
     const after = useAppStore.getState();
-    // No new tab — same index reused, runId bumped so panes remount.
-    expect(after.tabs.length).toBe(before + 1);
-    expect(after.findFleetTabIdx("stable-key")).toBe(idx);
-    expect(after.tabs[idx].runId).toBe(1);
-    // Label tracks the current project name; key unchanged.
-    expect(after.tabs[idx].name).toBe("Beta · build");
-    expect(after.tabs[idx].projectKey).toBe("stable-key");
-    // Exactly one director pane exists for this project (no fork).
-    const buildTabs = after.tabs.filter(t => t.projectKey === "stable-key" && t.kind === "build");
-    expect(buildTabs).toHaveLength(1);
+    // The same director pane, its generation bumped so it relaunches — and it RESUMES, because a launch
+    // already wired it.
+    expect(after.paneLaunchGen[directorPaneId("stable-key")]).toBe(2);
+    expect(after.paneContinue[fleetPaneId("stable-key", "auth-ui")]).toBe(true);
+    // Exactly one director for this project, and no tab added.
+    expect(Object.keys(after.paneLaunchGen).filter((id) => id.endsWith(":director") && id.startsWith("stable-key"))).toHaveLength(1);
+    expect(after.tabs.length).toBe(before);
   });
 
-  it("reuses each overflow build tab by (projectKey, seq) across a rename", () => {
-    useAppStore.setState({ bscBaseDir: "/base" });
-    const streams = Array.from({ length: 20 }, (_, i) => ({
-      id: `s${i}`, name: `S${i}`, repo: "own/web", owns: [], issues: [], dependsOn: [],
-    }));
-    const big: FleetPlan = { recommended: 20, reasoning: "", director: { enabled: false }, streams };
-    useAppStore.getState().fleetStartProject("Big", big, "bigkey");
-    const lenAfterFirst = useAppStore.getState().tabs.length;
-    const idx = useAppStore.getState().findFleetTabIdx("bigkey");
-    expect(useAppStore.getState().tabs[idx + 1].seq).toBe(1);
-
-    // Relaunch under a new display name, same key → both tabs reused in place.
-    useAppStore.getState().fleetStartProject("Renamed", big, "bigkey");
-    const st = useAppStore.getState();
-    expect(st.tabs.length).toBe(lenAfterFirst);
-    expect(st.tabs[idx].name).toBe("Renamed · build");
-    expect(st.tabs[idx + 1].name).toBe("Renamed · build 2");
-    expect(st.tabs.filter(t => t.projectKey === "bigkey" && t.kind === "build")).toHaveLength(2);
-  });
-
-  it("sets a stable projectKey + kind on triage tabs and reuses across re-runs (#2409)", () => {
+  it("keys triage panes by the stable project key and relaunches the same ones on a re-run (#2409)", () => {
+    useAppStore.setState({ paneLaunchGen: {} });
     const before = useAppStore.getState().tabs.length;
-    // The launch passes the project's name-derived key (#2409); the tab keys off it directly —
+    // The launch passes the project's name-derived key (#2409); the panes key off it directly —
     // there is no node-id identity branch anymore (renames are display-only and never re-key).
     useAppStore.getState().triageStartProject("alpha-app", ["o/a", "o/b"], "PID1");
-    const idx = useAppStore.getState().findTriageTabIdx("alpha-app");
-    expect(idx).toBe(before);
-    expect(useAppStore.getState().tabs[idx].kind).toBe("triage");
-    expect(useAppStore.getState().tabs[idx].projectKey).toBe("alpha-app");
+    expect(useAppStore.getState().paneLaunchGen[triagePaneId("alpha-app", "o/a")]).toBe(1);
 
-    // A re-run under the same key reuses the tab in place (bumped runId), never forks a duplicate.
+    // A re-run under the same key relaunches the same panes, never forks a duplicate.
     useAppStore.getState().triageStartProject("alpha-app", ["o/a", "o/b"], "PID1");
     const st = useAppStore.getState();
-    expect(st.tabs.length).toBe(before + 1);
-    expect(st.findTriageTabIdx("alpha-app")).toBe(idx);
-    expect(st.tabs[idx].name).toBe("alpha-app · triage");
-    expect(st.tabs[idx].runId).toBe(1);
+    expect(st.paneLaunchGen[triagePaneId("alpha-app", "o/a")]).toBe(2);
+    expect(Object.keys(st.paneLaunchGen).filter((id) => id.startsWith("alpha-app:"))).toHaveLength(2);
+    expect(st.tabs.length).toBe(before);
   });
 });
 
@@ -1609,32 +1555,17 @@ describe("pane status — store single source of truth (#435)", () => {
   // NOT positional `t{idx}p{n}` (#1176). Derive the real ids the way the app does.
   const pid = (idx: number, p: number) => paneIdFor(useAppStore.getState().tabs[idx], idx, p);
 
-  it("setPaneStatus records the status and rolls it up to tab.state", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().addTab({ name: "ps-a", layout: "2×2" });
-    const idx = before;
-    useAppStore.getState().clearTabStatuses(idx); // isolate from shared-store state
-    useAppStore.getState().setPaneStatus(pid(idx, 0), "on");
-    expect(useAppStore.getState().paneStatus[pid(idx, 0)]).toBe("on");
-    expect(useAppStore.getState().tabs[idx].state).toBe("on");
-    // Any running pane dominates the rollup.
-    useAppStore.getState().setPaneStatus(pid(idx, 1), "run");
-    expect(useAppStore.getState().tabs[idx].state).toBe("run");
-    // Back to idle when every live pane is idle.
-    useAppStore.getState().setPaneStatus(pid(idx, 0), "idle");
-    useAppStore.getState().setPaneStatus(pid(idx, 1), "idle");
-    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
-  });
-
-  it("re-rolls the tab when a running pane is disabled (no stale 'run' dot)", () => {
-    const before = useAppStore.getState().tabs.length;
-    useAppStore.getState().addTab({ name: "ps-dis", layout: "2×2" });
-    const idx = before;
-    useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(pid(idx, 0), "run");
-    expect(useAppStore.getState().tabs[idx].state).toBe("run");
-    useAppStore.getState().setPaneDisabled(pid(idx, 0), true);
-    expect(useAppStore.getState().tabs[idx].state).toBe("idle");
+  it("setPaneStatus records the status and stamps activity, and writes no console tab", () => {
+    // The tab rollup is gone (`project-fleet-panes-live-only-in-glance`): a pane's status is its own, and no
+    // console tab hosts a project pane any more.
+    const tabsBefore = useAppStore.getState().tabs;
+    useAppStore.getState().setPaneStatus("proj:api", "on");
+    expect(useAppStore.getState().paneStatus["proj:api"]).toBe("on");
+    expect(useAppStore.getState().paneLastActivity["proj:api"]).toBeTypeOf("number");
+    useAppStore.getState().setPaneStatus("proj:api", "run");
+    expect(useAppStore.getState().paneStatus["proj:api"]).toBe("run");
+    useAppStore.getState().setPaneDisabled("proj:api", true);
+    expect(useAppStore.getState().tabs).toBe(tabsBefore);
   });
 
   it("re-rolls the tab on a layout shrink that trims a running pane", () => {
@@ -1642,7 +1573,11 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().addTab({ name: "ps-layout", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(pid(idx, 3), "run");
+    // Seeded directly: `setPaneStatus` no longer rolls a status up into a tab.
+    useAppStore.setState((s) => ({
+      paneStatus: { ...s.paneStatus, [pid(idx, 3)]: "run" },
+      tabs: s.tabs.map((t, i) => (i === idx ? { ...t, state: "run" as const } : t)),
+    }));
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
     useAppStore.getState().setTabLayout(idx, "1×1"); // trims pane 3 out of the grid
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");

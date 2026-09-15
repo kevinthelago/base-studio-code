@@ -26,11 +26,15 @@ describe("what the console renders", () => {
     expect(src).toContain("useSystemSessionViewer(open?.id ?? null, showing)");
   });
 
-  it("shows no project tab in the main window, and keeps each tab's hidden claim", () => {
-    // A tab is visible only in a torn-off window; the main window renders the claims inside display:none.
-    expect(src).toContain("const visibleTab = detached && ti === activeTabIdx;");
-    expect(src).toContain('<Stack aria-hidden style={{ display: "none" }}>{tabSlots}</Stack>');
-    expect(src).not.toMatch(/visible=\{isActiveTab\}/);
+  it("hosts only system sessions — no project tab, no hidden claim, no tear-off", () => {
+    // `project-fleet-panes-live-only-in-glance`: a project's panes live in Glance, so the console keeps no
+    // hidden `primary` claim per tab and pins no torn-off tab. Its one slot is the open system session.
+    expect(src).not.toContain("tabSlots");
+    expect(src).not.toMatch(/s\.tabs\b/);
+    expect(src).not.toContain("tabIdxOverride");
+    expect(src).not.toMatch(/<TerminalSlot[^>]*\bprimary\b/);
+    expect(src.match(/<TerminalSlot\b/g)).toHaveLength(1);
+    expect(src).toContain("<TerminalSlot paneId={open.paneId}");
   });
 
   it("the hosts launch every wanted system session through one path", () => {

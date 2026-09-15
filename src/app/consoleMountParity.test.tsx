@@ -1,11 +1,13 @@
-// Both console mounts render the SAME copy (#4200, epic #3604).
+// The console is mounted from the graph, and ONLY in the main window (#4200, epic #3604).
 //
 // #4186 pointed `App.tsx` at `ConsoleGraphHost` and left `DetachedWindow` importing the file component, so
 // the main window rendered `consolepage` from the graph while a torn-off tab rendered the bundled file —
-// two copies of one page on screen at once, in different windows. Nothing looked wrong, because the parity
-// guard keeps the two byte-identical; it would have started diverging the moment anyone edited the record.
-// That is the failure this whole epic keeps producing (#4174, #4179, #4181), so it gets a test rather than
-// a promise.
+// two copies of one page on screen at once, in different windows. That is the failure this whole epic keeps
+// producing (#4174, #4179, #4181), so it gets a test rather than a promise.
+//
+// A torn-off CONSOLE TAB is gone since `project-fleet-panes-live-only-in-glance`: the console hosts only
+// system sessions and a project's panes live in Glance, so there is no tab to tear off and the detached
+// window mounts no console at all.
 //
 // It reads the SOURCE rather than rendering: mounting `DetachedWindow` drags in the store, the terminal
 // host and a window-lifecycle dance, none of which is the thing under test. The question here is which
@@ -14,23 +16,19 @@ import { describe, it, expect } from "vitest";
 import appSource from "@/app/App.tsx?raw";
 import detachedSource from "@/app/DetachedWindow.tsx?raw";
 
-const MOUNTS = [
-  { file: "App.tsx", source: appSource },
-  { file: "DetachedWindow.tsx", source: detachedSource },
-];
-
-describe("the console is mounted from the graph in BOTH windows (#4200)", () => {
-  it.each(MOUNTS)("$file renders ConsoleGraphHost", ({ source }) => {
-    expect(source).toContain("<ConsoleGraphHost");
-    // …and not the file component, which stays exported for its tests. Both copies coexist by design; the
-    // parity guard is what keeps them from drifting apart.
-    expect(source).not.toContain("<ConsoleWorkspace");
+describe("the console is mounted from the graph in the main window only (#4200)", () => {
+  it("App.tsx renders ConsoleGraphHost, not the file component", () => {
+    expect(appSource).toContain("<ConsoleGraphHost");
+    // …and not the file component, which stays exported for its tests.
+    expect(appSource).not.toContain("<ConsoleWorkspace");
   });
 
-  it("the tear-off forwards its tab index through the host", () => {
-    // A detached window renders exactly ONE tab and says which. If the override stops reaching the graph
-    // page, every torn-off window silently shows tab 0 — a wrong-but-plausible screen, the kind that gets
-    // noticed weeks later.
-    expect(detachedSource).toMatch(/<ConsoleGraphHost\s+tabIdxOverride=\{detachIdx\}/);
+  it("the detached window mounts no console and pins no tab", () => {
+    // It used to render `<ConsoleGraphHost tabIdxOverride={detachIdx} />` for a torn-off console tab. There is
+    // no console tab to pin now, so neither the host nor the override may come back.
+    expect(detachedSource).not.toContain("<ConsoleGraphHost");
+    expect(detachedSource).not.toContain("<ConsoleWorkspace");
+    expect(detachedSource).not.toContain("tabIdxOverride");
+    expect(detachedSource).not.toContain("detachedTabId");
   });
 });

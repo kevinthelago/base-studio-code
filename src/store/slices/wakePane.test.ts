@@ -12,8 +12,11 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
   const PANE = "studio-code:director";
 
   beforeEach(() => {
+    // A pane a launch WIRED (it has a working directory). No console tab: project panes live only in Glance
+    // (`project-fleet-panes-live-only-in-glance`), so a wake reaches a pane by what the store knows about it.
     useAppStore.setState({
-      tabs: [{ name: "build", state: "idle", paneIds: [PANE], runId: 0 } as never],
+      tabs: [],
+      paneCwds: { [PANE]: "/hub/studio-code" }, paneLaunchGen: {}, fleetPaneStreams: {},
       disabledPanes: {}, dormantPanes: {}, endedPanes: {},
       paneStartupPromptText: {}, paneContinue: {},
     });
@@ -35,7 +38,8 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     // `resume: continue_session && has_history`, so with nothing to continue this still starts fresh
     // and still delivers the baked prompt.
     expect(s.paneContinue[PANE]).toBe(true);
-    expect(s.tabs[0].runId).toBe(1); // the remount lever
+    expect(s.paneLaunchGen[PANE]).toBe(1); // the start lever `TerminalHost` holds
+    expect(s.tabs).toEqual([]);            // and no console tab is written to host it
   });
 
   // END SESSION vs PAUSE — the distinction the Glance End button got wrong.
@@ -85,8 +89,19 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(useAppStore.getState().paneLaunchGen[PANE]).toBe(2);
   });
 
-  it("returns false for a pane no open tab hosts, so the caller can fall back", () => {
+  it("returns false for a pane no launch ever wired and no plan row names, so the caller can fall back", () => {
     expect(useAppStore.getState().wakePane("other-project:ghost", "x")).toBe(false);
+    expect(useAppStore.getState().paneLaunchGen["other-project:ghost"]).toBeUndefined();
+  });
+
+  it("ADOPTS a stream plan.db names but no session ever ran, and starts it without a tab", () => {
+    const stream = { id: "api", name: "API", repo: "o/api", owns: [], issues: [], dependsOn: [], cwd: "/wt/api--api" };
+    expect(useAppStore.getState().wakePane("studio-code:api", "start", stream as never)).toBe(true);
+    const s = useAppStore.getState();
+    expect(s.fleetPaneStreams["studio-code:api"]?.id).toBe("api");
+    expect(s.paneCwds["studio-code:api"]).toBe("/wt/api--api");
+    expect(s.paneLaunchGen["studio-code:api"]).toBe(1);
+    expect(s.tabs).toEqual([]);
   });
 
   it("revives a DISABLED pane rather than refusing it", () => {
