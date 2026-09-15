@@ -451,6 +451,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-schedule",
+          "lead": [
+            "# `bsc schedule` — the dependency-ordered scheduler: the ready queue and the reviews completed work owes (epic-sessions-derive-their-state-and-a-scheduler-runs-the-build)."
+          ],
+          "value": "{ path = \"../bsc-schedule\" }"
+        },
+        {
+          "cont": [],
           "key": "plandb",
           "lead": [],
           "value": "{ path = \"../plandb\" }"
