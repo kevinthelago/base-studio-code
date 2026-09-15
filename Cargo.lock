@@ -855,6 +855,7 @@ dependencies = [
  "bsc-sound",
  "bsc-studio",
  "bsc-survival",
+ "bsc-teach",
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
@@ -1655,6 +1656,19 @@ dependencies = [
  "bsc-sqlite-util",
  "bsc-util",
  "include_dir",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-teach"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-lane-rows",
+ "bsc-sqlite-util",
+ "bsc-util",
  "rusqlite",
  "serde",
  "serde_json",
