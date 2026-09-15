@@ -812,6 +812,7 @@ dependencies = [
  "bsc-bluetooth",
  "bsc-cad",
  "bsc-capability",
+ "bsc-capacity",
  "bsc-cli-util",
  "bsc-component",
  "bsc-config",
@@ -947,6 +948,19 @@ name = "bsc-capability"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-capacity"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-deploy",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "rusqlite",
  "serde",
  "serde_json",
 ]

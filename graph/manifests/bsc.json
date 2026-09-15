@@ -459,6 +459,12 @@
         },
         {
           "cont": [],
+          "key": "bsc-capacity",
+          "lead": [],
+          "value": "{ path = \"../bsc-capacity\" }"
+        },
+        {
+          "cont": [],
           "key": "plandb",
           "lead": [],
           "value": "{ path = \"../plandb\" }"
