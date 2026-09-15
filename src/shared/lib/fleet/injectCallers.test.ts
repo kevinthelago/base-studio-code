@@ -102,7 +102,8 @@ const PTY_WRITE_RE = /["']pty_write["']/;
 const KNOWN_PTY_WRITERS: readonly string[] = [
   // The terminal itself: keystrokes, paste, and a repaint write. This IS the user typing.
   "/src/app/console/panes/views/TerminalView.tsx",
-  "/src/app/useHotkeys.ts",
+  // `useHotkeys` left this list with the console grid (`project-fleet-panes-live-only-in-glance`): its
+  // clear-input and broadcast writes read the console tabs to find a pane, and are gone.
   "/src/shared/lib/session/terminalClipboard.ts",
   "/src/shared/lib/session/useScreenSession.ts",
   // THE ONE UNATTENDED PATH, and it is deliberate: a cron automation the USER configured. It is the

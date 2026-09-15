@@ -34,7 +34,9 @@ describe("the plan model is not persisted", () => {
     // string — the failure mode a drift test can least afford. Two keys that MUST still be persisted
     // prove the text is the real allowlist and that the removal was surgical.
     expect(PERSIST.length).toBeGreaterThan(2000);
-    expect(PERSIST).toMatch(/^\s*paneViews:/m);
+    // `paneCwds`, not `paneViews`: the console tab grid's keys left the allowlist with the grid
+    // (`project-fleet-panes-live-only-in-glance`).
+    expect(PERSIST).toMatch(/^\s*paneCwds:/m);
     expect(PERSIST).toMatch(/^\s*reposPublic:/m);
     expect(PERSIST).toMatch(/^\s*pinnedContext:/m);
   });
