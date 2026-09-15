@@ -14,6 +14,7 @@ import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
 import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 import lexicographerProtocolMd from "@data/fleet/lexicographer-protocol.md?raw";
+import tutorProtocolMd from "@data/fleet/tutor-protocol.md?raw";
 
 /**
  * A persona's PERMISSIONS — the capability it launches under (epic `the-persona-is-the-whole-agent`).
@@ -262,6 +263,9 @@ const PROTOCOL_PROSE: Record<string, string> = {
   // `the-lexicographer-has-its-own-role` — the language curator's protocol, resolved the same way. An
   // interim file (the maintainer wants agent context fed from `bsc memory` eventually), kept as one source.
   "fleet/lexicographer-protocol.md": overlayRaw("fleet/lexicographer-protocol.md", lexicographerProtocolMd).trim(),
+  // `the-tutor-drives-learning-through-commands` — the tutor's protocol: it teaches its USER through
+  // `bsc teach` and `bsc formula`, and correctness comes from code. Interim file, like the lexicographer's.
+  "fleet/tutor-protocol.md": overlayRaw("fleet/tutor-protocol.md", tutorProtocolMd).trim(),
 };
 
 /** Assemble the packaged persona library from the per-persona JSON defs: overlay the config-dir copies,
