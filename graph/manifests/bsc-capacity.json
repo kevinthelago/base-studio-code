@@ -1,0 +1,132 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-capacity\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_capacity\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [
+            "# `bsc capacity` — probed machine capacity, configured reserves and red lines, and a pure admission decision."
+          ],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [
+            "# capacity.db holds only configuration (reserves, red lines); reads open it read-only and never create it."
+          ],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-deploy",
+          "lead": [
+            "# The machine roster is the deploy roster: one list of the machines this app drives."
+          ],
+          "value": "{ path = \"../bsc-deploy\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-capacity/Cargo.toml",
+  "tail": []
+}
