@@ -22,7 +22,6 @@ import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { RequestSessionsMount } from "@/features/debug";
 import { StudioSessionHosts } from "@/features/studio-sessions";
-import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
@@ -69,8 +68,6 @@ export default function App() {
   // unrelated write stays silent. (Same pattern the console pinned in storeSelectors.test.tsx.)
   const rawActiveWorkspace = useAppStore((s) => s.activeWorkspace);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const tabs = useAppStore((s) => s.tabs);
-  const activeTabIdx = useAppStore((s) => s.activeTabIdx);
   const focusedAgentName = useAppStore((s) => s.focusedAgentName);
   const activePageTab = useAppStore((s) => s.activePageTab);
   const crumbEntity = useAppStore((s) => s.crumbEntity);
@@ -86,10 +83,6 @@ export default function App() {
   // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
   // `app-repo` harvest root into a real path without awaiting.
   useAppRepoRoot();
-
-  // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
-  // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
-  const consoleTabs = useConsoleTabs();
 
   // Projects lazy-mounts on first visit, then stays mounted so its local state + PTY survive a
   // screen switch (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
@@ -108,7 +101,6 @@ export default function App() {
     projectsPageMode,
     projectsView,
     settingsSection,
-    consoleTab: tabs[activeTabIdx]?.name,
     focusedAgentName,
   });
 
@@ -195,9 +187,6 @@ export default function App() {
           <StatusBar />
         </Box>
       </Box>
-
-      {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
-      {consoleTabs.dialogs}
     </Box>
     {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
         so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}

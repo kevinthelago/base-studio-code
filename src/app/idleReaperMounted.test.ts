@@ -12,8 +12,9 @@
 //
 //   * The focus guard compared `t${activeTabIdx}p${focusedPaneIdx}` — the RETIRED positional pane id
 //     — against identity-keyed panes (`studio-code:director`). It could never match, so `focused` was
-//     always false. Rendering the hook would not reveal it either unless the fixture happened to use
-//     identity ids, which is exactly the assumption that was wrong.
+//     always false. It was fixed by resolving the grid cell through `paneIdFor`, and then retired
+//     outright by `project-fleet-panes-live-only-in-glance`: the console has no grid of project panes,
+//     so the report is the terminal host's on-screen set and nothing reads the console tabs.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -81,11 +82,14 @@ describe("the idle reaper is actually wired up", () => {
     expect(pumps.split("\n")[line]).toMatch(/^\s*useIdleReaper\(\);\s*$/);
   });
 
-  it("resolves the focused pane to its IDENTITY id, never the retired positional form", () => {
+  it("reports what the terminal host shows, never a console-grid cell or a positional id", () => {
     const src = reaperSource();
-    expect(src).toContain("paneIdFor(");
-    // THE REGRESSION. `t${...}p${...}` cannot match `studio-code:director`, so the guard was inert —
-    // and an inert focus guard on a reaper that IS mounted reaps the pane the user is watching.
+    // What is on screen comes from the host, which sees Glance morphs, page docks and the console's slot.
+    expect(src).toContain("onScreenPaneIdsNow()");
+    // No console grid: nothing resolves a (tab, cell) through the console tabs any more.
+    expect(src).not.toContain("paneIdFor(");
+    expect(src).not.toMatch(/\.tabs\b/);
+    // THE ORIGINAL REGRESSION stays pinned: `t${...}p${...}` cannot match `studio-code:director`.
     expect(src).not.toMatch(/`t\$\{[^}]*\}p\$\{[^}]*\}`/);
   });
 });

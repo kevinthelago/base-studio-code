@@ -15,6 +15,10 @@
 // `<TerminalView>` per `paneId`, portaling it into whichever `<TerminalSlot>` claims it. Re-compiling the
 // page re-creates slots; the xterm instance and its `pty_data_<paneId>` listener are in a tree the loader
 // never touches.
+//
+// NO PROPS. A torn-off window used to pass `tabIdxOverride` to pin one console tab (#4200); the console hosts
+// only system sessions now and project panes live only in Glance (`project-fleet-panes-live-only-in-glance`),
+// so there is no tab to tear off.
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
 import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
@@ -23,18 +27,6 @@ import { registerConsolePlatform } from "@/app/console/graphPlatform";
 // when the graph page's compiled `require()` runs. Idempotent.
 registerConsolePlatform();
 
-/** `tabIdxOverride` is the TEAR-OFF path (#4200): a detached window renders exactly one tab, and says
- *  which. It forwards through `GraphComponent`'s `props` — the same mechanism the other seven hosts use
- *  for their `pageOverride`. #4186 shipped this host taking no props at all, which left `DetachedWindow`
- *  on the file component while the main window rendered the graph: two copies of the same page on screen
- *  in different windows, kept identical only by the parity guard. The override is a NUMBER here rather
- *  than the `pageOverride` string every other page uses, which is why it did not match the pattern. */
-export function ConsoleGraphHost({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
-  return (
-    <GraphComponent
-      id="consolepage"
-      props={tabIdxOverride === undefined ? undefined : { tabIdxOverride }}
-      fallback={<GraphPageFallback page="Console" icon="▣" />}
-    />
-  );
+export function ConsoleGraphHost() {
+  return <GraphComponent id="consolepage" fallback={<GraphPageFallback page="Console" icon="▣" />} />;
 }
