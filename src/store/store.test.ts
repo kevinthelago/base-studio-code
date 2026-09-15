@@ -27,6 +27,7 @@ const RESET_STATE = {
   focusedPaneIdx: -1,
   fullscreenPaneIdx: -1,
   focusQueue: [] as QueuedPane[],
+  focusCursor: null,
   paneViews: [] as ViewKey[],
   paneNames: {} as Record<number, Record<number, string>>,
   paneCwds: {} as Record<string, string>,
@@ -213,77 +214,78 @@ describe("terminal font zoom", () => {
 
 // ── Focus queue ─────────────────────────────────────────────────────────────────
 
-describe("focus queue", () => {
-  it("enqueueFocus appends (deduped) waiting panes — explicitly per-tab (#77)", () => {
+describe("focus queue (keyed by pane identity)", () => {
+  // Identity ids: a director and a worker of a project whose panes live in Glance, in no console tab.
+  const DIR = "demo:director";
+  const API = "demo:api";
+
+  it("enqueueFocus appends (deduped) waiting panes by identity id", () => {
+    useAppStore.setState({ paneRoles: { [DIR]: "director" } as never, focusTarget: "director" });
     const s = useAppStore.getState();
-    s.enqueueFocus(0, 2);
-    s.enqueueFocus(0, 2);            // dup ignored
-    s.enqueueFocus(0, 4);
-    // Same pane index on a different tab is a distinct entry — the queue is
-    // global across tabs (a background-tab idle still joins).
-    s.enqueueFocus(1, 2);
-    expect(useAppStore.getState().focusQueue).toEqual([
-      { tab: 0, pane: 2 }, { tab: 0, pane: 4 }, { tab: 1, pane: 2 },
-    ]);
+    s.enqueueFocus(DIR);
+    s.enqueueFocus(DIR);             // dup ignored
+    s.enqueueFocus("man:t0:p1");     // a plain console queues too
+    expect(useAppStore.getState().focusQueue).toEqual([DIR, "man:t0:p1"]);
   });
 
-  it("removeFocus targets the (tab, pane) you name — not the active tab implicitly", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 2 }, { tab: 1, pane: 2 }] });
-    useAppStore.getState().removeFocus(1, 2);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 2 }]);
+  it("enqueueFocus respects the role gate, read by the pane's own id", () => {
+    useAppStore.setState({ paneRoles: { [API]: "worker" } as never, focusTarget: "director" });
+    useAppStore.getState().enqueueFocus(API);
+    expect(useAppStore.getState().focusQueue).toEqual([]); // workers run dark under the director target
   });
 
-  it("advanceFocus cycles to the next waiting pane WITHOUT dequeuing", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+  it("removeFocus removes the pane you name", () => {
+    useAppStore.setState({ focusQueue: [DIR, API] });
+    useAppStore.getState().removeFocus(API);
+    expect(useAppStore.getState().focusQueue).toEqual([DIR]);
+  });
+
+  it("setPaneStatus feeds the queue: a pane that stops running joins, and leaves when it runs again", () => {
+    useAppStore.setState({ tabs: [], paneRoles: { [DIR]: "director" } as never, focusTarget: "director", paneStatus: {} });
+    const s = useAppStore.getState();
+    s.setPaneStatus(DIR, "run");
+    expect(useAppStore.getState().focusQueue).toEqual([]);
+    s.setPaneStatus(DIR, "idle");
+    expect(useAppStore.getState().focusQueue).toEqual([DIR]);   // finished a turn, no console tab involved
+    s.setPaneStatus(DIR, "run");
+    expect(useAppStore.getState().focusQueue).toEqual([]);      // answered: it runs again
+    expect(useAppStore.getState().tabs).toEqual([]);            // and nothing wrote a tab
+  });
+
+  it("setFocusTarget re-gates the queue by each pane's own role and drops a stranded cursor", () => {
+    useAppStore.setState({
+      paneRoles: { [DIR]: "director", [API]: "worker" } as never,
+      focusQueue: [DIR, API], focusCursor: API,
+    });
+    useAppStore.getState().setFocusTarget("director");
+    expect(useAppStore.getState().focusQueue).toEqual([DIR]);
+    expect(useAppStore.getState().focusCursor).toBeNull();
+  });
+
+  it("advanceFocus moves the identity cursor WITHOUT dequeuing, and wraps", () => {
+    useAppStore.setState({ focusQueue: [DIR, API], focusCursor: null });
     useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().focusedPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // stays queued until you respond
-    expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
-  });
-
-  it("advanceFocus starts at the front when you're not on a queued pane", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }], focusedPaneIdx: 0, fullscreenPaneIdx: -1 });
+    expect(useAppStore.getState().focusCursor).toBe(DIR);
     useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().focusedPaneIdx).toBe(5);
-  });
-
-  it("advanceFocus swaps the maximized pane, relative to the maximized one", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
+    expect(useAppStore.getState().focusCursor).toBe(API);
     useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().focusedPaneIdx).toBe(6);
-    expect(useAppStore.getState().fullscreenPaneIdx).toBe(6);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 5 }, { tab: 0, pane: 6 }, { tab: 0, pane: 7 }]); // not dequeued
-  });
-
-  it("advanceFocus switches tabs when the next waiting pane is on another tab", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
-    useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().activeTabIdx).toBe(1);
-    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
-    expect(useAppStore.getState().fullscreenPaneIdx).toBe(-1);
-  });
-
-  it("advanceFocus carries maximize across a tab switch", () => {
-    useAppStore.setState({ activeTabIdx: 0, focusQueue: [{ tab: 0, pane: 5 }, { tab: 1, pane: 2 }], focusedPaneIdx: 5, fullscreenPaneIdx: 5 });
-    useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().activeTabIdx).toBe(1);
-    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
-    expect(useAppStore.getState().fullscreenPaneIdx).toBe(2);
+    expect(useAppStore.getState().focusCursor).toBe(DIR);
+    expect(useAppStore.getState().focusQueue).toEqual([DIR, API]); // stays queued until it runs again
   });
 
   it("advanceFocus is a no-op when there's nowhere else to go", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 5 }], focusedPaneIdx: 5, fullscreenPaneIdx: -1 });
+    useAppStore.setState({ focusQueue: [DIR], focusCursor: DIR });
     useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().focusedPaneIdx).toBe(5); // only queued pane is current
-    useAppStore.setState({ focusQueue: [], focusedPaneIdx: 2 });
+    expect(useAppStore.getState().focusCursor).toBe(DIR);
+    useAppStore.setState({ focusQueue: [], focusCursor: null });
     useAppStore.getState().advanceFocus();
-    expect(useAppStore.getState().focusedPaneIdx).toBe(2);
+    expect(useAppStore.getState().focusCursor).toBeNull();
   });
 
-  it("setActiveTab preserves the cross-tab queue", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }] });
+  it("setActiveTab leaves the identity-keyed queue alone", () => {
+    useAppStore.setState({ focusQueue: [DIR, API] });
     useAppStore.getState().setActiveTab(1);
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 0, pane: 1 }, { tab: 0, pane: 2 }]);
+    expect(useAppStore.getState().focusQueue).toEqual([DIR, API]);
     expect(useAppStore.getState().focusedPaneIdx).toBe(-1); // focus still resets
   });
 
@@ -309,25 +311,20 @@ describe("focus queue", () => {
     expect(useAppStore.getState().autoFocusMode).toBe("cycle-on-reply");
   });
 
-  it("reconcileFocusQueue prunes panes across every tab whose waiting set is supplied (#77)", () => {
-    useAppStore.setState({ focusQueue: [
-      { tab: 0, pane: 1 }, { tab: 0, pane: 2 }, { tab: 0, pane: 3 },
-      { tab: 1, pane: 5 }, { tab: 1, pane: 7 },
-    ] });
-    useAppStore.getState().reconcileFocusQueue(new Map([
-      [0, new Set([1, 3])],
-      [1, new Set([5])],
-    ]));
-    expect(useAppStore.getState().focusQueue).toEqual([
-      { tab: 0, pane: 1 }, { tab: 0, pane: 3 }, { tab: 1, pane: 5 },
-    ]);
+  it("reconcileFocusQueue prunes panes that are no longer live sessions", () => {
+    useAppStore.setState({ focusQueue: [DIR, API, "demo:web"] });
+    useAppStore.getState().reconcileFocusQueue(new Set([DIR, "demo:web"]));
+    expect(useAppStore.getState().focusQueue).toEqual([DIR, "demo:web"]);
   });
 
-  it("reconcileFocusQueue leaves tabs absent from the map alone (no live data → no assumption)", () => {
-    useAppStore.setState({ focusQueue: [{ tab: 0, pane: 1 }, { tab: 1, pane: 2 }] });
-    useAppStore.getState().reconcileFocusQueue(new Map([[0, new Set<number>()]]));
-    // Tab 0 has no waiting panes → its entries pruned. Tab 1 absent from map → kept.
-    expect(useAppStore.getState().focusQueue).toEqual([{ tab: 1, pane: 2 }]);
+  it("closeTab drops only the closed tab's own panes from the queue", () => {
+    useAppStore.setState({
+      tabs: [{ name: "A", layout: "1×1", state: "idle", paneIds: ["man:a:p0"] }, { name: "B", layout: "1×1", state: "idle" }] as never,
+      activeTabIdx: 0,
+      focusQueue: ["man:a:p0", DIR],
+    });
+    useAppStore.getState().closeTab(0);
+    expect(useAppStore.getState().focusQueue).toEqual([DIR]);
   });
 });
 
@@ -552,7 +549,7 @@ describe("tab management", () => {
       paneCwds: { "t0p0": "/a", "t1p0": "/b", "t2p0": "/c" },
       paneStatus: { "t0p0": "run", "t2p0": "idle" },
       disabledPanes: { "t1p0": true },
-      focusQueue: [{ tab: 2, pane: 0 }],
+      focusQueue: ["demo:director"],
     });
     // Move A (0) to position 2 → order becomes [B, C, A].
     useAppStore.getState().moveTab(0, 2);
@@ -567,7 +564,7 @@ describe("tab management", () => {
     expect(s.paneCwds["t0p0"]).toBe("/b");
     expect(s.paneStatus["t2p0"]).toBe("run");
     expect(s.disabledPanes["t0p0"]).toBe(true); // B (was t1) → t0
-    expect(s.focusQueue).toEqual([{ tab: 1, pane: 0 }]); // C (was tab 2) → tab 1
+    expect(s.focusQueue).toEqual(["demo:director"]); // identity-keyed: a tab move leaves it untouched
   });
 
   it("moveTab is a no-op for from===to or out-of-range", () => {
