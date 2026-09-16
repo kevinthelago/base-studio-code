@@ -273,6 +273,42 @@ describe("focus queue (keyed by pane identity)", () => {
     expect(useAppStore.getState().focusQueue).toEqual([DIR, API]); // stays queued until it runs again
   });
 
+  // `advancing-focus-brings-the-pane-into-view`: moving the cursor is not enough — the pane has to come
+  // into view. A console-hosted pane focuses its cell; a project pane, which lives in no tab, drills
+  // Glance to its project on the tab its network names.
+  it("advanceFocus drills Glance to a project pane that no console tab draws", () => {
+    useAppStore.setState({
+      tabs: [{ name: "orchestrator", layout: "2×2", paneIds: ["man:t0:p0"] }] as never,
+      activeTabIdx: 0,
+      focusQueue: ["acme:worker-1"], focusCursor: null,
+      projectNetwork: { acme: "network-build" } as never,
+    });
+    useAppStore.getState().advanceFocus();
+    const st = useAppStore.getState();
+    expect(st.focusCursor).toBe("acme:worker-1");
+    expect(st.activeWorkspace).toBe("glance");
+    expect(st.activePageTab?.glance).toBe("network-build");   // the network names the tab it lands on
+    expect(st.focusedPaneIdx).toBe(-1);                        // nothing pretended it sat in a cell
+  });
+
+  it("advanceFocus still focuses the tab and cell of a console-hosted pane", () => {
+    useAppStore.setState({
+      tabs: [
+        { name: "orchestrator", layout: "2×2", paneIds: ["man:t0:p0"] },
+        { name: "build", layout: "2×2", paneIds: ["acme:director", "acme:api"] },
+      ] as never,
+      activeTabIdx: 0, focusedPaneIdx: -1, fullscreenPaneIdx: -1, paneMenuOpenIdx: 3,
+      focusQueue: ["acme:api"], focusCursor: null,
+      projectNetwork: {} as never,
+    });
+    useAppStore.getState().advanceFocus();
+    const st = useAppStore.getState();
+    expect(st.focusCursor).toBe("acme:api");
+    expect(st.activeTabIdx).toBe(1);        // hopped to the tab that draws it
+    expect(st.focusedPaneIdx).toBe(1);      // and to its cell
+    expect(st.paneMenuOpenIdx).toBe(-1);    // any open pane menu is closed
+  });
+
   it("advanceFocus is a no-op when there's nowhere else to go", () => {
     useAppStore.setState({ focusQueue: [DIR], focusCursor: DIR });
     useAppStore.getState().advanceFocus();
