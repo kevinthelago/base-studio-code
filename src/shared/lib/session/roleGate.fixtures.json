@@ -4606,7 +4606,13 @@
         "net": "none",
         "ui": "none",
         "graph": "none",
-        "writeGlobs": [],
+        "writeGlobs": [
+          "*.md",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
         "allow": [
           "bsc help",
           "bsc surface",
@@ -4679,12 +4685,14 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(*.md)",
+          "Edit(prompts/*.md)",
+          "Edit(prompts/*)",
+          "Edit(discovery/*.md)",
+          "Edit(discovery/*)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
@@ -4779,12 +4787,11 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(src/**/*.ts)",
+          "Edit(contracts/**/*.json)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
@@ -4803,7 +4810,13 @@
         "net": "none",
         "ui": "none",
         "graph": "none",
-        "writeGlobs": [],
+        "writeGlobs": [
+          "*.md",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
         "allow": [
           "bsc help",
           "bsc surface",
@@ -4879,12 +4892,14 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(*.md)",
+          "Edit(prompts/*.md)",
+          "Edit(prompts/*)",
+          "Edit(discovery/*.md)",
+          "Edit(discovery/*)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
@@ -4982,12 +4997,11 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(src/**/*.ts)",
+          "Edit(contracts/**/*.json)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
@@ -5006,7 +5020,13 @@
         "net": "none",
         "ui": "none",
         "graph": "none",
-        "writeGlobs": [],
+        "writeGlobs": [
+          "*.md",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
         "allow": [
           "bsc help",
           "bsc surface",
@@ -5080,12 +5100,14 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(*.md)",
+          "Edit(prompts/*.md)",
+          "Edit(prompts/*)",
+          "Edit(discovery/*.md)",
+          "Edit(discovery/*)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
@@ -5181,12 +5203,11 @@
         "WebSearch"
       ],
       "writeRules": {
-        "allow": [],
-        "deny": [
-          "Edit",
-          "Write",
-          "NotebookEdit"
-        ]
+        "allow": [
+          "Edit(src/**/*.ts)",
+          "Edit(contracts/**/*.json)"
+        ],
+        "deny": []
       },
       "scopes": {
         "graph": "none",
