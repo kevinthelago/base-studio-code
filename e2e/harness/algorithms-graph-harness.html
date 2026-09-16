@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>algorithms graph harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      /* The app shell above a Workspace: a bounded flex column the Screen fills. */
+      #root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <!-- The REAL AlgorithmsWorkspace in real Chromium. Only the Tauri round-trip is a fixture. -->
+    <div id="root"></div>
+    <script type="module" src="./algorithmsGraphHarness.ts"></script>
+  </body>
+</html>
