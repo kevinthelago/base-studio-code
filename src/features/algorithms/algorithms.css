@@ -16,6 +16,14 @@
   overflow: hidden;
   transition: opacity 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
 }
+/* A GROUP card (`the-algorithms-graph-drills-by-crate`) — a crate, a feature folder, or a sub-folder of one
+   that was over the cap. Wider than an impl card because it carries a count, and accented so a layer of
+   groups never reads as a layer of implementations. */
+.algo-node.algo-group { border-color: color-mix(in srgb, var(--accent, #58a6ff) 45%, var(--border)); cursor: pointer; }
+.algo-node.algo-group .algo-meta { color: var(--fg-dim); }
+/* A STUB — an edge that LEAVES the drilled group, kept visible rather than dropped. Dashed, because it
+   stands for a link rather than for code. */
+.algo-node.algo-stub { border-style: dashed; opacity: 0.85; cursor: pointer; }
 .algo-node:hover { border-color: var(--fg-dim); }
 .algo-node.on { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 .algo-node.dim { opacity: 0.22; }
