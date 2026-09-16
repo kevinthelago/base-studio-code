@@ -22,7 +22,13 @@
       "web": "ask",
       "task": "allow"
     },
-    "writeGlobs": [],
+    "writeGlobs": [
+      "*.md",
+      "prompts/*.md",
+      "prompts/*",
+      "discovery/*.md",
+      "discovery/*"
+    ],
     "denyGlobs": [
       "**/*"
     ],
