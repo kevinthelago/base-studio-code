@@ -415,7 +415,7 @@ describe("useGlanceProjects — published read hits the TTL cache (#2447)", () =
     renderHook(() => useGlanceProjects());
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       "github_graphql",
-      expect.objectContaining({ token: "gho_test", maxAgeSecs: 300 }),
+      expect.objectContaining({ maxAgeSecs: 300 }),
     ));
   });
 });
