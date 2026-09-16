@@ -108,6 +108,35 @@ export function resolveStorePath(root = '.') {
   return join(root, 'graph', 'algorithms.json');
 }
 
+/**
+ * The COMPONENT store this checkout reads, from the same marker
+ * (`the-relationship-derivation-spans-both-record-stores`).
+ *
+ * The two committed stores hold the two halves of the FRONTEND's dependency chain: an algorithm record
+ * importing `@/shared/ui/overlay/ModalScrim` is importing a COMPONENT record, and until this existed
+ * there was no relation that could span them — `worker-detail-modal.ts` carried `composes: []` while
+ * importing six of them. Resolved through `graph/store.toml` for the same reason `resolveStorePath` is:
+ * a spelled filename is stale the moment the store moves, and `new DatabaseSync` on a path that does
+ * not exist MINTS an empty database rather than failing, so a wrong guess reads as "no components".
+ *
+ * `null` when the checkout has no component store — a valid state (a fresh clone mid-migration), and
+ * the caller degrades to algorithms-only rather than inventing an empty one.
+ */
+export function resolveComponentStorePath(root = '.') {
+  const marker = join(root, 'graph', 'store.toml');
+  let name = 'components.db';
+  if (existsSync(marker)) {
+    for (const line of readFileSync(marker, 'utf8').split('\n')) {
+      const t = line.trim();
+      if (t.startsWith('#')) continue;
+      const m = t.match(/^components\s*=\s*"?([^"\s]+)"?/);
+      if (m) { name = m[1]; break; }
+    }
+  }
+  const at = join(root, 'graph', name);
+  return existsSync(at) ? at : null;
+}
+
 /** Is this file a SQLite database? By its MAGIC, never its name — the marker may name it anything. */
 export function isSqliteStore(path) {
   if (!existsSync(path)) return false;

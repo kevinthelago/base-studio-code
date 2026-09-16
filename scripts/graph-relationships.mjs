@@ -7,8 +7,21 @@
 // resolves to an ANCESTOR is skipped (that is child→parent, a trivial inverse of the parent's own edge).
 // Record→record refs resolve by the rules above. External-CRATE refs are the OTHER half, and they
 // resolve into `crateDeps` rather than `composes` — see `crateDepsOf`.
+//
+// THE FRONTEND'S CHAIN SPANS TWO STORES, and that is the THIRD relation here
+// (`the-relationship-derivation-spans-both-record-stores`). A TS `@/` specifier resolves against
+// `graph/algorithms.db` AND `graph/components.db`: measured 2026-09-16 over 1,572 `@/` imports, 1,207
+// resolved to an algorithm record, 165 to a COMPONENT record, and 200 stayed unresolved. Those 165 were
+// real relationships present in the code and absent from the graph purely because no relation spanned
+// the boundary — `worker-detail-modal.ts` carried `composes: []` while importing six `@/shared/ui/*`
+// primitives, every one a component record. They land in `componentDeps`, NOT in `composes`, for a
+// stronger reason than the crate half: `repo_store::prune_dangling_composes` names a component record
+// as a target "`composes` cannot express" and DELETES it on the next write, the seed guard
+// `seed_parses_impl_only_and_is_primitives_rooted` asserts every composes id is a known IMPL, and
+// `impl-seed-dedupe.test.ts` asserts it is an impl of the SAME tech. So the member vocabulary of
+// `composes` does not widen; the record gains a relation that can hold the edge honestly.
 import fs from 'node:fs';
-import { loadStore, writeStore, resolveStorePath, isSqliteStore } from './lib/recordStore.mjs';
+import { loadStore, writeStore, resolveStorePath, resolveComponentStorePath, isSqliteStore } from './lib/recordStore.mjs';
 const STORE = process.env.GRAPH_STORE || resolveStorePath();
 const BASELINE = 'scripts/graph-relationships.baseline.json';
 import path from 'node:path';
@@ -18,9 +31,22 @@ const by = new Map(recs.map(r => [r.id, r]));
 const ID = /^[A-Za-z_]\w*$/;
 const RUST_KW = new Set(['std', 'core', 'alloc']);
 
+// THE COMPONENT STORE, resolved through the same marker rather than spelled: `new DatabaseSync` on a
+// path that does not exist MINTS an empty database, so a wrong guess reads as "no components" instead
+// of failing. A checkout without one is valid, and the component half then reports itself as NOT RUN
+// rather than reporting every carried `componentDeps` as drift.
+const CSTORE = process.env.GRAPH_COMPONENT_STORE || resolveComponentStorePath(path.resolve(path.dirname(STORE), '..'));
+const HAVE_COMPONENTS = Boolean(CSTORE) && fs.existsSync(CSTORE);
+const crecs = HAVE_COMPONENTS ? loadStore(CSTORE).implementations : [];
+
 // TS provides index
 const prov = new Map();
 for (const r of recs) if (r.provides) (prov.get(r.provides) ?? prov.set(r.provides, []).get(r.provides)).push(r.id);
+
+// The COMPONENT `provides` index, the same shape — a component record carries the specifier it answers
+// exactly as an algorithm record does (measured: 251 of 320 carry one, and no specifier is claimed twice).
+const cprov = new Map();
+for (const r of crecs) if (r.provides) (cprov.get(r.provides) ?? cprov.set(r.provides, []).get(r.provides)).push(r.id);
 
 // Rust module-path index, from record ids. A bare id (no '--') is a root module in the toy library.
 function modpath(r) {
@@ -84,10 +110,27 @@ function isAncestor(targetId, crate, curSegs) {
 const TS_IMP = /import\s+(?:[\w*{}\s,]+\s+from\s+)?['"]([^'"]+)['"]/g;
 const R_USE = /\buse\s+([^;]+);/g;
 
+/// Which record a TS `@/` specifier names in the COMPONENT store, or `null`.
+///
+/// COMPONENTS WIN A CONTESTED SPECIFIER, and that precedence is not invented here — plan item
+/// `resolver-reads-the-algorithms-store` settled it: a UI record overriding a shared/ui primitive is the
+/// established meaning of `provides`, and an algorithm claiming the same specifier would silently shadow
+/// a rendering component. Measured on the live stores, exactly ONE specifier is claimed by both.
+function componentFor(spec) {
+  const hit = cprov.get(spec);
+  return hit && hit.length === 1 ? hit[0] : null;
+}
+
 export function derive(r) {
   const c = r.code || ''; const t = new Set();
   if (r.tech === 'typescript') {
-    for (const m of c.matchAll(TS_IMP)) { const s = m[1]; if (!(s.startsWith('@/') || s.startsWith('@bsc/'))) continue; const h = prov.get(s); if (h && h.length === 1 && h[0] !== r.id) t.add(h[0]); }
+    for (const m of c.matchAll(TS_IMP)) {
+      const s = m[1]; if (!(s.startsWith('@/') || s.startsWith('@bsc/'))) continue;
+      // The component store is consulted FIRST, and a hit is NOT a `composes` edge — it belongs to
+      // `componentDeps`, the only relation that can carry it across the store boundary.
+      if (componentFor(s)) continue;
+      const h = prov.get(s); if (h && h.length === 1 && h[0] !== r.id) t.add(h[0]);
+    }
   } else if (r.tech === 'rust') {
     const mp = modpath(r); if (!mp) return t; const [crate, segs] = mp;
     for (const m of c.matchAll(R_USE)) {
@@ -114,6 +157,55 @@ export function derive(r) {
     }
   }
   return t;
+}
+
+/// The COMPONENT RECORDS one record's code imports — the edge `composes` structurally cannot hold.
+///
+/// Same relationship as `crateDeps`, one boundary over: `composes` is record→record WITHIN the
+/// algorithms store, and a frontend record's imports do not respect that boundary. `worker-detail-modal.ts`
+/// is the proof case — `composes: []` against six `@/shared/ui/*` imports, every one a component record.
+///
+/// Conservative in the same way everything here is: a dep is derived only when the specifier resolves to
+/// exactly ONE component record. An import that points at a FILE ON DISK resolves to nothing and stays
+/// that way — 194 of the 200 unresolved specifiers are the documented module floor, and counting those as
+/// missing would destroy the signal this check exists to give.
+export function componentDepsOf(r) {
+  if (r.tech !== 'typescript') return [];
+  const out = new Set();
+  for (const m of (r.code || '').matchAll(TS_IMP)) {
+    const s = m[1]; if (!(s.startsWith('@/') || s.startsWith('@bsc/'))) continue;
+    const hit = componentFor(s);
+    if (hit && hit !== r.id) out.add(hit);
+  }
+  return [...out].sort();
+}
+
+/// Records whose stored `crateDeps` disagree with what their code says.
+export function crateGaps() {
+  const g = {};
+  for (const r of recs) {
+    if (!r.id?.endsWith('.rs')) continue;
+    const der = crateDepsOf(r), have = r.crateDeps || [];
+    if (der.join(',') !== have.join(',')) g[r.id] = der;
+  }
+  return g;
+}
+
+/// Records whose stored `componentDeps` disagree with their code.
+///
+/// EXACT, not baselined, for the same reason the crate half is: a component dep is read straight off the
+/// code, so a disagreement is always drift and always actionable. Empty when the checkout has no
+/// component store — there is nothing to compare against, and reporting every carried dep as drift would
+/// be a lie about a valid checkout. `--report`/`--check` say so out loud rather than passing quietly.
+export function componentGaps() {
+  const g = {};
+  if (!HAVE_COMPONENTS) return g;
+  for (const r of recs) {
+    if (r.tech !== 'typescript') continue;
+    const der = componentDepsOf(r), have = r.componentDeps || [];
+    if (der.join(',') !== have.join(',')) g[r.id] = der;
+  }
+  return g;
 }
 
 /// EVERY CRATE NAME THIS WORKSPACE COULD REFER TO — its own members plus everything in the lock.
@@ -161,22 +253,11 @@ export function crateDepsOf(r) {
   return [...out].sort();
 }
 
-/// Records whose stored `crateDeps` disagree with what their code says.
-export function crateGaps() {
-  const g = {};
-  for (const r of recs) {
-    if (!r.id?.endsWith('.rs')) continue;
-    const der = crateDepsOf(r), have = r.crateDeps || [];
-    if (der.join(',') !== have.join(',')) g[r.id] = der;
-  }
-  return g;
-}
-
 export function gaps() { const g = {}; for (const r of recs) { const der = derive(r); const have = new Set(r.composes || []); const missing = [...der].filter(x => !have.has(x)); if (missing.length) g[r.id] = missing.sort(); } return g; }
 
 /// What `--apply` would change, computed WITHOUT touching a record: the `composes` edges to ADD (union-
 /// preserving — resolution is conservative, so an edge nobody derived is not wrong) and the `crateDeps`
-/// to REPLACE (read straight off the code, so a stale entry is wrong rather than extra).
+/// and `componentDeps` to REPLACE (read straight off the code, so a stale entry is wrong rather than extra).
 export function backfillPlan() {
   const plan = [];
   for (const r of recs) {
@@ -192,6 +273,10 @@ export function backfillPlan() {
       const d = crateDepsOf(r);
       if (d.join(',') !== (r.crateDeps || []).join(',')) change.crateDeps = d;
     }
+    if (HAVE_COMPONENTS && r.tech === 'typescript') {
+      const d = componentDepsOf(r);
+      if (d.join(',') !== (r.componentDeps || []).join(',')) change.componentDeps = d;
+    }
     if (Object.keys(change).length) plan.push({ rec: r, ...change });
   }
   return plan;
@@ -206,6 +291,7 @@ export function implSetCommand(p) {
   const parts = ['bsc graph impl set --repo --root "$PWD"', `--tech ${q(r.tech)}`, `--id ${q(r.id)}`, `--role ${q(r.role)}`, `--name ${q(r.name)}`];
   if (p.composes) parts.push(`--composes ${q(p.composes.join(','))}`);
   if (p.crateDeps) parts.push(p.crateDeps.length ? `--crate-deps ${q(p.crateDeps.join(','))}` : '--clear crateDeps');
+  if (p.componentDeps) parts.push(p.componentDeps.length ? `--component-deps ${q(p.componentDeps.join(','))}` : '--clear componentDeps');
   return parts.join(' ');
 }
 
@@ -219,6 +305,13 @@ if (mode === '--report') {
   const cg = crateGaps();
   const withDeps = recs.filter(r => (r.crateDeps || []).length).length;
   console.log(`crateDeps: ${withDeps} record(s) carry them · ${Object.keys(cg).length} disagree with their code`);
+  if (!HAVE_COMPONENTS) {
+    console.log('componentDeps: NOT CHECKED — this checkout has no component store');
+  } else {
+    const comp = componentGaps();
+    const withComp = recs.filter(r => (r.componentDeps || []).length).length;
+    console.log(`componentDeps: ${withComp} record(s) carry them · ${Object.keys(comp).length} disagree with their code`);
+  }
 }
 else if (mode === '--check') {
   const g = gaps(); const base = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : {};
@@ -241,7 +334,25 @@ else if (mode === '--check') {
     }
     process.exit(1);
   }
-  console.log('relationship gate: no new missing edges, crateDeps current');
+  // THE CROSS-STORE HALF, exact for the same reason. A checkout with no component store says so rather
+  // than passing silently — a skipped check read as a pass is how a gate stops covering what its reader
+  // assumes it covers.
+  if (!HAVE_COMPONENTS) {
+    console.log('relationship gate: no new missing edges, crateDeps current, componentDeps NOT CHECKED (no component store)');
+  } else {
+    const comp = componentGaps();
+    if (Object.keys(comp).length) {
+      console.error(`RELATIONSHIP GATE: ${Object.keys(comp).length} record(s) have stale componentDeps:`);
+      Object.entries(comp).slice(0, 20).forEach(([id, d]) => console.error(`  ${id} -> [${d.join(', ')}]`));
+      const stale = new Set(Object.keys(comp));
+      console.error('  refresh each through the ledger:');
+      for (const p of backfillPlan().filter((p) => stale.has(p.rec.id)).slice(0, 20)) {
+        console.error('    ' + implSetCommand({ rec: p.rec, componentDeps: p.componentDeps }));
+      }
+      process.exit(1);
+    }
+    console.log('relationship gate: no new missing edges, crateDeps + componentDeps current');
+  }
 }
 else if (mode === '--baseline') { fs.writeFileSync(BASELINE, JSON.stringify(gaps(), null, 2) + '\n'); console.log('baseline written'); }
 else if (mode === '--apply') {
@@ -263,12 +374,14 @@ else if (mode === '--apply') {
   }
   // A JSON store (a temp GRAPH_STORE in a test) is still written, through `writeStore` so the split
   // per-record layout is respected.
-  let added = 0, changed = 0, cd = 0, cdRecs = 0;
+  let added = 0, changed = 0, cd = 0, cdRecs = 0, pd = 0, pdRecs = 0;
   for (const p of plan) {
     if (p.composes) { added += p.composes.length - (p.rec.composes || []).length; changed++; p.rec.composes = p.composes; }
     if (p.crateDeps) { cd += p.crateDeps.length; cdRecs++; if (p.crateDeps.length) p.rec.crateDeps = p.crateDeps; else delete p.rec.crateDeps; }
+    if (p.componentDeps) { pd += p.componentDeps.length; pdRecs++; if (p.componentDeps.length) p.rec.componentDeps = p.componentDeps; else delete p.rec.componentDeps; }
   }
   writeStore(store, STORE);
   console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving)`);
   console.log(`crateDeps: ${cd} dependency edge(s) across ${cdRecs} record(s) (replaced, derived from code)`);
+  console.log(`componentDeps: ${pd} cross-store edge(s) across ${pdRecs} record(s) (replaced, derived from code)`);
 }
