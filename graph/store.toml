@@ -22,3 +22,13 @@
 # now, and the packaged seed is no longer the thing standing in for one — a reader consulting this
 # file before touching `src-tauri/data/components/` should know that before deciding anything.
 store = "algorithms.db"
+
+# The COMPONENT store, beside it — the second pillar, and the other half of the frontend's dependency
+# chain (`the-relationship-derivation-spans-both-record-stores`). Named here for the same reason the
+# algorithms store is: a reader that spells `components.db` itself is stale the moment it moves, and
+# opening a SQLite path that does not exist CREATES an empty file rather than failing.
+#
+# Only the relationship derivation reads this key today. `graph_materialize::store_name` scans for a
+# line starting `store`, so this key is invisible to it (and to `resolveStorePath`'s `^store` regex) —
+# which is what makes adding it safe for the 75 crates that resolve their root through this file.
+components = "components.db"
