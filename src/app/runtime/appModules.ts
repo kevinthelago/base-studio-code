@@ -215,7 +215,6 @@ import * as JumbleProbe from "@/app/console/lib/jumbleProbe";
 import * as Checkpoint from "@/shared/lib/session/checkpoint";
 import * as PendingPtyData from "@/app/console/lib/pendingPtyData";
 import * as UseTerminalSession from "@/app/console/useTerminalSession";
-import * as RepoCredentials from "@/shared/lib/github/repoCredentials";
 import * as PaneActivity from "@/app/console/lib/paneActivity";
 import * as TerminalAdmission from "@/app/console/lib/terminalAdmission";
 import * as TerminalWheel from "@/app/console/lib/terminalWheel";
@@ -589,7 +588,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/session/checkpoint": Checkpoint,
   "@/app/console/lib/pendingPtyData": PendingPtyData,
   "@/app/console/useTerminalSession": UseTerminalSession,
-  "@/shared/lib/github/repoCredentials": RepoCredentials,
   "@/app/console/lib/paneActivity": PaneActivity,
   "@/app/console/lib/terminalAdmission": TerminalAdmission,
   "@/app/console/lib/terminalWheel": TerminalWheel,

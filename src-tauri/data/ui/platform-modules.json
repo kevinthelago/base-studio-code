@@ -250,7 +250,6 @@
   "@/shared/lib/github/githubState",
   "@/shared/lib/github/projectSync",
   "@/shared/lib/github/projectV2",
-  "@/shared/lib/github/repoCredentials",
   "@/shared/lib/github/repoPulseLive",
   "@/shared/lib/github/types",
   "@/shared/lib/github/useGithubQuery",
