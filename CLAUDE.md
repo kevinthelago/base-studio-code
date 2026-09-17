@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. The desktop is authoritative — it owns the agent processes, GitHub connections, and the skills library. It pairs with **mobile-studio-code**, a **standalone** mobile app (its own repo, usable on its own) that can **optionally tunnel** into a desktop session — over a zero-knowledge Cloudflare relay, end-to-end encrypted (Noise IK) — so the same agents can be driven from a phone, from anywhere.
+**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. It owns the GitHub connections and the skills library. **Agent processes are moving OUT of the desktop** (maintainer, 2026-09-17): a root systemd service launches and supervises sessions so a fleet runs with no window open, and the app becomes a viewer that tails each session's durable recording. Until that lands the desktop still owns them — see *Run the app so nothing can relaunch it* below for the reversal and its sequencing. It pairs with **mobile-studio-code**, a **standalone** mobile app (its own repo, usable on its own) that can **optionally tunnel** into a desktop session — over a zero-knowledge Cloudflare relay, end-to-end encrypted (Noise IK) — so the same agents can be driven from a phone, from anywhere.
 
 The core value proposition: run many AI coding agents in parallel across multiple repositories, with standardized knowledge (prompts, GitHub Actions templates, automation recipes) injected per project based on its tech stack.
 
@@ -134,6 +134,27 @@ from a provably safe ANSI boundary (`pty-data-carries-its-recording-offset`).
 Keeping a PTY host alive ACROSS a restart was weighed and declined: it inverts "the desktop is
 authoritative — it owns the agent processes", and it reintroduces the same problem one level down,
 since upgrading the host would kill the sessions it exists to preserve.
+
+**REVERSED (maintainer, 2026-09-17) — sessions move to a ROOT systemd service.** The decision above
+stands as the record of what was tried, not as current direction. Session launching moves out of the
+app into a **systemd SYSTEM service running as root**, with **systemd itself supervising** (a transient
+`systemd-run --scope` per session, so restart policy, cgroup caps and journald come for free rather
+than from a hand-rolled loop). The app becomes a **viewer**: it tails the durable scrollback recording
+instead of owning the PTY master.
+
+Root is the ENABLER, not a risk being tolerated. Per-agent isolation (#1994/#4260) specifies each
+session as its own `bsc-<slug>-<hash>` user with a `700` home — and MEASURED 2026-09-17 there are
+**zero** such users, no `/srv/bsc-shared`, and `useradd` is not on a non-root PATH, so that model was
+specified and has **never run**. It also fixes a live bug rather than routing around it:
+`the-sandbox-scope-needs-privileges-nobody-has` records every sandboxed launch dying at
+`systemd-run --scope` with *"Interactive authentication required"*. Root is used for exactly four
+operations — `useradd`, `setuid` before exec, creating the system scope, the setgid shared dir — and
+**no LLM-driven process ever runs as root**.
+
+Sequencing, because a system service has **no session D-Bus**: secrets must leave the OS keyring
+first (`secrets-leave-the-os-keyring-for-the-store`), then
+`the-session-host-is-a-root-systemd-service`, then per-agent users and the UI swap. Full reasoning and
+the measurements behind it: `bsc memory read cyber-security` and the plan items themselves.
 
 ### The ROOT runs the app; integration happens in `wt-integrate`
 
