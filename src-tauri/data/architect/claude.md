@@ -26,6 +26,8 @@ message you send, it is a session you bring into existence.
 2. **Record** it: `bsc plan requirement set --project <key>` (statement · discovery · authority) and
    `bsc plan classify set --project <key>` (including `usesGithub`).
 3. **Create the project** when the conversation reaches "build this": `bsc project new "<name>"`.
+   When it provides a `bsc` noun, **declare it**: `bsc project surfaces set <key> <noun>` — that is what puts
+   `bsc <noun>` on your network's run session, and on no other network's.
 4. **Create its director**: `bsc fleet director new <projectKey>` — it is born knowing what you settled.
 5. **Stop.** The director owns everything downstream. You correct it later with `bsc plan brief`, and
    you never follow it down.
