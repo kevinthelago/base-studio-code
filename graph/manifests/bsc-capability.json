@@ -63,6 +63,20 @@
           "key": "bsc-deploy",
           "lead": [],
           "value": "{ path = \"../bsc-deploy\" }"
+        },
+        {
+          "cont": [],
+          "key": "plandb",
+          "lead": [
+            "# Each project's fleet — what it BUILDS — is read from its own plan store (`a-network-surface-is-derived-from-its-projects-fleets`)."
+          ],
+          "value": "{ path = \"../plandb\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-util\" }"
         }
       ],
       "lead": [
