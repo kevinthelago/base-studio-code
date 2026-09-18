@@ -55,11 +55,14 @@ describe("what the console renders", () => {
     expect(src).toContain("open && openWanted ?");
   });
 
-  it("the hosts launch every wanted run session in its steward workspace, with a generated capability context", () => {
+  it("the hosts prepare every wanted run session with the SAME verb a person runs in a terminal", () => {
+    // `a-run-session-directory-carries-its-isolation`: one writer for the directory the app launches in and the one
+    // a person starts by hand — `bsc session prepare <pane>` writes the charter, the live capability context and
+    // the bsc-agent permission document. The mount no longer writes a workspace of its own.
     const hosts = seedSrc("features/studio-sessions/studiosessionhosts.json");
     expect(hosts).toContain("runSessions.map((id) => <RunSessionMount key={id} networkId={id} />)");
-    expect(hosts).toContain('"setup_network_steward_workspace"');
-    expect(hosts).toContain('["capability", "get", networkId, "--context"]');
+    expect(hosts).toContain('["session", "prepare", paneId, "--context", "-", "--json"]');
+    expect(hosts).not.toContain("setup_network_steward_workspace");
     expect(hosts).toMatch(/<TerminalSlot paneId=\{paneId\} primary parked visible=\{false\}/);
   });
 });

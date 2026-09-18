@@ -51,14 +51,28 @@
           "key": "bsc-cli-util",
           "lead": [],
           "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-project",
+          "lead": [],
+          "value": "{ path = \"../bsc-project\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-deploy",
+          "lead": [],
+          "value": "{ path = \"../bsc-deploy\" }"
         }
       ],
       "lead": [
         "",
         "# `bsc-capability` — the USE layer's data: what a network can DO right now.",
         "#",
-        "# LEAN and pure, like `bsc-app` and `bsc-deploy`. No database, no HTTP client, no Tauri — the",
-        "# aggregation reads are injected, so the rules are testable without four machines and a running app."
+        "# The AGGREGATION is lean and pure — the rules take their reads injected, so they are testable without",
+        "# four machines and a running app. The READS link their owners' crates (`bsc-project`'s store, `bsc-deploy`'s",
+        "# roster) rather than re-invoking `bsc`: inside a run session's sandbox a nested `bsc` is gated to that",
+        "# session's surface, so a spawned read came back empty (`a-run-session-directory-carries-its-isolation`)."
       ],
       "name": "[dependencies]"
     },
