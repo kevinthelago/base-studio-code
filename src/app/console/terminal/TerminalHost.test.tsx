@@ -238,6 +238,35 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     expect(queryByTestId("tv")!.getAttribute("data-cwd")).toBe("/repo");
   });
 
+  /// A NETWORK's root sessions (`the-console-hosts-one-run-session-per-network`). The console renders a run
+  /// session's viewer slot in the same commit that makes it wanted, and Glance does the same for an architect;
+  /// the mount that writes the workspace — its CLAUDE.md and the generated capability context — claims only
+  /// once that setup resolves. Launched from the viewer alone, a run session would open in a directory holding
+  /// neither, and conclude from an empty context that its network can do nothing.
+  it.each(["network-finance:steward", "network-finance:architect"])(
+    "does NOT launch a network's %s before its mount claims it",
+    (paneId) => {
+      const Opening = ({ mounted }: { mounted: boolean }) => (
+        <TerminalHost>
+          <div key="v" data-testid="viewer"><TerminalSlot paneId={paneId} visible /></div>
+          {mounted && (
+            <div key="m" data-testid="holding">
+              <TerminalSlot paneId={paneId} primary parked visible={false} initialCwd="/base/stewards/finance" initCmd="claude" />
+            </div>
+          )}
+        </TerminalHost>
+      );
+      const { queryByTestId, rerender } = render(<Opening mounted={false} />);
+      expect(queryByTestId("tv"), "launched before its mount claimed it").toBeFalsy();
+      expect(rec.mounts).toEqual([]);
+
+      rerender(<Opening mounted />);
+      expect(rec.mounts).toEqual([paneId]);
+      // Into the viewer the user is already looking at, not the off-screen holding mount.
+      expect(queryByTestId("tv")!.closest("[data-testid='viewer']")).toBeTruthy();
+    },
+  );
+
   /// The launch PROMPT travels with the other launch props, from the primary claim.
   ///
   /// It used to reach `TerminalView` only through the store, read once inside a one-shot launch effect —
