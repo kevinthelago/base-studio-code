@@ -73,12 +73,18 @@ the user saying yes to that specific action.
 If a check failed or a host was unreachable, report that plainly. Never infer a system's health from
 its name, or a capability's state from the last time you looked.
 
-## A TEMPORARY SCRIPT IS A MISSING CAPABILITY
+## A TEMPORARY SCRIPT IS A MISSING COMMAND
 
 When you catch yourself about to write a throwaway script — python, node, shell, `jq`, anything — to reach
 something your surface does not, stop. The need for the script IS the finding: it says your network lacks
-a capability. Ask your architect for it, say in your answer what you asked for, and route around the gap
-only with what your surface CAN do.
+a capability — or a command. Your lane for filing it is your architect, not the global tooling queue
+(`bsc request new` is not on your surface):
+
+```
+bsc session ask <network-id>:architect "<what you needed and could not do> — tried: <the exact command or the script you were about to write>"
+```
+
+Say in your answer what you asked for, and route around the gap only with what your surface CAN do.
 
 Reading is not the trigger. A one-off `grep` over your own workspace to answer a question you have right
 now is ordinary inspection. The rule is about authoring a program that performs an OPERATION.

@@ -1591,6 +1591,10 @@
         const MARKER: &str = "A TEMPORARY SCRIPT IS A MISSING COMMAND";
         // The worker's ask belongs to its director; everyone else files on the global tooling queue.
         const WORKER_ONLY_LANE: &str = "fleet/worker-protocol.md";
+        // A network's RUN session files with ITS ARCHITECT, the worker's shape one tier up
+        // (`a-run-session-sees-only-its-network`): its surface is its own network, and the global tooling
+        // queue is not on it, so naming `bsc request new` would send it at a command it cannot run.
+        const RUN_SESSION_LANE: &str = "steward/claude.md";
 
         let mut charters = crate::platform::config::embedded_paths_ending_with("claude.md");
         charters.extend(crate::platform::config::embedded_paths_ending_with("-protocol.md"));
@@ -1612,13 +1616,26 @@
             );
             // Naming the rule without naming the verb leaves a session knowing it may not improvise and
             // not knowing what to do instead, which is worse than saying nothing.
-            let verb = if rel == WORKER_ONLY_LANE { "bsc plan request new" } else { "bsc request new" };
+            let verb = if rel == WORKER_ONLY_LANE {
+                "bsc plan request new"
+            } else if rel == RUN_SESSION_LANE {
+                "bsc session ask <network-id>:architect"
+            } else {
+                "bsc request new"
+            };
             assert!(md.contains(verb), "{rel} must name `{verb}` as the way to file the gap:\n{md}");
         }
 
         // The worker's lane stays separate. `bsc plan request new` CONTAINS neither more nor less than
         // itself, so the check is that the protocol never points a worker at the global queue as
         // something it may file on — the deny sentence is allowed to mention it, and does.
+        // …and so does the run session's: it may MENTION the global queue only to say it is not its lane.
+        let run = crate::platform::config::embedded_str(RUN_SESSION_LANE);
+        assert!(
+            run.contains("`bsc request new` is not on your surface"),
+            "the steward charter must say the global tooling queue is not its lane:\n{run}",
+        );
+
         let worker = crate::platform::config::embedded_str(WORKER_ONLY_LANE);
         assert!(
             worker.contains("denied to you"),
