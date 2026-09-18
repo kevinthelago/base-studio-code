@@ -534,6 +534,16 @@
         },
         {
           "cont": [],
+          "key": "bsc-web",
+          "lead": [
+            "# `bsc web` — ROSTERED web reads. The third roster beside `research` (papers) and `news`",
+            "# (outlets): only admitted hosts are fetched, and only the passages that answer the query",
+            "# come back. The roster is the injection defence; the relevance floor is depth behind it."
+          ],
+          "value": "{ path = \"../bsc-web\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-survival",
           "lead": [
             "# The caveman network's offline survival corpus — procedures + natural remedies (#the-caveman-network)."

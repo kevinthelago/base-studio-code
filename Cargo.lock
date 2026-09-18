@@ -862,6 +862,7 @@ dependencies = [
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
+ "bsc-web",
  "bsc-widget",
  "bsc-work",
  "channel",
@@ -1781,6 +1782,20 @@ name = "bsc-util"
 version = "0.1.0"
 dependencies = [
  "bsc-sqlite-read",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-web"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-similar",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 
