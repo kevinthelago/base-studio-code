@@ -117,6 +117,16 @@
           "key": "rusqlite",
           "lead": [],
           "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "urlencoding",
+          "lead": [
+            "# Percent-encoding for the `{q}` in a source's search template. Already in the lock, so it",
+            "# costs no new download — and a hand-rolled escape table that is subtly wrong mangles the",
+            "# query silently, which is the one failure mode a search surface cannot afford."
+          ],
+          "value": "\"2.1\""
         }
       ],
       "lead": [
