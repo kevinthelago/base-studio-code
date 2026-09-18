@@ -85,6 +85,7 @@
   "@/features/designs/lib/designGenBridge",
   "@/features/designs/lib/edgeBatch",
   "@/features/designs/lib/expandedPreviewFit",
+  "@/features/designs/lib/folderGroups",
   "@/features/designs/lib/graphHealth",
   "@/features/designs/lib/kitGist",
   "@/features/designs/lib/kitGroups",
