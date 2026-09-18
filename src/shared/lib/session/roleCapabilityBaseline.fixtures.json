@@ -643,28 +643,7 @@
         "scratch/**"
       ],
       "allow": [
-        "bsc network list",
-        "bsc network get",
-        "bsc project list",
-        "bsc project network",
-        "bsc project progress",
-        "bsc project published",
-        "bsc capability",
-        "bsc deploy devices",
-        "bsc deploy status",
-        "bsc fleet list",
-        "bsc fleet directors",
-        "bsc plan list",
-        "bsc plan get",
-        "bsc plan summary",
-        "bsc plan requirement",
-        "bsc logs",
-        "bsc cost",
-        "bsc session ask",
-        "bsc request new",
-        "bsc request list",
-        "bsc request get",
-        "bsc memory"
+        "bsc session reply"
       ],
       "denyGlobs": [
         "**/*"
