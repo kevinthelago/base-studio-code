@@ -952,6 +952,8 @@ dependencies = [
  "bsc-cli-util",
  "bsc-deploy",
  "bsc-project",
+ "bsc-util",
+ "plandb",
  "serde",
  "serde_json",
 ]
