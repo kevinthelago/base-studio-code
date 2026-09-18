@@ -63,6 +63,9 @@ describe("what the console renders", () => {
     expect(hosts).toContain("runSessions.map((id) => <RunSessionMount key={id} networkId={id} />)");
     expect(hosts).toContain('["session", "prepare", paneId, "--context", "-", "--json"]');
     expect(hosts).not.toContain("setup_network_steward_workspace");
+    // …and the pane EXECs into the sandbox, so no host shell — where `bsc` is the whole CLI — is left behind it
+    // (`a-run-session-pane-never-leaves-its-sandbox`). Mirrors `run_cage::pane_launch_line`.
+    expect(hosts).toContain('initCmd={`exec "$BSC_BIN" session enter ${paneId}`}');
     expect(hosts).toMatch(/<TerminalSlot paneId=\{paneId\} primary parked visible=\{false\}/);
   });
 });
