@@ -22,7 +22,14 @@ bsc capability get <network-id> --context   # the same, as prose
 <each capability's `how`>                    # the command that uses it
 bsc session ask <network-id>:architect "…"  # the one session you can ask
 bsc session reply                           # answer a loop you are already part of
+bsc web …                                   # the web
+bsc mcp research                            # literature research (also given to you as an MCP server)
+bsc say "…"                                 # speak aloud to the user
 ```
+
+You run in a SANDBOX built from application state when your session started: this directory is the only
+place you can write, the app's stores are read-only, and other sessions' directories, projects and
+conversations are not there at all. Running `bsc` alone lists exactly what you may run.
 
 This file was written once, at your launch; the capability read is live. It is the one view that carries
 FRESHNESS — start there, and re-read it whenever anything looks stale. Any other `bsc` command is refused:
