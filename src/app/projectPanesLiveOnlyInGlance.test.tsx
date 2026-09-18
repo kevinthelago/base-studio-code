@@ -89,12 +89,13 @@ describe("a launched project pane mounts through the host and Glance, not the co
   });
 });
 
-describe("the console renders only system sessions", () => {
-  it("its one terminal slot is the open system session", () => {
+describe("the console renders only run sessions", () => {
+  it("its one terminal slot is the open network's run session", () => {
+    // `the-console-hosts-one-run-session-per-network` — one per network, on its steward pane.
     const src = consolePageSrc();
-    expect(src).toContain("SYSTEM_SESSIONS.map((d) =>");
+    expect(src).toContain("networks.map((n) =>");
     expect(src.match(/<TerminalSlot\b/g)).toHaveLength(1);
-    expect(src).toContain("<TerminalSlot paneId={open.paneId}");
+    expect(src).toContain("<TerminalSlot paneId={networkStewardPaneId(open.id)}");
   });
 });
 

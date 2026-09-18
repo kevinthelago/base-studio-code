@@ -660,6 +660,7 @@
         "bsc plan requirement",
         "bsc logs",
         "bsc cost",
+        "bsc session ask",
         "bsc request new",
         "bsc request list",
         "bsc request get",

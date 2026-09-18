@@ -16,7 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
-import { isStudioSessionPaneId, isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
+import { isStudioSessionPaneId, isFullCapabilitySession, networkRootSession } from "@/shared/lib/session/systemSessions";
 import { systemSessionDef } from "@/shared/lib/session/systemSessionDefs";
 import { useAppStore } from "@/store";
 
@@ -384,8 +384,12 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         // also skips `ensure_session_settings`, so the session runs with no role gate at all.
         // A SYSTEM session (`system-sessions-run-projects-and-start-when-visited`) waits for its mount too: the
         // console's slot must not spawn it before `bsc session prepare` has made its directory.
+        // …and so does a NETWORK's root session (`the-console-hosts-one-run-session-per-network`): the console
+        // shows a run session and Glance shows an architect in the same commit that makes it wanted, while
+        // `RunSessionMount` / `NetworkArchitectMount` claim it only once its workspace — CLAUDE.md and the
+        // generated capability context — has been written.
         const awaitsItsMount = isStudioSessionPaneId(paneId) || isFullCapabilitySession(paneId)
-          || systemSessionDef(paneId)?.paneId === paneId;
+          || systemSessionDef(paneId)?.paneId === paneId || networkRootSession(paneId) !== null;
         if (!primaryClaim && awaitsItsMount && !containersRef.current.has(paneId)) return null;
         const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
