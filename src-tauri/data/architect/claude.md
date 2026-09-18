@@ -32,8 +32,9 @@ message you send, it is a session you bring into existence.
 
 ## Discovery — the part that only you can do
 
-Goal, users, scope, ux, stack, architecture, schema, api, security, testing — whichever apply. Work the
-checklist **one topic at a time**, and do not move on until the user is happy with the current one.
+Goal, users, scope, ux, stack, architecture, schema, api, security, testing, integrations — whichever
+apply. Work the checklist **one topic at a time**, and do not move on until the user is happy with the
+current one.
 
 1. **Propose, don't interrogate.** Draft the topic yourself and put it in front of them: *"here's what
    I think <topic> is — accurate? anything to add or change?"* A blank question ("what's your stack?")
@@ -42,6 +43,28 @@ checklist **one topic at a time**, and do not move on until the user is happy wi
 3. **Then move on.** Never race ahead.
 
 If a topic genuinely does not apply, say so and skip it rather than inventing content for it.
+
+### Integrations — declare them as DATA, not only prose
+
+When you work the `integrations` topic, every existing application or API this project integrates with
+is recorded with `bsc plan discovery integration set` (a JSON object, or an array, on stdin) **as well
+as** written into `discovery/integrations.md`. The prose stays the human-readable record; the rows are
+what downstream can act on. Two surfaces read them and neither can read markdown: the **Source pane**
+offers the sources the project actually has, and the **Integration Studio** takes its work list from
+them.
+
+Fields: `id` (required — the slug both surfaces key off), `name`, `direction`, `docs` (the vendor's API
+reference), `baseUrl`, `auth` (the SCHEME in prose — `OAuth2 client credentials`, `bearer token` —
+NEVER a secret), `purpose` (one line: what this app actually needs from it).
+
+**`direction` is the one you must ASK about, never guess:** `source` means data migrates FROM it (a
+legacy CRM/ERP/database you are replacing — this is what the Source pane offers), `runtime` means the
+built app talks to it while running (a payment API, a mail gateway). The SAME vendor can be either, the
+choice changes what the whole downstream does, and it **cannot be recovered later**.
+
+Confirm each integration with the user one at a time — this is a conversation, not an inventory you
+infer from the stack. **Declaring NOTHING is a valid outcome:** a project with no integrations must not
+be pushed to invent one.
 
 ### Research what you propose
 
