@@ -2258,6 +2258,37 @@
       ]
     },
     {
+      "name": "DrillGraphPage",
+      "props": [
+        {
+          "name": "title",
+          "type": "node",
+          "required": true
+        },
+        {
+          "name": "hint",
+          "type": "node"
+        },
+        {
+          "name": "graph",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "defaultTab",
+          "type": "string"
+        },
+        {
+          "name": "defaultPath",
+          "type": "string"
+        },
+        {
+          "name": "inspectorWidth",
+          "type": "number"
+        }
+      ]
+    },
+    {
       "name": "DashboardPage",
       "props": [
         {
