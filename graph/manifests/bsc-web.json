@@ -1,0 +1,156 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-web\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "build",
+          "lead": [],
+          "value": "\"../graph-materialize/build.rs\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_web\""
+        },
+        {
+          "cont": [],
+          "key": "path",
+          "lead": [
+            "# THE SHARED CRATE ROOT — this crate owns no source file at all."
+          ],
+          "value": "\"../graph-materialize/crate_root.rs\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "bsc-similar",
+          "lead": [
+            "# Document distance — TF-IDF cosine that names the SHARED TERMS behind each score, so a kept",
+            "# passage carries the evidence for its own selection. No model and no store, so it adds",
+            "# nothing to this crate's build but the ranking itself."
+          ],
+          "value": "{ path = \"../bsc-similar\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-util",
+          "lead": [
+            "# Shared leaf utilities: base dir + epoch clock."
+          ],
+          "value": "{ path = \"../bsc-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# `CmdDoc` + the shared help rendering, so this noun's help reads like every other one."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [
+            "# `default_store_path` + `open_db_str` — one surface, one crate, one database, opened the",
+            "# same way every other store opens."
+          ],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "reqwest",
+          "lead": [
+            "# rustls-tls (no native-tls) + blocking, matching bsc-news and the research crate so the",
+            "# workspace resolves ONE TLS backend. `http` is the only module that touches the network."
+          ],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "urlencoding",
+          "lead": [
+            "# Percent-encoding for the `{q}` in a source's search template. Already in the lock, so it",
+            "# costs no new download — and a hand-rolled escape table that is subtly wrong mangles the",
+            "# query silently, which is the one failure mode a search surface cannot afford."
+          ],
+          "value": "\"2.1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [
+            "# build.rs parses the committed graph store directly."
+          ],
+          "value": "\"1\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[build-dependencies]"
+    }
+  ],
+  "src": "crates/bsc-web/Cargo.toml",
+  "tail": []
+}
