@@ -30,6 +30,16 @@ describe("what the console renders", () => {
     expect(src).not.toContain("useSystemSessionViewer");
   });
 
+  it("its page tabs ARE the networks, and the active tab is the one run session it shows", () => {
+    // The maintainer's shape: one tab per network, one session per tab — the same Screen tab strip every
+    // workspace uses, with the active tab remembered like any page's (`activePageTab.console`).
+    expect(src).toContain('usePageTabs("console", consoleTabs)');
+    expect(src).toContain("<Screen tabs={tabs} active={activeId}");
+    expect(src).toContain("networks.find((n) => n.id === activeId)");
+    // No second way to pick a session beside the tabs.
+    expect(src).not.toContain("<Button");
+  });
+
   it("hosts one slot — the open run session, only while it is wanted — and no project tab or hidden claim", () => {
     // `project-fleet-panes-live-only-in-glance`: a project's panes live in Glance, so the console keeps no
     // hidden `primary` claim per tab and pins no torn-off tab.
