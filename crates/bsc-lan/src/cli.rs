@@ -137,6 +137,32 @@ docs/llm-operator/guardrails.md, which is explicit that DNS and the firewall are
 single points of failure on this network.",
     },
     CmdDoc {
+        name: "graph",
+        summary: "the network as a graph — every device seen, and every conversation between them",
+        usage: "\
+bsc lan graph --eve <file|-> [--json|--pretty]
+
+Folds Suricata EVE into what the LAN workspace draws: NODES (every endpoint a flow
+named — its VLAN tags, how often it was seen, the ports it ANSWERED on, and the names
+DNS / PTR / TLS SNI / HTTP Host gave it) and CONVERSATIONS (by source, destination,
+port, transport and application protocol, with connections, unanswered attempts,
+bytes each way and first/last seen). `-` reads stdin, so a rotated log streams in:
+
+  ssh lan@10.99.5.10 'zstd -dc /var/log/suricata/eve.json.1.zst' | bsc lan graph --eve - --json
+
+READ WHAT IT STANDS ON. The header says how many records were examined, how many were
+not JSON, and how many were DROPPED at a cap. Zero examined is \"I read nothing\", never
+a quiet network; a non-zero drop count means the picture is partial.
+
+A PORT IS \"SERVED\" ONLY IF IT ANSWERED. A scan names every port on its victim; counting
+those as services would draw the victim as wide open. Unanswered attempts stay on the
+conversation instead, where they are what they are.
+
+Two tags on one conversation means it crossed VLANs through the router.
+
+Read-only: it reads a log and writes nothing.",
+    },
+    CmdDoc {
         name: "spectrum",
         summary: "what the radio hears across the band, from the spectral FFT",
         usage: "\
@@ -1297,6 +1323,111 @@ pub fn render_estate(e: &bsc_lan_sense::Estate, segment: &str) -> String {
     s
 }
 
+fn cmd_graph(a: &Args) -> Result<(), String> {
+    use std::io::BufRead;
+    let path = a.eve.as_deref().ok_or("graph needs --eve <file>, or --eve - for stdin")?;
+    let mut folder = bsc_lan_sense::graph::GraphFolder::new();
+    // Streamed a line at a time: a day of EVE is gigabytes, and the fold only
+    // ever needs the line in hand.
+    let feed = |r: &mut dyn BufRead, f: &mut bsc_lan_sense::graph::GraphFolder| -> Result<(), String> {
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let n = r.read_until(b'\n', &mut buf).map_err(|e| format!("could not read {path}: {e}"))?;
+            if n == 0 {
+                return Ok(());
+            }
+            // A line that is not UTF-8 is not EVE; the folder counts it as unparsed.
+            f.line(&String::from_utf8_lossy(&buf));
+        }
+    };
+    if path == "-" {
+        feed(&mut std::io::stdin().lock(), &mut folder)?;
+    } else {
+        let file = std::fs::File::open(path).map_err(|e| format!("could not read {path}: {e}"))?;
+        feed(&mut std::io::BufReader::new(file), &mut folder)?;
+    }
+    let g = folder.finish();
+    bsc_cli_util::emit(a.pretty, a.json, &g, || render_graph(&g));
+    Ok(())
+}
+
+/// Most nodes / conversations the text rendering lists; `--json` carries all.
+const GRAPH_TEXT_ROWS: usize = 20;
+
+/// Rendered separately so it is unit-testable without a file.
+pub fn render_graph(g: &bsc_lan_sense::graph::LanGraph) -> String {
+    use bsc_lan_sense::graph::Scope;
+    if g.records_examined == 0 {
+        return format!(
+            "NOTHING PARSED — 0 record(s) read ({} not JSON, {} oversized), so this says nothing\n               about the network. This is NOT a quiet network.",
+            g.unparsed, g.oversized
+        );
+    }
+    let mut s = format!(
+        "{} node(s), {} conversation(s) — from {} record(s): {} flow(s), {} name pairing(s)\n",
+        g.nodes.len(),
+        g.conversations.len(),
+        g.records_examined,
+        g.flows_folded,
+        g.names_folded
+    );
+    if g.dropped > 0 {
+        s.push_str(&format!("  PARTIAL — {} item(s) dropped at a cap\n", g.dropped));
+    }
+    if g.unparsed + g.oversized + g.incomplete > 0 {
+        s.push_str(&format!(
+            "  skipped: {} not JSON · {} oversized · {} flow(s) without usable addresses\n",
+            g.unparsed, g.oversized, g.incomplete
+        ));
+    }
+    let tags = |t: &std::collections::BTreeSet<u16>| {
+        if t.is_empty() {
+            "-".to_string()
+        } else {
+            t.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")
+        }
+    };
+    s.push_str("\n  NODES (busiest first)\n");
+    for n in g.nodes.iter().take(GRAPH_TEXT_ROWS) {
+        let name = n.names.first().map(|x| x.name.as_str()).unwrap_or("");
+        let serves = n.serves.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+        let scope = match n.scope {
+            Scope::Public => "public",
+            Scope::Private => "lan",
+            Scope::LinkLocal => "link-local",
+            Scope::Loopback => "loopback",
+            Scope::Multicast => "multicast",
+            Scope::Broadcast => "broadcast",
+            Scope::Unspecified => "unspecified",
+        };
+        s.push_str(&format!(
+            "    {:<40} {:<11} vlan {:<5} {:>7} rec  serves [{}]  {}\n",
+            n.addr, scope, tags(&n.vlans), n.records, serves, name
+        ));
+    }
+    s.push_str("\n  CONVERSATIONS (most connections first)\n");
+    for c in g.conversations.iter().take(GRAPH_TEXT_ROWS) {
+        let service = match (&c.app, c.port) {
+            (Some(app), Some(p)) => format!("{app} :{p}"),
+            (None, Some(p)) => format!("{} :{p}", c.transport.to_ascii_lowercase()),
+            (Some(app), None) => app.clone(),
+            (None, None) => c.transport.to_ascii_lowercase(),
+        };
+        let crossed = if c.vlans.len() > 1 { "  CROSS-VLAN" } else { "" };
+        let unanswered = if c.unanswered > 0 { format!(" ({} unanswered)", c.unanswered) } else { String::new() };
+        s.push_str(&format!(
+            "    {} → {}  {}  {} connection(s){}  {}↑ {}↓ bytes{}\n",
+            c.src, c.dst, service, c.flows, unanswered, c.bytes_to_server, c.bytes_to_client, crossed
+        ));
+    }
+    let hidden = g.nodes.len().saturating_sub(GRAPH_TEXT_ROWS) + g.conversations.len().saturating_sub(GRAPH_TEXT_ROWS);
+    if hidden > 0 {
+        s.push_str(&format!("\n  … {hidden} more row(s) — --json carries everything\n"));
+    }
+    s
+}
+
 fn cmd_dry_run(a: &Args) -> Result<(), String> {
     let path = a
         .positional
@@ -1583,6 +1714,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("spectrum") => cmd_spectrum(&a),
         Some("watch") => cmd_watch(&a),
         Some("estate") => cmd_estate(&a),
+        Some("graph") => cmd_graph(&a),
         Some("dry-run") => cmd_dry_run(&a),
         Some("config") => cmd_config(&a),
         Some("unit") => cmd_unit(&a),
@@ -1602,7 +1734,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "sense", "dry-run", "config", "unit"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "graph", "spectrum", "sense", "dry-run", "config", "unit"]);
     }
 
     #[test]
@@ -2095,6 +2227,53 @@ mod tests {
         assert!(run(vec!["estate".into()], "bsc lan").unwrap_err().contains("--eve"));
         let e = run(vec!["estate".into(), "--eve".into(), "/nonexistent".into()], "bsc lan").unwrap_err();
         assert!(e.contains("--segment"), "{e}");
+    }
+
+    #[test]
+    fn graph_needs_an_eve_source_and_names_the_flag() {
+        let e = run(vec!["graph".into()], "bsc lan").unwrap_err();
+        assert!(e.contains("--eve"), "{e}");
+        let e = run(vec!["graph".into(), "--eve".into(), "/nonexistent".into()], "bsc lan").unwrap_err();
+        assert!(e.contains("/nonexistent"), "{e}");
+    }
+
+    #[test]
+    fn graph_reads_a_file_end_to_end() {
+        let dir = std::env::temp_dir().join(format!("bsc-lan-graph-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("eve.json");
+        std::fs::write(
+            &f,
+            r#"{"event_type":"flow","vlan":[2],"src_ip":"10.99.2.118","src_port":1,"dest_ip":"10.99.2.100","dest_port":22,"proto":"TCP","app_proto":"ssh","flow":{"pkts_toclient":9}}"#,
+        )
+        .unwrap();
+        let r = run(vec!["graph".into(), "--eve".into(), f.display().to_string(), "--json".into()], "bsc lan");
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn nothing_parsed_never_renders_as_a_quiet_network() {
+        let g = bsc_lan_sense::graph::LanGraph { unparsed: 3, ..Default::default() };
+        let s = render_graph(&g);
+        assert!(s.contains("NOTHING PARSED") && s.contains("NOT a quiet network"), "{s}");
+    }
+
+    #[test]
+    fn the_graph_rendering_names_services_and_flags_cross_vlan_and_partial() {
+        let eve = [
+            r#"{"event_type":"flow","vlan":[8],"src_ip":"10.99.8.50","src_port":61000,"dest_ip":"10.99.2.100","dest_port":80,"proto":"TCP","app_proto":"http","flow":{"pkts_toclient":4,"bytes_toserver":500,"bytes_toclient":700}}"#,
+            r#"{"event_type":"flow","vlan":[2],"src_ip":"10.99.8.50","src_port":61000,"dest_ip":"10.99.2.100","dest_port":80,"proto":"TCP","app_proto":"http","flow":{"pkts_toclient":4,"bytes_toserver":500,"bytes_toclient":700}}"#,
+        ]
+        .join("\n");
+        let mut g = bsc_lan_sense::graph::fold(&eve);
+        let s = render_graph(&g);
+        assert!(s.contains("http :80"), "{s}");
+        assert!(s.contains("CROSS-VLAN"), "guest → MGMT must be called out:\n{s}");
+        assert!(s.contains("serves [80]"), "{s}");
+        assert!(!s.contains("PARTIAL"), "{s}");
+        g.dropped = 4;
+        assert!(render_graph(&g).contains("PARTIAL — 4"), "a capped picture must say so");
     }
 
     #[test]
