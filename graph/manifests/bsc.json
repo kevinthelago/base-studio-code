@@ -423,6 +423,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-inventory",
+          "lead": [
+            "# `bsc inventory` — the LAN asset inventory (inventory.db); its own crate so bsc-lan stays SQLite-free."
+          ],
+          "value": "{ path = \"../bsc-inventory\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-widget",
           "lead": [],
           "value": "{ path = \"../bsc-widget\" }"
