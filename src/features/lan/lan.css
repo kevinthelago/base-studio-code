@@ -1,0 +1,77 @@
+/* The LAN workspace (`epic-the-lan-workspace`). main.tsx globs every stylesheet under src into the bundle, so this
+   file needs no import site of its own.
+
+   Geometry is Rust's: every band and card is placed by `bsc_inventory::scene` and applied inline, so nothing here
+   sets a position or a card's width. Colour reinforces, never carries: every card names its kind in text, and a
+   cross-VLAN line is labelled as well as tinted. */
+
+.lan-workspace { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+
+.lan-banner {
+  padding: 8px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--warning, #d29922) 10%, var(--bg-elev, var(--bg)));
+}
+.lan-banner-info { background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev, var(--bg))); }
+.lan-banner code { font-size: 11px; }
+.lan-stat { white-space: nowrap; }
+
+/* ── VLAN bands ── */
+.lan-band {
+  position: absolute;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.lan-band[data-vlan="none"] { border-style: dashed; }
+.lan-band-name {
+  position: absolute;
+  left: 12px;
+  top: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* ── lines ── */
+.lan-edge path { stroke: var(--edge, var(--fg-muted)); }
+.lan-edge .lan-edge-arrow { fill: var(--edge, var(--fg-muted)); stroke: none; }
+.lan-edge[data-cross="true"] path { stroke: var(--danger, #f85149); }
+.lan-edge[data-cross="true"] .lan-edge-arrow { fill: var(--danger, #f85149); }
+.lan-edge[data-lit="true"] path { stroke: var(--accent); }
+.lan-edgelabel {
+  font: 10px var(--font-mono, monospace);
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
+/* ── node cards ── */
+.lan-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--bg-panel, var(--bg));
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.lan-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lan-node[data-kind="device"] { border-left-color: var(--accent); }
+.lan-node[data-kind="unclaimed"] { border-left-color: var(--warning, #d29922); border-style: dashed; border-left-style: solid; }
+.lan-node[data-kind="hub"] { border-left-color: var(--fg-muted); border-width: 2px; }
+.lan-node[data-kind="external"] { border-left-color: var(--info, #58a6ff); }
+.lan-node.open { z-index: 5; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); cursor: default; }
+.lan-node-name { font-size: 12.5px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lan-node-kind { flex: none; }
+.lan-node-meta { font-size: 10.5px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lan-node-chores { margin-top: 2px; }
+.lan-node-detail { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-soft, var(--border)); }
+.lan-claim { display: flex; flex-direction: column; gap: 6px; }
+.lan-error { color: var(--danger, #f85149); white-space: pre-wrap; }

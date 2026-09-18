@@ -33,7 +33,7 @@ import {
   SettingsWorkspace,
   LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
-  MemoryWorkspace, CredentialsWorkspace,
+  MemoryWorkspace, CredentialsWorkspace, LanWorkspace,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -172,6 +172,8 @@ export default function App() {
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
+            {/* The network the app runs on (`epic-the-lan-workspace`) — re-reads `bsc inventory scene` on mount. */}
+            {activeWorkspace === "lan"        && <LanWorkspace />}
             {/* Memory re-reads `bsc memory` on every mount, for the same reason Credentials does:
                 the store is written from OUTSIDE the app — by every session that runs
                 `bsc memory add` — so a kept-mounted copy would be stale exactly when a session has

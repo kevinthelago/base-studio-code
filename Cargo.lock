@@ -1243,6 +1243,7 @@ name = "bsc-inventory"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-deploy",
  "bsc-lan-core",
  "bsc-lan-sense",
  "bsc-sqlite-util",

@@ -126,6 +126,14 @@
             "# control-plane vocabulary, which is pure types with no I/O."
           ],
           "value": "{ path = \"../bsc-lan-core\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-deploy",
+          "lead": [
+            "# The device roster: `refresh` finds the sensor by name there, so its address lives in one place."
+          ],
+          "value": "{ path = \"../bsc-deploy\" }"
         }
       ],
       "lead": [
