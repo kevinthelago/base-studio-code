@@ -230,10 +230,6 @@ import * as UseGraphPage from "@/shared/ui/layouts/useGraphPage";
 import * as SelectionNeighborhood from "@/shared/lib/graph/selectionNeighborhood";
 import * as CrossGraph from "@/shared/lib/graph/crossGraph";
 import * as NodeUrn from "@/shared/lib/graph/nodeUrn";
-// The GPU graph renderer + its glyph atlas (`gpu-graph-slice-5-...`). Registered because a RECORD
-// imports them: `graph-gpu-layer` is a packaged record, and a record can only reach a first-party
-// module that is itself a record or registered here. Without this the record compiles, declines at
-// runtime, and the Design Studio silently falls back — the same shape that blanked the Console page.
 import * as CssColor from "@/shared/lib/graph/cssColor";
 // ── record-links-is-red-on-develop ───────────────────────────────────────────────────────────────────
 // Two npm dependencies records import directly. Registered like `lucide-react` and `react-dom` below:
@@ -269,8 +265,6 @@ import { registerStudioSessionsPlatform } from "@/features/studio-sessions/graph
 import { registerTeamsPlatform } from "@/features/teams/graphPlatform";
 import { registerTunnelPlatform } from "@/features/tunnel/graphPlatform";
 /* eslint-enable @typescript-eslint/no-restricted-imports */
-import * as GlGraphRenderer from "@/shared/lib/graph/glGraphRenderer";
-import * as GlyphAtlas from "@/shared/lib/graph/glyphAtlas";
 import * as Types from "@/shared/lib/github/types";
 import * as SessionRoles from "@/shared/lib/session/sessionRoles";
 import * as Algorithms from "@/features/algorithms";
@@ -609,8 +603,6 @@ const PLATFORM: Record<string, unknown> = {
   "qrcode.react": QrCode,
   "@/features/algorithms/viz/examples/vizSandbox": VizSandbox,
   "@/features/planner/stages/blueprintBuiltins": BlueprintBuiltins,
-  "@/shared/lib/graph/glGraphRenderer": GlGraphRenderer,
-  "@/shared/lib/graph/glyphAtlas": GlyphAtlas,
   "@/shared/lib/github/types": Types,
   "@/shared/lib/session/sessionRoles": SessionRoles,
   "@/features/algorithms": Algorithms,
