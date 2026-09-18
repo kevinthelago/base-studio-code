@@ -1,0 +1,108 @@
+{
+  "endsNewline": true,
+  "kind": "manifest",
+  "sections": [
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc-inventory\""
+        },
+        {
+          "cont": [],
+          "key": "version",
+          "lead": [],
+          "value": "\"0.1.0\""
+        },
+        {
+          "cont": [],
+          "key": "edition",
+          "lead": [],
+          "value": "\"2021\""
+        },
+        {
+          "cont": [],
+          "key": "description",
+          "lead": [],
+          "value": "\"`bsc inventory` — the LAN asset inventory: every device, the addresses claimed for it, what the wire showed at each (from `bsc lan graph`), and which subnet is which VLAN. inventory.db.\""
+        }
+      ],
+      "lead": [],
+      "name": "[package]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "name",
+          "lead": [],
+          "value": "\"bsc_inventory\""
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[lib]"
+    },
+    {
+      "entries": [
+        {
+          "cont": [],
+          "key": "serde",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"derive\"] }"
+        },
+        {
+          "cont": [],
+          "key": "serde_json",
+          "lead": [],
+          "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "rusqlite",
+          "lead": [],
+          "value": "{ version = \"0.40\", features = [\"bundled\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-sqlite-util",
+          "lead": [],
+          "value": "{ path = \"../bsc-sqlite-util\", features = [\"conn\"] }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lan-sense",
+          "lead": [
+            "# The graph types `observe` reads. bsc-lan-sense is SQLite-free; the store lives HERE so the",
+            "# sensor binary (bsc-lan) stays lean — crates/bsc-lan/tests/lean.rs forbids it rusqlite."
+          ],
+          "value": "{ path = \"../bsc-lan-sense\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-lan-core",
+          "lead": [
+            "# MacAddr parsing and the locally-administered (randomized) bit — the first real consumer of the",
+            "# control-plane vocabulary, which is pure types with no I/O."
+          ],
+          "value": "{ path = \"../bsc-lan-core\" }"
+        }
+      ],
+      "lead": [
+        ""
+      ],
+      "name": "[dependencies]"
+    }
+  ],
+  "src": "crates/bsc-inventory/Cargo.toml",
+  "tail": []
+}

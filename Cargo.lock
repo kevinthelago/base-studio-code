@@ -828,6 +828,7 @@ dependencies = [
  "bsc-graph",
  "bsc-imagine",
  "bsc-imprint",
+ "bsc-inventory",
  "bsc-json-store",
  "bsc-lan",
  "bsc-llm",
@@ -1231,6 +1232,19 @@ dependencies = [
 name = "bsc-incident"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-inventory"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-lan-core",
+ "bsc-lan-sense",
+ "bsc-sqlite-util",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
