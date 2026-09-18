@@ -100,13 +100,9 @@
 
 .ds-edge path { transition: stroke .12s, fill .12s; }
 
-/* Composition swimlanes (#2964) — faint tier bands behind the graph: Pages (top) · Composables
-   (middle) · Fundamentals (base). The two ends are tinted a touch stronger so the middle reads as the
-   clear lane between them; a dashed divider separates adjacent lanes; the label sits in the top gutter. */
-.ds-lane-bg { fill: var(--fg); opacity: .022; }
-/* Alternating tint across the four tiers (Pages · Layouts · Composables · Fundamentals) for rhythm. */
-.ds-lane-page .ds-lane-bg, .ds-lane-composable .ds-lane-bg { opacity: .05; }
-.ds-lane-divider { stroke: var(--border-soft, var(--border)); stroke-width: 1; stroke-dasharray: 5 7; opacity: .6; }
+/* The role swimlanes (#2964) are GONE (`the-components-graph-navigates-through-ghost-neighbours`): a
+   drilled layer is laid out by its composes edges, and a card carries its own TYPE instead. The label
+   rule stays for the library band's caption. */
 .ds-lane-label { fill: var(--fg-dim); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 
 /* Cross-graph library band (#3116) — the ALGORITHM nodes a component `requires` (@bsc/algorithms/…), lifted
@@ -179,3 +175,14 @@
    region rather than a group among equals. Tinted to read as a different KIND of card. */
 .ds-node.ds-group.ds-fenced { border-color: color-mix(in srgb, var(--info) 50%, var(--border)); }
 .ds-node.ds-stub { border-style: dashed; opacity: .85; cursor: pointer; }
+
+/* A card says its TYPE (`the-components-graph-navigates-through-ghost-neighbours`) — the layout no longer
+   bands by role, so the role is carried by the card: a stripe down its left edge and the role word, both in
+   the role colour (`--ds-role`, set per node from ROLE_COLOR). */
+.ds-node { border-left: 3px solid var(--ds-role, var(--border)); }
+.ds-node:not(.ds-group) .ds-node-role { color: var(--ds-role, var(--fg-dim)); font-weight: 600; }
+/* A GHOST — a neighbour that lives in another folder. Present so the edge has somewhere to land and the
+   graph can be walked; dimmed and dashed so it never reads as a member; clicking it goes there. */
+.ds-node.ghost { opacity: .5; border-style: dashed; border-left-style: solid; box-shadow: none; background: transparent; }
+.ds-node.ghost:hover { opacity: .9; }
+.ds-node.ghost.related { opacity: .8; }
