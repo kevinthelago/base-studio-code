@@ -1,0 +1,199 @@
+{
+  "migration_plan": {
+    "date": "2026-09-17",
+    "author": "maintainer",
+    "purpose": "Migrate JSON state files to database tables",
+    "status": "proposed"
+  },
+  "json_files_analysis": [
+    {
+      "file": "graph/invariants.json",
+      "current_purpose": "SQLite merge review invariants (population floors, facet counts, code contains checks)",
+      "state_type": "database_schema_metadata",
+      "migration_target": {
+        "table": "merge_review_invariants",
+        "schema": {
+          "id": "text PRIMARY KEY",
+          "kind": "text",
+          "min": "integer nullable",
+          "expect": "integer nullable",
+          "record": "text nullable",
+          "facet": "text nullable",
+          "value": "text nullable",
+          "note": "text"
+        },
+        "database": "algorithms.db",
+        "notes": [
+          "This is already a database-backed store (algorithms.db)",
+          "The JSON file contains schema metadata for merge reviews",
+          "Consider moving to a dedicated 'schema_metadata' table in algorithms.db",
+          "Or keep as-is since it's already backed by the record store"
+        ]
+      },
+      "migration_priority": "low",
+      "reason": "Already backed by algorithms.db database; JSON is schema documentation"
+    },
+    {
+      "file": "scripts/lib/laneCases.json",
+      "current_purpose": "Lane configuration: branch-to-lane mappings, chains, environment rules",
+      "state_type": "application_configuration",
+      "migration_target": {
+        "table": "lane_configurations",
+        "schema": {
+          "branch": "text nullable",
+          "lane": "text",
+          "chain": "text array",
+          "env": "json",
+          "id": "text PRIMARY KEY"
+        },
+        "database": "plandb",
+        "notes": [
+          "This is critical runtime configuration for the lane system",
+          "Should be backed by plandb for consistency with other plan data",
+          "Consider a dedicated 'lanes' table in plandb"
+        ]
+      },
+      "migration_priority": "high",
+      "reason": "Critical runtime configuration that should be database-backed"
+    },
+    {
+      "file": "docs/blueprints/bsc-reskin/extension.json",
+      "current_purpose": "Blueprint manifest with embedded prompts and stage definitions",
+      "state_type": "blueprint_definition",
+      "migration_target": {
+        "table": "blueprints",
+        "schema": {
+          "id": "text PRIMARY KEY",
+          "name": "text",
+          "version": "text",
+          "description": "text",
+          "category": "text",
+          "mode": "text",
+          "pitch": "text",
+          "audience": "text",
+          "tags": "text array",
+          "icon": "text",
+          "skills": "text array",
+          "mcp": "text array",
+          "sections": "json"
+        },
+        "database": "plandb",
+        "notes": [
+          "Blueprints are already backed by the blueprint library",
+          "The JSON file is a manifest that should be in plandb",
+          "Consider migrating to 'blueprints' table in plandb"
+        ]
+      },
+      "migration_priority": "medium",
+      "reason": "Already backed by blueprint library; JSON is manifest documentation"
+    },
+    {
+      "file": "docs/archive/*.json",
+      "current_purpose": "Archive documentation of removed features with issue numbers",
+      "state_type": "historical_documentation",
+      "migration_target": {
+        "table": "feature_archives",
+        "schema": {
+          "slug": "text PRIMARY KEY",
+          "title": "text",
+          "description": "text",
+          "issue_numbers": "integer array",
+          "created_at": "timestamp",
+          "notes": "text"
+        },
+        "database": "plandb",
+        "notes": [
+          "These are historical records, not active state",
+          "Could be kept as documentation or migrated to archives table",
+          "Lower priority since they're historical"
+        ]
+      },
+      "migration_priority": "low",
+      "reason": "Historical documentation; can remain as-is or migrate to archive tables"
+    },
+    {
+      "file": "graph/method-leaf-baseline.json",
+      "current_purpose": "Method leaf baseline coverage metrics for TypeScript files",
+      "state_type": "test_coverage_metadata",
+      "migration_target": {
+        "table": "method_leaf_baselines",
+        "schema": {
+          "file": "text PRIMARY KEY",
+          "baseline_value": "integer"
+        },
+        "database": "algorithms.db",
+        "notes": [
+          "Test coverage baseline data",
+          "Should be backed by algorithms.db for consistency",
+          "Consider a dedicated 'test_baselines' table"
+        ]
+      },
+      "migration_priority": "medium",
+      "reason": "Test coverage metadata that should be database-backed"
+    },
+    {
+      "file": "graph/manifests/*.json",
+      "current_purpose": "Manifest records for bsc commands (crate definitions, dependencies)",
+      "state_type": "command_manifests",
+      "migration_target": {
+        "table": "command_manifests",
+        "schema": {
+          "id": "text PRIMARY KEY",
+          "label": "text",
+          "category": "text",
+          "base_url": "text nullable",
+          "auth": "text nullable",
+          "resources": "json array"
+        },
+        "database": "algorithms.db",
+        "notes": [
+          "These are already backed by the record store (algorithms.db)",
+          "The JSON files are generated build products",
+          "Should NOT be migrated - they're generated, not authored state"
+        ]
+      },
+      "migration_priority": "none",
+      "reason": "GENERATED build products, not authored state. Should remain as-is."
+    }
+  ],
+  "recommendations": {
+    "immediate_actions": [
+      {
+        "action": "Migrate scripts/lib/laneCases.json to plandb",
+        "priority": "high",
+        "reason": "Critical runtime configuration that should be database-backed"
+      },
+      {
+        "action": "Migrate graph/method-leaf-baseline.json to algorithms.db",
+        "priority": "medium",
+        "reason": "Test coverage metadata for consistency"
+      }
+    ],
+    "defer_actions": [
+      {
+        "action": "Keep graph/manifests/*.json as generated build products",
+        "reason": "These are generated, not authored state"
+      },
+      {
+        "action": "Keep docs/archive/*.json as historical documentation",
+        "reason": "Historical records don't need active migration"
+      }
+    ],
+    "database_schema_updates_needed": [
+      {
+        "database": "plandb",
+        "new_tables": ["lane_configurations", "feature_archives"]
+      },
+      {
+        "database": "algorithms.db", 
+        "new_tables": ["method_leaf_baselines"]
+      }
+    ]
+  },
+  "implementation_notes": [
+    "Generated files (graph/manifests/) should NOT be migrated - they're build products",
+    "Historical archives can remain as documentation or migrate to archive tables",
+    "Critical runtime configs (laneCases.json) should be migrated first",
+    "Test coverage baselines should be backed by algorithms.db for consistency"
+  ]
+}
