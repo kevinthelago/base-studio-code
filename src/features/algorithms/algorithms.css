@@ -103,3 +103,9 @@
   background: var(--warn-bg, #fff6e0);
   border-bottom: 1px solid var(--warn-border, #f0d9a0);
 }
+
+/* GHOSTS (`the-algorithms-graph-draws-its-ghost-neighbours`) — an implementation in ANOTHER group that an
+   edge of this layer reaches. Drawn so the edge has somewhere to land and the graph can be walked record by
+   record; dimmed and dashed so it never reads as a member; clicking it goes there. Mirrors `.ds-node.ghost`. */
+.algo-node.ghost { opacity: 0.5; border-style: dashed; box-shadow: none; background: transparent; cursor: pointer; }
+.algo-node.ghost:hover { opacity: 0.9; }
