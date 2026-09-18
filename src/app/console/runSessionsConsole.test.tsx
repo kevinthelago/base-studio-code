@@ -85,10 +85,14 @@ function SystemHarness({ open, showing }: { open: string | null; showing: boolea
 }
 
 let reaped: ((e: { payload: string }) => void) | undefined;
+/** Every event listener the hooks registered, by event name — the last one registered wins. */
+let heard: Record<string, (e: { payload: unknown }) => void> = {};
 beforeEach(() => {
   reaped = undefined;
+  heard = {};
   vi.mocked(listen).mockImplementation((async (name: string, cb: (e: { payload: string }) => void) => {
     if (name === "pty-reaped") reaped = cb;
+    heard[name] = cb as (e: { payload: unknown }) => void;
     return () => {};
   }) as unknown as typeof listen);
   useAppStore.setState({
@@ -142,6 +146,33 @@ describe("a network's run session: lazy start, reaped when not focused, restart 
     // …and a reap of the architect is not a reap of the network's run session.
     expect(st.wantedRunSessions).toEqual(["network-finance"]);
     view.unmount();
+  });
+});
+
+describe("a run session that ends under its viewer", () => {
+  it("is relaunched, so the tab never keeps a dead terminal — and a launch that ends again at once is left ended", async () => {
+    // `ctrl-c-in-a-run-session-never-ends-its-pane`: the reaper drops a session only when nobody views it, so one
+    // that exited while its tab was open stayed wanted over a dead terminal the user could not get back into.
+    vi.useFakeTimers();
+    try {
+      const view = render(<RunHarness open="network-finance" showing />);
+      await act(async () => { await Promise.resolve(); });
+      const exited = heard["pty_exit_network-finance:steward"];
+      expect(exited, "the viewer listens for its session's end").toBeTruthy();
+      act(() => { exited!({ payload: { reason: "finished" } }); });
+      // Dropped first, so its slot unmounts…
+      expect(useAppStore.getState().wantedRunSessions).toEqual([]);
+      // …then wanted again, which launches it afresh.
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(useAppStore.getState().wantedRunSessions).toEqual(["network-finance"]);
+      // Ending again straight away is a launch that cannot stay up: no loop.
+      act(() => { exited!({ payload: { reason: "fault" } }); });
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(useAppStore.getState().wantedRunSessions).toEqual([]);
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
