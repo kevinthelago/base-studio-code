@@ -168,3 +168,14 @@
 /* The designer-session dock now renders through the shared SessionDock (#2808); its former
    `.ds-terminal`/`.ds-termhost` rules were removed with that extraction. */
 
+
+/* ── The folder-group DRILL layer (`the-components-graph-drills-by-folder`) ──────────────────────────
+   A GROUP card stands for a whole folder and a STUB for a link that leaves the drilled one. Same
+   vocabulary as the Algorithms drill (.algo-group / .algo-stub) so the two graphs read alike: an accent
+   border says "enterable", a dashed border says "this is the edge of the map, not a member". */
+.ds-node.ds-group { border-color: color-mix(in srgb, var(--accent, #58a6ff) 45%, var(--border)); cursor: pointer; }
+.ds-node.ds-group .ds-node-role { color: var(--fg-dim); }
+/* The fenced design-system region — 690 of 905 composes edges terminate in shared/ui, so it is its own
+   region rather than a group among equals. Tinted to read as a different KIND of card. */
+.ds-node.ds-group.ds-fenced { border-color: color-mix(in srgb, var(--info) 50%, var(--border)); }
+.ds-node.ds-stub { border-style: dashed; opacity: .85; cursor: pointer; }
