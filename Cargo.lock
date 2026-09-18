@@ -948,6 +948,8 @@ name = "bsc-capability"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-deploy",
+ "bsc-project",
  "serde",
  "serde_json",
 ]
