@@ -1,0 +1,47 @@
+{
+  "id": "coverletterclassic",
+  "name": "CoverLetterClassic",
+  "kitId": "base-studio-code",
+  "role": "document",
+  "documentKind": "cover-letter",
+  "provides": "@/features/jobs/CoverLetterClassic",
+  "src": "src/features/jobs/CoverLetterClassic.tsx",
+  "folder": "features/jobs",
+  "feature": "jobs",
+  "srcText": "// CoverLetterClassic (epic-job-applications, slice 2) — a cover-letter SKELETON that pairs with\n// ResumeClassic: the same header rule, type and accent, laid out as a business letter from a\n// `CoverLetterDoc`. It holds no personal data; given no `doc` it shows the fictional DEMO_COVER_LETTER.\n//\n// Semantic, single-column and real text throughout, for the same reason as the résumé: what a reader\n// extracts from the PDF must read in the order the page does. `page` picks US Letter or A4.\nimport type { CSSProperties } from \"react\";\nimport { DEMO_COVER_LETTER, paperCss, type CoverLetterDoc, type PaperSize } from \"@/features/jobs/lib/documents\";\n\nconst SHEET = \"bsc-doc-cover-letter-classic\";\nconst ACCENT = \"var(--doc-accent, #1f3a5f)\";\nconst MUTED = \"#4a4a4a\";\n\nconst CSS = `\n.${SHEET} { font-family: \"Inter\", \"Helvetica Neue\", Arial, sans-serif; font-size: 11pt; line-height: 1.5; }\n.${SHEET} h1, .${SHEET} p, .${SHEET} address { margin: 0; font-style: normal; }\n.${SHEET} .para { margin: 0 0 9pt; break-inside: avoid; }\n`;\n\nconst s = {\n  header: { borderBottom: `1.5pt solid ${ACCENT}`, paddingBottom: \"8pt\", marginBottom: \"18pt\" },\n  name: { fontSize: \"20pt\", fontWeight: 700, color: \"#111\" },\n  headline: { fontSize: \"10.5pt\", color: MUTED, marginTop: \"2pt\" },\n  contact: { fontSize: \"9.5pt\", color: MUTED, marginTop: \"4pt\" },\n  date: { marginBottom: \"14pt\" },\n  recipient: { marginBottom: \"14pt\" },\n  greeting: { marginBottom: \"10pt\" },\n  closing: { marginTop: \"14pt\" },\n  signature: { marginTop: \"26pt\", fontWeight: 600, color: \"#111\" },\n} satisfies Record<string, CSSProperties>;\n\nexport function CoverLetterClassic({ doc = DEMO_COVER_LETTER, page = \"letter\" }: { doc?: CoverLetterDoc; page?: PaperSize }) {\n  const h = doc.header;\n  const contact = [h.location, h.email, h.phone, ...(h.links ?? [])].filter((x): x is string => !!x && !!x.trim());\n  const r = doc.recipient;\n  const recipientLines = r ? [r.name, r.title, r.company, ...(r.address ?? [])].filter((x): x is string => !!x && !!x.trim()) : [];\n  return (\n    <article className={SHEET} data-paper={page} data-document=\"cover-letter\">\n      <style>{`${paperCss(page, SHEET)}\\n${CSS}`}</style>\n      <header style={s.header}>\n        <h1 style={s.name}>{h.name}</h1>\n        {h.headline && <p style={s.headline}>{h.headline}</p>}\n        {contact.length > 0 && <p style={s.contact}>{contact.join(\"  ·  \")}</p>}\n      </header>\n      {doc.date && <p style={s.date}>{doc.date}</p>}\n      {recipientLines.length > 0 && (\n        <address style={s.recipient}>\n          {recipientLines.map((line, i) => <p key={i}>{line}</p>)}\n        </address>\n      )}\n      <p style={s.greeting}>{doc.greeting}</p>\n      {doc.paragraphs.map((p, i) => (\n        <p key={i} className=\"para\" data-sources={p.sources?.join(\" \")}>{p.text}</p>\n      ))}\n      <p style={s.closing}>{doc.closing}</p>\n      <p style={s.signature}>{doc.signature ?? h.name}</p>\n    </article>\n  );\n}\n\nexport default CoverLetterClassic;\n",
+  "composes": [],
+  "props": [
+    {
+      "name": "doc",
+      "type": "CoverLetterDoc",
+      "req": false,
+      "desc": "The tailored letter for one job, from @/features/jobs/lib/documents. Absent: the fictional DEMO_COVER_LETTER."
+    },
+    {
+      "name": "page",
+      "type": "\"letter\" | \"a4\"",
+      "req": false,
+      "desc": "The paper: US Letter (default) or A4."
+    }
+  ],
+  "variants": [
+    "default"
+  ],
+  "tags": [
+    "document",
+    "cover-letter",
+    "print"
+  ],
+  "whenUse": [
+    "A job application needs its cover letter as a business letter that matches ResumeClassic — same header rule, type and accent."
+  ],
+  "whenNot": [
+    "A resume — use ResumeClassic. In-app prose — use the shared/ui typography primitives."
+  ],
+  "tests": [
+    {
+      "name": "CoverLetterClassic — a business letter from the content alone, in reading order",
+      "src": "// CoverLetterClassic (epic-job-applications, slice 2) — a business letter from the content alone, in\n// reading order, on the paper asked for.\nimport { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { CoverLetterClassic } from \"@/features/jobs/CoverLetterClassic\";\nimport { DEMO_COVER_LETTER, type CoverLetterDoc } from \"@/features/jobs/lib/documents\";\n\ndescribe(\"CoverLetterClassic\", () => {\n  it(\"renders the demo letter when given no content, in letter order\", () => {\n    const { container } = render(<CoverLetterClassic />);\n    const text = container.textContent ?? \"\";\n    const order = [\n      DEMO_COVER_LETTER.header.name,\n      DEMO_COVER_LETTER.date!,\n      DEMO_COVER_LETTER.recipient!.company!,\n      DEMO_COVER_LETTER.greeting,\n      ...DEMO_COVER_LETTER.paragraphs.map((p) => p.text),\n      DEMO_COVER_LETTER.closing,\n    ];\n    let at = -1;\n    for (const part of order) {\n      const next = text.indexOf(part);\n      expect(next, `missing or out of order: ${part}`).toBeGreaterThan(at);\n      at = next;\n    }\n  });\n\n  it(\"signs with the header name unless a signature is given\", () => {\n    const { rerender } = render(<CoverLetterClassic />);\n    expect(screen.getAllByText(DEMO_COVER_LETTER.header.name).length).toBe(2);\n    rerender(<CoverLetterClassic doc={{ ...DEMO_COVER_LETTER, signature: \"A. Rivera\" }} />);\n    expect(screen.getByText(\"A. Rivera\")).toBeTruthy();\n  });\n\n  it(\"omits a recipient block it has nothing for, and carries each paragraph's sources\", () => {\n    const doc: CoverLetterDoc = {\n      schema: \"cover-letter@1\",\n      header: { name: \"Sam Park\" },\n      greeting: \"Hello,\",\n      paragraphs: [{ text: \"I built the thing you need.\", sources: [\"acme-ship\"] }],\n      closing: \"Best,\",\n    };\n    const { container } = render(<CoverLetterClassic doc={doc} page=\"a4\" />);\n    expect(container.querySelector(\"address\")).toBeNull();\n    expect(container.querySelector(\".para\")?.getAttribute(\"data-sources\")).toBe(\"acme-ship\");\n    expect(container.querySelector(\"style\")?.textContent).toContain(\"size: A4\");\n  });\n});\n"
+    }
+  ]
+}
