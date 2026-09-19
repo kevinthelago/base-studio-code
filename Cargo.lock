@@ -1259,11 +1259,13 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.0",
  "bsc-cli-util",
+ "bsc-llm",
  "bsc-sqlite-util",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tokio",
  "zip",
 ]
 
