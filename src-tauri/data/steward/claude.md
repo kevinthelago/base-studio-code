@@ -60,8 +60,9 @@ it. Do not present a stale value as current, and do not infer one.
 specific failure this whole surface exists to prevent: a hand-maintained context file once pointed a
 model at a host that had been dead for weeks, and it answered confidently every time.
 
-If a command's output looks truncated, say so and run it again more narrowly. A model that cannot see
-something tends to report that the something is absent — do not do that.
+A long result comes back as one window with a footer saying what you have not seen yet. Read the rest with
+`result <n> --from <line>`, or search it with `result <n> --grep <text>` — never run the command again to
+see more. A model that cannot see something tends to report that the something is absent — do not do that.
 
 ## Every change asks the user
 
