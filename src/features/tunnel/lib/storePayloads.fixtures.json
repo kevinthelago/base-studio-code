@@ -1,5 +1,5 @@
 {
-  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 13 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions.",
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 14 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain.",
   "domains": {
     "glance": {
       "projects": [
@@ -677,6 +677,351 @@
                   }
                 ],
                 "edges": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    "algorithmsGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "typescript",
+            "label": "TypeScript",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "feature:glance",
+                    "label": "glance",
+                    "kind": "feature",
+                    "meta": "1 impl",
+                    "x": 48,
+                    "y": 48,
+                    "w": 220,
+                    "h": 64,
+                    "drillTo": "feature:glance",
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "feature"
+                      },
+                      {
+                        "k": "impls",
+                        "v": "1"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              },
+              "feature:glance": {
+                "label": "glance",
+                "nodes": [
+                  {
+                    "id": "slugify.ts",
+                    "label": "slugify",
+                    "kind": "impl",
+                    "meta": "algorithm",
+                    "x": 48,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "algorithm"
+                      },
+                      {
+                        "k": "src",
+                        "v": "src/features/glance/lib/slugify.ts"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "0"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "0"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              }
+            }
+          },
+          {
+            "id": "rust",
+            "label": "Rust",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "crate:bsc-fin",
+                    "label": "bsc-fin",
+                    "kind": "crate",
+                    "meta": "2 impls",
+                    "x": 331,
+                    "y": 48,
+                    "w": 220,
+                    "h": 64,
+                    "drillTo": "crate:bsc-fin",
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "crate"
+                      },
+                      {
+                        "k": "impls",
+                        "v": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "crate:bsc-util",
+                    "label": "bsc-util",
+                    "kind": "crate",
+                    "meta": "1 impl",
+                    "x": 48,
+                    "y": 193,
+                    "w": 220,
+                    "h": 64,
+                    "drillTo": "crate:bsc-util",
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "crate"
+                      },
+                      {
+                        "k": "impls",
+                        "v": "1"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "crate:bsc-fin->crate:bsc-util:depends",
+                    "from": "crate:bsc-fin",
+                    "to": "crate:bsc-util",
+                    "kind": "depends"
+                  },
+                  {
+                    "id": "crate:bsc-fin->crate:bsc-util:composes",
+                    "from": "crate:bsc-fin",
+                    "to": "crate:bsc-util",
+                    "kind": "composes"
+                  }
+                ]
+              },
+              "crate:bsc-fin": {
+                "label": "bsc-fin",
+                "nodes": [
+                  {
+                    "id": "parse.rs",
+                    "label": "parse",
+                    "kind": "impl",
+                    "meta": "algorithm",
+                    "x": 255,
+                    "y": 222,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "algorithm"
+                      },
+                      {
+                        "k": "domain",
+                        "v": "finance"
+                      },
+                      {
+                        "k": "summary",
+                        "v": "Reads a manifest"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/bsc-fin/src/parse.rs"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "2"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "0"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tokenize.rs",
+                    "label": "tokenize",
+                    "kind": "impl",
+                    "meta": "algorithm",
+                    "x": 48,
+                    "y": 266,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "algorithm"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/bsc-fin/src/tokenize.rs"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "0"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "hash.rs",
+                    "label": "hash",
+                    "kind": "ghost",
+                    "meta": "bsc-util",
+                    "x": 134,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "drillTo": "crate:bsc-util",
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "primitive"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/bsc-util/src/hash.rs"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "0"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "stub:depends:crate:bsc-util",
+                    "label": "bsc-util",
+                    "kind": "crate",
+                    "meta": "1 record depend on it",
+                    "x": 48,
+                    "y": 412,
+                    "w": 220,
+                    "h": 64,
+                    "drillTo": "crate:bsc-util",
+                    "facts": [
+                      {
+                        "k": "depends",
+                        "v": "1 record here use this crate"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "parse.rs->tokenize.rs",
+                    "from": "parse.rs",
+                    "to": "tokenize.rs",
+                    "kind": "composes"
+                  },
+                  {
+                    "id": "parse.rs->hash.rs",
+                    "from": "parse.rs",
+                    "to": "hash.rs",
+                    "kind": "composes"
+                  }
+                ]
+              },
+              "crate:bsc-util": {
+                "label": "bsc-util",
+                "nodes": [
+                  {
+                    "id": "hash.rs",
+                    "label": "hash",
+                    "kind": "impl",
+                    "meta": "primitive",
+                    "x": 233,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "primitive"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/bsc-util/src/hash.rs"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "0"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "parse.rs",
+                    "label": "parse",
+                    "kind": "ghost",
+                    "meta": "bsc-fin",
+                    "x": 48,
+                    "y": 143,
+                    "w": 172,
+                    "h": 58,
+                    "drillTo": "crate:bsc-fin",
+                    "facts": [
+                      {
+                        "k": "role",
+                        "v": "algorithm"
+                      },
+                      {
+                        "k": "domain",
+                        "v": "finance"
+                      },
+                      {
+                        "k": "summary",
+                        "v": "Reads a manifest"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/bsc-fin/src/parse.rs"
+                      },
+                      {
+                        "k": "composes",
+                        "v": "2"
+                      },
+                      {
+                        "k": "used by",
+                        "v": "0"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "parse.rs->hash.rs",
+                    "from": "parse.rs",
+                    "to": "hash.rs",
+                    "kind": "composes"
+                  }
+                ]
               }
             }
           }
