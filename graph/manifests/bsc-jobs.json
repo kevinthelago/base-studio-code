@@ -138,6 +138,12 @@
           "key": "tokio",
           "lead": [],
           "value": "{ version = \"1\", features = [\"rt\"] }"
+        },
+        {
+          "cont": [],
+          "key": "reqwest",
+          "lead": [],
+          "value": "{ version = \"0.12\", default-features = false, features = [\"blocking\", \"rustls-tls\"] }"
         }
       ],
       "lead": [

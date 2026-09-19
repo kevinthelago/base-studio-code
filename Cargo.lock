@@ -1261,6 +1261,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-llm",
  "bsc-sqlite-util",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",
