@@ -62,6 +62,19 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].folder).toBeUndefined();
   });
 
+  it("a `document` skeleton keeps its role and `documentKind` through loadComponents — absent stays absent", async () => {
+    // epic-job-applications. An unknown role falls back to `primitive` and an unlisted field is dropped on every
+    // hydrate, so without both entries a resume skeleton would load as a nameless primitive and the Jobs
+    // screen's picker — which lists skeletons BY documentKind — would find nothing.
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      { id: "resumeclassic", name: "ResumeClassic", kitId: "base-studio-code", role: "document", documentKind: "resume" },
+      { id: "btn", name: "Button", kitId: "base-studio-code", role: "primitive" },
+    ]));
+    const comps = await loadComponents();
+    expect([comps?.[0].role, comps?.[0].documentKind]).toEqual(["document", "resume"]);
+    expect(comps?.[1].documentKind).toBeUndefined();
+  });
+
   it("a tombstone's `supersededBy` rides the projection — a dropped field would be silently erased on write-back", async () => {
     // #a-tombstone-can-name-what-superseded-it. `projectComponent` is an ALLOWLIST, and this projection is
     // ALSO what the app pushes back with `--replace` — so a stored field the projection does not model is

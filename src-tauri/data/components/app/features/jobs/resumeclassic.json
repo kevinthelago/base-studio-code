@@ -1,0 +1,47 @@
+{
+  "id": "resumeclassic",
+  "name": "ResumeClassic",
+  "kitId": "base-studio-code",
+  "role": "document",
+  "documentKind": "resume",
+  "provides": "@/features/jobs/ResumeClassic",
+  "src": "src/features/jobs/ResumeClassic.tsx",
+  "folder": "features/jobs",
+  "feature": "jobs",
+  "srcText": "// ResumeClassic (epic-job-applications, slice 2) — a resume SKELETON: one professional single-column page\n// laid out from a `ResumeDoc`. It holds no personal data of its own; given no `doc` it shows the fictional\n// DEMO_RESUME, which is what the components graph previews.\n//\n// Built for the two readers a resume has. A PERSON: restrained type, one accent (`--doc-accent`, navy\n// unless a theme sets it), white paper. An APPLICANT-TRACKING SYSTEM: real text in reading order, one\n// column, standard section headings, semantic elements (h1/h2/ul/li) — nothing drawn, nothing positioned\n// out of flow — so text extracted from the PDF reads top to bottom as the page does.\n//\n// `page` picks the paper (US Letter or A4). The sheet is that size on screen and prints on that paper with\n// the margin on `@page`, so a résumé that runs to two pages keeps its margin on both.\nimport type { CSSProperties } from \"react\";\nimport { DEMO_RESUME, formatPeriod, paperCss, type PaperSize, type ResumeDoc, type ResumeItem, type ResumeSection } from \"@/features/jobs/lib/documents\";\n\nconst SHEET = \"bsc-doc-resume-classic\";\nconst ACCENT = \"var(--doc-accent, #1f3a5f)\";\nconst MUTED = \"#4a4a4a\";\n\nconst CSS = `\n.${SHEET} { font-family: \"Inter\", \"Helvetica Neue\", Arial, sans-serif; font-size: 10.5pt; line-height: 1.38; }\n.${SHEET} h1, .${SHEET} h2, .${SHEET} h3, .${SHEET} p, .${SHEET} ul { margin: 0; }\n.${SHEET} ul { padding-left: 1.1em; }\n.${SHEET} li { margin: 0.12em 0; }\n.${SHEET} a { color: inherit; text-decoration: none; }\n.${SHEET} .item { break-inside: avoid; }\n.${SHEET} h2 { break-after: avoid; }\n`;\n\nconst s = {\n  header: { borderBottom: `1.5pt solid ${ACCENT}`, paddingBottom: \"8pt\", marginBottom: \"10pt\" },\n  name: { fontSize: \"22pt\", fontWeight: 700, letterSpacing: \"0.01em\", color: \"#111\" },\n  headline: { fontSize: \"11pt\", color: MUTED, marginTop: \"2pt\" },\n  contact: { fontSize: \"9.5pt\", color: MUTED, marginTop: \"4pt\" },\n  summary: { marginBottom: \"10pt\" },\n  section: { marginTop: \"10pt\" },\n  h2: { fontSize: \"10.5pt\", fontWeight: 700, textTransform: \"uppercase\", letterSpacing: \"0.08em\", color: ACCENT, borderBottom: \"0.5pt solid #c8c8c8\", paddingBottom: \"2pt\", marginBottom: \"5pt\" },\n  item: { marginBottom: \"7pt\" },\n  itemHead: { display: \"flex\", justifyContent: \"space-between\", gap: \"12pt\", alignItems: \"baseline\" },\n  itemTitle: { fontSize: \"10.5pt\", fontWeight: 600, color: \"#111\" },\n  period: { fontSize: \"9.5pt\", color: MUTED, whiteSpace: \"nowrap\" },\n  org: { fontSize: \"10pt\", color: MUTED },\n  skill: { margin: \"1.5pt 0\" },\n} satisfies Record<string, CSSProperties>;\n\nfunction contactParts(doc: ResumeDoc): string[] {\n  const h = doc.header;\n  return [h.location, h.email, h.phone, ...(h.links ?? [])].filter((x): x is string => !!x && !!x.trim());\n}\n\nfunction Item({ item }: { item: ResumeItem }) {\n  const period = formatPeriod(item.start, item.end);\n  const where = [item.org, item.location].filter(Boolean).join(\" · \");\n  return (\n    <article className=\"item\" style={s.item} data-sources={item.sources?.join(\" \")}>\n      <header style={s.itemHead}>\n        <h3 style={s.itemTitle}>{item.title}</h3>\n        {period && <p style={s.period}>{period}</p>}\n      </header>\n      {where && <p style={s.org}>{where}</p>}\n      {item.bullets && item.bullets.length > 0 && (\n        <ul>\n          {item.bullets.map((b, i) => (\n            <li key={i} data-sources={b.sources?.join(\" \")}>{b.text}</li>\n          ))}\n        </ul>\n      )}\n      {item.tags && item.tags.length > 0 && <p style={s.org}>{item.tags.join(\", \")}</p>}\n    </article>\n  );\n}\n\nfunction Section({ section }: { section: ResumeSection }) {\n  if (section.items.length === 0) return null;\n  return (\n    <section style={s.section} aria-label={section.title}>\n      <h2 style={s.h2}>{section.title}</h2>\n      {section.kind === \"skills\"\n        ? section.items.map((it, i) => (\n            <p key={i} style={s.skill} data-sources={it.sources?.join(\" \")}>\n              <strong>{it.title}:</strong> {(it.tags ?? []).join(\", \")}\n            </p>\n          ))\n        : section.items.map((it, i) => <Item key={i} item={it} />)}\n    </section>\n  );\n}\n\nexport function ResumeClassic({ doc = DEMO_RESUME, page = \"letter\" }: { doc?: ResumeDoc; page?: PaperSize }) {\n  return (\n    <article className={SHEET} data-paper={page} data-document=\"resume\">\n      <style>{`${paperCss(page, SHEET)}\\n${CSS}`}</style>\n      <header style={s.header}>\n        <h1 style={s.name}>{doc.header.name}</h1>\n        {doc.header.headline && <p style={s.headline}>{doc.header.headline}</p>}\n        {contactParts(doc).length > 0 && <p style={s.contact}>{contactParts(doc).join(\"  ·  \")}</p>}\n      </header>\n      {doc.summary && (\n        <p style={s.summary} data-sources={doc.summary.sources?.join(\" \")}>{doc.summary.text}</p>\n      )}\n      {doc.sections.map((sec, i) => <Section key={i} section={sec} />)}\n    </article>\n  );\n}\n\nexport default ResumeClassic;\n",
+  "composes": [],
+  "props": [
+    {
+      "name": "doc",
+      "type": "ResumeDoc",
+      "req": false,
+      "desc": "The tailored content for one job, from @/features/jobs/lib/documents. Absent: the fictional DEMO_RESUME."
+    },
+    {
+      "name": "page",
+      "type": "\"letter\" | \"a4\"",
+      "req": false,
+      "desc": "The paper: US Letter (default) or A4 — sizes the sheet on screen and the @page for print."
+    }
+  ],
+  "variants": [
+    "default"
+  ],
+  "tags": [
+    "document",
+    "resume",
+    "print"
+  ],
+  "whenUse": [
+    "A job application needs its resume laid out as one professional single-column page — real text in reading order, standard headings, so both a person and an applicant-tracking system read it."
+  ],
+  "whenNot": [
+    "A cover letter — use CoverLetterClassic. Anything shown inside the app chrome rather than printed or sent — use the shared/ui kit."
+  ],
+  "tests": [
+    {
+      "name": "ResumeClassic — every fact reaches the page as real text, in reading order",
+      "src": "// ResumeClassic (epic-job-applications, slice 2) — every fact reaches the page as real text, in reading\n// order, and the paper is the one asked for.\nimport { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { ResumeClassic } from \"@/features/jobs/ResumeClassic\";\nimport { DEMO_RESUME, type ResumeDoc } from \"@/features/jobs/lib/documents\";\n\ndescribe(\"ResumeClassic\", () => {\n  it(\"renders the demo resume when given no content\", () => {\n    render(<ResumeClassic />);\n    expect(screen.getByRole(\"heading\", { level: 1, name: DEMO_RESUME.header.name })).toBeTruthy();\n    for (const sec of DEMO_RESUME.sections) expect(screen.getByRole(\"heading\", { level: 2, name: sec.title })).toBeTruthy();\n  });\n\n  it(\"prints every bullet as text, in the order the content gives it\", () => {\n    const { container } = render(<ResumeClassic />);\n    const text = container.textContent ?? \"\";\n    const bullets = DEMO_RESUME.sections.flatMap((s) => s.items.flatMap((i) => (i.bullets ?? []).map((b) => b.text)));\n    let at = -1;\n    for (const b of bullets) {\n      const next = text.indexOf(b);\n      expect(next, `missing or out of order: ${b}`).toBeGreaterThan(at);\n      at = next;\n    }\n  });\n\n  it(\"renders only the content it is given — no demo data leaks into a real document\", () => {\n    const doc: ResumeDoc = {\n      schema: \"resume@1\",\n      header: { name: \"Sam Park\" },\n      sections: [{ kind: \"experience\", title: \"Experience\", items: [{ title: \"Engineer\", org: \"Acme\", start: \"2020-01\", end: \"present\", bullets: [{ text: \"Shipped it.\", sources: [\"acme-ship\"] }] }] }],\n    };\n    const { container } = render(<ResumeClassic doc={doc} />);\n    const text = container.textContent ?? \"\";\n    expect(text).toContain(\"Jan 2020 – Present\");\n    expect(text).not.toContain(DEMO_RESUME.header.name);\n    expect(container.querySelector(\"li\")?.getAttribute(\"data-sources\")).toBe(\"acme-ship\");\n  });\n\n  it(\"sizes the sheet and the print page for the paper asked\", () => {\n    const { container, rerender } = render(<ResumeClassic />);\n    expect(container.querySelector(\"[data-paper]\")?.getAttribute(\"data-paper\")).toBe(\"letter\");\n    expect(container.querySelector(\"style\")?.textContent).toContain(\"size: letter\");\n    rerender(<ResumeClassic page=\"a4\" />);\n    expect(container.querySelector(\"style\")?.textContent).toContain(\"size: A4\");\n  });\n\n  it(\"drops an empty section rather than printing a bare heading\", () => {\n    const doc: ResumeDoc = { ...DEMO_RESUME, sections: [{ kind: \"projects\", title: \"Projects\", items: [] }] };\n    render(<ResumeClassic doc={doc} />);\n    expect(screen.queryByRole(\"heading\", { level: 2, name: \"Projects\" })).toBeNull();\n  });\n});\n"
+    }
+  ]
+}

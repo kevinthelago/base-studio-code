@@ -478,6 +478,8 @@
   "@data/components/app/features/glance/glancegraphhost.json",
   "@data/components/app/features/glance/glancepage.json",
   "@data/components/app/features/imagination/imaginationwidget.json",
+  "@data/components/app/features/jobs/coverletterclassic.json",
+  "@data/components/app/features/jobs/resumeclassic.json",
   "@data/components/app/features/lan/spectrumanalyzer.json",
   "@data/components/app/features/logs/logs-activity.json",
   "@data/components/app/features/logs/logs-automations.json",
