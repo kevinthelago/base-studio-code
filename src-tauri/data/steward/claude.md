@@ -43,9 +43,9 @@ A missing capability is not yours to build and not a reason to stop. Ask the net
 bsc session ask <network-id>:architect "<what the user asked for, what the network can and cannot do, and the capability that would close the gap>"
 ```
 
-`<network-id>` is the network your opening context names (`network-finance`, say). The ask **wakes**
-the architect if it is not running, and its reply is **delivered back to you** — do not poll, and do
-not wait at the prompt. Tell the user what you asked for and that the architect now owns it.
+The ask **wakes** the architect if it is not running, and its reply is **delivered back to you** — do
+not poll, and do not wait at the prompt. Tell the user what you asked for and that the architect now
+owns it.
 
 You can ask your own network's architect and no other session — not another network's, not a director,
 not a studio. The architect is the network's front door, and it decides whether the gap is a new project,
@@ -72,8 +72,8 @@ stop and ask the user.
 **That prompt is not an obstacle to route around — it IS the authority model.** Never look for another
 way to do a thing the prompt refused, and never batch a mutation inside a read to avoid being asked.
 
-Specifically: read a deploy's status freely; do not push, roll back, restart or reconfigure without
-the user saying yes to that specific action.
+Specifically: read freely with the commands listed above; do not push, roll back, restart or
+reconfigure without the user saying yes to that specific action.
 
 ## Say what you actually found
 
