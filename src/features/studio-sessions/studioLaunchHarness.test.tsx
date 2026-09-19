@@ -79,7 +79,7 @@ const launchOf = (paneId: string) => {
 
 describe("the init command a studio launches with", () => {
   it("names the harness, not claude", () => {
-    expect(studioInitCmd("bsc-agent").startsWith("bsc-agent --continue")).toBe(true);
+    expect(studioInitCmd("bsc-agent").startsWith("bsc-agent")).toBe(true);
     // No stray `claude` anywhere in the line — the fallback arm has to be the harness too, or a studio with
     // nothing to resume starts the wrong program on its second breath.
     expect(studioInitCmd("bsc-agent")).not.toContain("claude");
@@ -88,9 +88,9 @@ describe("the init command a studio launches with", () => {
   it("leaves a bsc-agent session's STDERR on the terminal — it is the session's whole interface", () => {
     // `a-bsc-agent-studio-session-shows-its-own-prompt`: bsc-agent prints its banner, prompt and status to
     // stderr, so the resume log redirect (#3374's diagnostic, right for Claude Code) filed them into
-    // studio-resume.log and the pane showed a bare cursor over a live session. `--continue` with nothing to
-    // load starts fresh, so there is no fallback arm to keep either.
-    expect(studioInitCmd("bsc-agent")).toBe("bsc-agent --continue");
+    // studio-resume.log and the pane showed a bare cursor over a live session. And a local session never
+    // resumes (`a-local-session-starts-clean-from-memory-not-history`), so the line is the bare harness.
+    expect(studioInitCmd("bsc-agent")).toBe("bsc-agent");
     expect(studioInitCmd("bsc-agent")).not.toContain("2>");
   });
 
