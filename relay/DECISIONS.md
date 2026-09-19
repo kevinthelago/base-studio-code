@@ -1,5 +1,27 @@
 # relay/DECISIONS.md
 
+## relay-evicts-the-silent-guest — a full room evicts rather than refuses
+
+**Date:** 2026-09-19
+
+**The bug.** A backgrounded iPhone, or one that moves between Wi-Fi and cellular, drops its
+socket without a close frame. The room kept counting it: with the desktop streaming into the
+room the idle alarm never fired, so the dead socket held its slot until the 60-minute TTL.
+Three such drops and every reconnect got `409 room_full` — the phone locked out by its own
+ghosts, for up to an hour.
+
+**The fix.** Admission evicts instead of refusing a GUEST: when the room is full, the guest
+with the oldest last sign of life (join, last frame, or last heartbeat — `lastSeenOf`) is
+closed with `4001` and the newcomer takes its place. Sockets already closing no longer count.
+A `ping`/`pong` heartbeat is answered by the runtime's auto-response, so it costs no wake and
+leaves the timestamp admission reads. The host is never evicted by a guest, and a second
+host is still `host_taken`: the desktop serves one phone per room, so the realistic newcomer
+is the same phone coming back, but taking the host seat is a different trust question.
+
+**Why least-recently-seen and not newest-wins.** Newest-wins would make two live devices
+push each other out forever, each auto-reconnecting. Least-recently-seen evicts only once
+the room is full, and a live guest that heartbeats is never the oldest.
+
 ## REL-relay-rl (#473) — per-IP rate-limiting
 
 **Date:** 2026-06-11

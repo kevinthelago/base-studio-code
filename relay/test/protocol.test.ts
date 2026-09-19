@@ -13,6 +13,8 @@ import {
   MAX_GUESTS,
   IDLE_TIMEOUT_MS,
   ROOM_TTL_MS,
+  guestsToEvict,
+  lastSeenOf,
 } from "../src/protocol";
 
 describe("/health probe payload (#930)", () => {
@@ -120,5 +122,36 @@ describe("parseConnect", () => {
   });
   it("rejects a malformed room id", () => {
     expect(at("?room=short")).toEqual({ ok: false, error: "bad_room" });
+  });
+});
+
+describe("guestsToEvict — a full room admits a new guest by pushing out the silent one (relay-evicts-the-silent-guest)", () => {
+  it("evicts nobody while there is a free slot", () => {
+    expect(guestsToEvict([])).toEqual([]);
+    expect(guestsToEvict([{ lastSeen: 1 }, { lastSeen: 2 }])).toEqual([]);
+  });
+
+  it("evicts the least recently seen guest when the room is full — the phone's own dead sockets", () => {
+    // Three drops from a backgrounded phone, none of which closed: the next reconnect used to be room_full.
+    const guests = [{ lastSeen: 3_000 }, { lastSeen: 1_000 }, { lastSeen: 2_000 }];
+    expect(guests.length).toBe(MAX_GUESTS);
+    expect(guestsToEvict(guests)).toEqual([1]);
+  });
+
+  it("keeps a live guest whose heartbeat is recent, even though it joined first", () => {
+    const live = { lastSeen: lastSeenOf(0, undefined, 9_000) };
+    const dead = [{ lastSeen: lastSeenOf(5_000) }, { lastSeen: lastSeenOf(6_000, 6_500) }];
+    expect(guestsToEvict([live, ...dead])).toEqual([1]);
+  });
+
+  it("evicts enough to leave exactly one free slot if the room is somehow over-full, oldest first, stable on ties", () => {
+    expect(guestsToEvict([{ lastSeen: 5 }, { lastSeen: 5 }, { lastSeen: 1 }, { lastSeen: 5 }])).toEqual([2, 0]);
+  });
+
+  it("a last sign of life is the latest of join, frame and heartbeat", () => {
+    expect(lastSeenOf(10)).toBe(10);
+    expect(lastSeenOf(10, 30, 20)).toBe(30);
+    expect(lastSeenOf(10, undefined, null)).toBe(10);
+    expect(lastSeenOf(10, 5, 40)).toBe(40);
   });
 });

@@ -77,6 +77,52 @@ export function roleFor(counts: RoomCounts, requested: string): RoleDecision {
 }
 
 /**
+ * The text a peer sends to prove it is alive, and the relay's answer. The relay answers it itself —
+ * the Hibernation API's auto-response — so a heartbeat neither wakes the room nor reaches the other
+ * peer, and the runtime records WHEN each socket last pinged. That timestamp is how the relay tells a
+ * live-but-quiet guest from a dead one. Plain text never collides with the tunnel, whose every frame
+ * is binary Noise ciphertext, and a peer that never pings loses nothing.
+ */
+export const HEARTBEAT_PING = "ping";
+export const HEARTBEAT_PONG = "pong";
+
+/** The close code for a guest pushed out to make room for a new one (4000–4999: application-defined). */
+export const EVICTED_CLOSE_CODE = 4001;
+export const EVICTED_REASON = "evicted: a newer guest joined";
+
+/** A guest socket as the admission decision sees it: when it last showed a sign of life. */
+export interface GuestLiveness {
+  /** ms epoch — the latest of: when it joined, its last frame, its last heartbeat. */
+  lastSeen: number;
+}
+
+/**
+ * Which guests to push out so ONE more can join (relay-evicts-the-silent-guest): none while there is
+ * a free slot, otherwise the least recently seen — returned as indices into `guests`.
+ *
+ * WHY EVICT rather than refuse. A phone that is backgrounded, or that moves between Wi-Fi and cellular,
+ * vanishes without a close frame, and its socket keeps its slot until the edge notices — which, with a
+ * host streaming into the room, can be the whole {@link ROOM_TTL_MS}. Three such drops and every
+ * reconnect was refused `room_full` for up to an hour: the phone locked out by its own ghosts. The
+ * guest that has been silent longest is, overwhelmingly, one of those; a live guest pings
+ * ({@link HEARTBEAT_PING}) and stays fresh. The host is never evicted by a guest.
+ */
+export function guestsToEvict(guests: readonly GuestLiveness[], max: number = MAX_GUESTS): number[] {
+  const excess = guests.length - max + 1;
+  if (excess <= 0) return [];
+  return guests
+    .map((g, i) => ({ i, lastSeen: g.lastSeen }))
+    .sort((a, b) => a.lastSeen - b.lastSeen || a.i - b.i)
+    .slice(0, excess)
+    .map((g) => g.i);
+}
+
+/** A socket's last sign of life: the latest of its join, its last frame and its last heartbeat. */
+export function lastSeenOf(joinedAt: number, lastFrameAt?: number, lastPingAt?: number | null): number {
+  return Math.max(joinedAt, lastFrameAt ?? 0, lastPingAt ?? 0);
+}
+
+/**
  * When the room's next teardown alarm should fire, given when it was created and now.
  * It's the earlier of two deadlines: the **idle** cutoff (reset on every frame, so a
  * silent room dies after {@link IDLE_TIMEOUT_MS}) and the **absolute** lifetime cap

@@ -4,7 +4,10 @@
 // from memory and costs ~nothing. It never inspects payloads (Noise ciphertext).
 
 import { DurableObject } from "cloudflare:workers";
-import { nextAlarmAt, roleFor, roomLifetimeExceeded, tooLarge, type Role } from "./protocol";
+import {
+  EVICTED_CLOSE_CODE, EVICTED_REASON, HEARTBEAT_PING, HEARTBEAT_PONG,
+  guestsToEvict, lastSeenOf, nextAlarmAt, roleFor, roomLifetimeExceeded, tooLarge, type Role,
+} from "./protocol";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>;
@@ -16,9 +19,28 @@ export interface Env {
 interface SocketMeta {
   role: Role;
   joinedAt: number;
+  /** A guest's last frame (ms epoch). Tracked for guests only — they are who admission evicts. */
+  lastFrameAt?: number;
 }
 
+/** Only sockets that can still carry traffic hold a slot — one already closing has given its up. */
+const isOpen = (ws: WebSocket): boolean => ws.readyState === 1; // OPEN
+
 export class RelayRoom extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // The heartbeat is answered by the RUNTIME, not by this object: it never wakes a hibernated room,
+    // never reaches the other peer, and leaves a per-socket timestamp admission reads below.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(HEARTBEAT_PING, HEARTBEAT_PONG));
+  }
+
+  /** When a guest last showed a sign of life: its join, its last frame, its last heartbeat. */
+  private lastSeen(ws: WebSocket): number {
+    const meta = ws.deserializeAttachment() as SocketMeta | null;
+    const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null;
+    return lastSeenOf(meta?.joinedAt ?? 0, meta?.lastFrameAt, pinged);
+  }
+
   /** When this room first accepted a peer — the anchor for the absolute TTL. Cached in
    *  memory (the DO stays resident while sockets are live) and backed by storage so it
    *  survives hibernation; lazily (re)loaded by {@link ensureCreatedAt}. */
@@ -49,10 +71,21 @@ export class RelayRoom extends DurableObject<Env> {
       return new Response("expected websocket upgrade", { status: 426 });
     }
     const requested = new URL(req.url).searchParams.get("role") ?? "guest";
+    const guests = this.ctx.getWebSockets("guest").filter(isOpen);
+    // A full room admits a new guest by pushing out the one silent longest — in practice a phone's own
+    // socket that died in the background without closing (relay-evicts-the-silent-guest).
+    const evict = requested === "guest" ? guestsToEvict(guests.map((ws) => ({ lastSeen: this.lastSeen(ws) }))) : [];
+    for (const i of evict) {
+      try {
+        guests[i].close(EVICTED_CLOSE_CODE, EVICTED_REASON);
+      } catch {
+        // Already gone — the slot is free either way.
+      }
+    }
     const decision = roleFor(
       {
-        hostCount: this.ctx.getWebSockets("host").length,
-        guestCount: this.ctx.getWebSockets("guest").length,
+        hostCount: this.ctx.getWebSockets("host").filter(isOpen).length,
+        guestCount: guests.length - evict.length,
       },
       requested,
     );
@@ -80,6 +113,8 @@ export class RelayRoom extends DurableObject<Env> {
       ws.close(1009, "frame too large");
       return;
     }
+    const meta = ws.deserializeAttachment() as SocketMeta | null;
+    if (meta?.role === "guest") ws.serializeAttachment({ ...meta, lastFrameAt: Date.now() } satisfies SocketMeta);
     for (const peer of this.ctx.getWebSockets()) {
       if (peer === ws) continue;
       try {

@@ -56,8 +56,13 @@ The desktop connects, allocates a room, and shows the pairing QR.
 ## Abuse controls
 
 - **Room ids** are high-entropy, URL-safe, 16–64 chars (`validateRoomId`) — unguessable.
-- **Capacity**: one host + up to `MAX_GUESTS` guests per room (`roleFor`); extra
-  connections are rejected (`409 host_taken` / `room_full`).
+- **Capacity**: one host + up to `MAX_GUESTS` guests per room (`roleFor`). A second host
+  is rejected (`409 host_taken`). A guest arriving at a full room pushes out the guest
+  seen least recently (`guestsToEvict`, close `4001`) — a phone that dropped in the
+  background leaves a socket that never closed, and refusing would lock it out.
+- **Heartbeat**: a peer may send the text `ping`; the runtime answers `pong` itself
+  (Hibernation auto-response), without waking the room or forwarding it, and records when
+  each socket last pinged — that is how a live-but-quiet guest stays fresh.
 - **Frame size** is capped at `MAX_FRAME_BYTES` (`tooLarge`); oversize frames close the
   socket (`1009`).
 - **Idle timeout**: a room with no traffic for `IDLE_TIMEOUT_MS` is torn down via a
