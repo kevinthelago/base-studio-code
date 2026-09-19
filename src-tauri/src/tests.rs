@@ -1598,6 +1598,9 @@
         // A LAN device's KEEPER has neither an architect nor the global queue on its surface
         // (`a-lan-device-has-a-keeper-agent`): it is a read-only watcher, so its lane is the user.
         const KEEPER_LANE: &str = "keeper/claude.md";
+        // The Jobs AGENT likewise (`jobs-agent-docked-session`): its surface is the job search, with no architect
+        // and no global queue on it, so its lane is the user it works for.
+        const JOBS_LANE: &str = "jobs/claude.md";
 
         let mut charters = crate::platform::config::embedded_paths_ending_with("claude.md");
         charters.extend(crate::platform::config::embedded_paths_ending_with("-protocol.md"));
@@ -1623,7 +1626,7 @@
                 "bsc plan request new"
             } else if rel == RUN_SESSION_LANE {
                 "bsc session ask <network-id>:architect"
-            } else if rel == KEEPER_LANE {
+            } else if rel == KEEPER_LANE || rel == JOBS_LANE {
                 "say it to the user"
             } else {
                 "bsc request new"
@@ -1645,6 +1648,12 @@
         assert!(
             keeper.contains("`bsc request new` is not on your surface"),
             "the keeper charter must say the global tooling queue is not its lane:\n{keeper}",
+        );
+
+        let jobs = crate::platform::config::embedded_str(JOBS_LANE);
+        assert!(
+            jobs.contains("`bsc request new` is not on your surface"),
+            "the jobs charter must say the global tooling queue is not its lane:\n{jobs}",
         );
 
         let worker = crate::platform::config::embedded_str(WORKER_ONLY_LANE);

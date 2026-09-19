@@ -729,6 +729,7 @@
   "@data/personas/documentor.json",
   "@data/personas/integrator.json",
   "@data/personas/issuer.json",
+  "@data/personas/jobs.json",
   "@data/personas/juror.json",
   "@data/personas/keeper.json",
   "@data/personas/lexicographer.json",
