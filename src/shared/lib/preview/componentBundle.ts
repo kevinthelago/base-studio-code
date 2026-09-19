@@ -1038,6 +1038,16 @@ ${previewCspMeta()}
   window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: describeError(e.reason) || String(e.reason)${genField} }, "*"));
   // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
   // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
+  // SNAPSHOT (epic-job-applications): the host cannot READ this opaque-origin document, so — like the probe —
+  // the document describes itself on request: \`{ __snapshot: { id, selector } }\` is answered with the
+  // outerHTML of the first match (or null). READ-ONLY. It is how the Jobs screen prints exactly what its
+  // preview is showing: a skeleton carries its print CSS inside the element, so its markup is the page.
+  window.addEventListener("message", (e) => {
+    const q = e.data && e.data.__snapshot; if (!q || typeof q.selector !== "string") return;
+    let html = null;
+    try { const el = document.querySelector(q.selector); html = el ? el.outerHTML : null; } catch (_) { /* a bad selector answers null */ }
+    try { (e.source || parent).postMessage({ __snapshotReply: { id: q.id, html: html } }, "*"); } catch (_) { /* never break the preview */ }
+  });
   window.addEventListener("message", (e) => {
     const t = e.data && e.data.__bsc_theme; if (!t) return;
     if (typeof t.base === "string") document.documentElement.setAttribute("data-theme", t.base);
