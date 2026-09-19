@@ -1595,6 +1595,9 @@
         // (`a-run-session-sees-only-its-network`): its surface is its own network, and the global tooling
         // queue is not on it, so naming `bsc request new` would send it at a command it cannot run.
         const RUN_SESSION_LANE: &str = "steward/claude.md";
+        // A LAN device's KEEPER has neither an architect nor the global queue on its surface
+        // (`a-lan-device-has-a-keeper-agent`): it is a read-only watcher, so its lane is the user.
+        const KEEPER_LANE: &str = "keeper/claude.md";
 
         let mut charters = crate::platform::config::embedded_paths_ending_with("claude.md");
         charters.extend(crate::platform::config::embedded_paths_ending_with("-protocol.md"));
@@ -1620,6 +1623,8 @@
                 "bsc plan request new"
             } else if rel == RUN_SESSION_LANE {
                 "bsc session ask <network-id>:architect"
+            } else if rel == KEEPER_LANE {
+                "say it to the user"
             } else {
                 "bsc request new"
             };
@@ -1634,6 +1639,12 @@
         assert!(
             run.contains("`bsc request new` is not on your surface"),
             "the steward charter must say the global tooling queue is not its lane:\n{run}",
+        );
+
+        let keeper = crate::platform::config::embedded_str(KEEPER_LANE);
+        assert!(
+            keeper.contains("`bsc request new` is not on your surface"),
+            "the keeper charter must say the global tooling queue is not its lane:\n{keeper}",
         );
 
         let worker = crate::platform::config::embedded_str(WORKER_ONLY_LANE);
