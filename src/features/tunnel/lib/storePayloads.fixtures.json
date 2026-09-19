@@ -1,5 +1,5 @@
 {
-  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 15 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain, `glanceGraph` (a DrillGraph with health) by glance-graph-reaches-the-phone.",
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 17 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain, `glanceGraph` (a DrillGraph with health) by glance-graph-reaches-the-phone, `lanGraph` and `memoryGraph` by lan-and-memory-graphs-reach-the-phone.",
   "domains": {
     "glance": {
       "projects": [
@@ -1230,6 +1230,501 @@
                     "kind": "uses-kit"
                   }
                 ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "lanGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "lan",
+            "label": "LAN",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "nas",
+                    "label": "NAS",
+                    "kind": "device",
+                    "meta": "10.99.6.10",
+                    "x": 60,
+                    "y": 80,
+                    "w": 160,
+                    "h": 56,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "device"
+                      },
+                      {
+                        "k": "vlan",
+                        "v": "10"
+                      },
+                      {
+                        "k": "addresses",
+                        "v": "10.99.6.10"
+                      },
+                      {
+                        "k": "names",
+                        "v": "nas.lan"
+                      },
+                      {
+                        "k": "serves",
+                        "v": "22, 445"
+                      },
+                      {
+                        "k": "device",
+                        "v": "nas"
+                      },
+                      {
+                        "k": "last seen",
+                        "v": "1m ago"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "hub",
+                    "label": "Router",
+                    "kind": "hub",
+                    "meta": "gateway",
+                    "x": 360,
+                    "y": 80,
+                    "w": 160,
+                    "h": 56,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "hub"
+                      },
+                      {
+                        "k": "vlan",
+                        "v": "10"
+                      },
+                      {
+                        "k": "addresses",
+                        "v": "10.99.6.1"
+                      },
+                      {
+                        "k": "serves",
+                        "v": "53"
+                      },
+                      {
+                        "k": "chores",
+                        "v": "dns ×42"
+                      },
+                      {
+                        "k": "last seen",
+                        "v": "1m ago"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "ext:github.com",
+                    "label": "github.com",
+                    "kind": "external",
+                    "meta": "3 hosts",
+                    "x": 660,
+                    "y": 80,
+                    "w": 160,
+                    "h": 56,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "external"
+                      },
+                      {
+                        "k": "names",
+                        "v": "github.com"
+                      },
+                      {
+                        "k": "folded",
+                        "v": "3 hosts"
+                      },
+                      {
+                        "k": "last seen",
+                        "v": "1m ago"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "nas-hub-22",
+                    "from": "nas",
+                    "to": "hub",
+                    "kind": "ssh"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "memoryGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "memory",
+            "label": "Memory",
+            "levels": {
+              "group:unattached": {
+                "label": "Unattached",
+                "nodes": [
+                  {
+                    "id": "loose",
+                    "label": "A thought with no topic yet",
+                    "kind": "note",
+                    "meta": "Unclassified",
+                    "x": 60,
+                    "y": 128,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Unclassified"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "loose"
+                      },
+                      {
+                        "k": "id",
+                        "v": "loose"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              },
+              "group:record-notes": {
+                "label": "Record notes",
+                "nodes": [
+                  {
+                    "id": "rec-note",
+                    "label": "promote refuses a dirty root",
+                    "kind": "record",
+                    "meta": "Records",
+                    "x": 60,
+                    "y": 128,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Records"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "rec-note"
+                      },
+                      {
+                        "k": "id",
+                        "v": "rec-note"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              },
+              "voice": {
+                "label": "Voice",
+                "nodes": [
+                  {
+                    "id": "voice",
+                    "label": "Voice",
+                    "kind": "topic",
+                    "meta": "Topics",
+                    "x": 60,
+                    "y": 60,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Topics"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice"
+                      },
+                      {
+                        "k": "text",
+                        "v": "The voice loop: bsc say and bsc ear."
+                      }
+                    ]
+                  },
+                  {
+                    "id": "voice-sec",
+                    "label": "Always on",
+                    "kind": "entry",
+                    "meta": "Sections",
+                    "x": 340,
+                    "y": 128,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Sections"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice-sec"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice-sec"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "voice-lesson",
+                    "label": "Vulkan makes Whisper realtime",
+                    "kind": "lesson",
+                    "meta": "Lessons",
+                    "x": 340,
+                    "y": 196,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Lessons"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice-lesson"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice-lesson"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "voice-ear",
+                    "label": "The ear",
+                    "kind": "topic",
+                    "meta": "Topics",
+                    "x": 340,
+                    "y": 264,
+                    "w": 210,
+                    "h": 52,
+                    "drillTo": "voice\u001fvoice-ear",
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Topics"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice-ear"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice-ear"
+                      },
+                      {
+                        "k": "text",
+                        "v": "Speech in."
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "voice-sec|part-of|voice",
+                    "from": "voice-sec",
+                    "to": "voice",
+                    "kind": "part-of"
+                  },
+                  {
+                    "id": "voice-lesson|about|voice",
+                    "from": "voice-lesson",
+                    "to": "voice",
+                    "kind": "about"
+                  },
+                  {
+                    "id": "voice-ear|narrows|voice",
+                    "from": "voice-ear",
+                    "to": "voice",
+                    "kind": "narrows"
+                  }
+                ]
+              },
+              "voice\u001fvoice-ear": {
+                "label": "The ear",
+                "nodes": [
+                  {
+                    "id": "voice-ear",
+                    "label": "The ear",
+                    "kind": "topic",
+                    "meta": "Topics",
+                    "x": 60,
+                    "y": 60,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Topics"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice-ear"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice-ear"
+                      },
+                      {
+                        "k": "text",
+                        "v": "Speech in."
+                      }
+                    ]
+                  },
+                  {
+                    "id": "ear-note",
+                    "label": "A short rolling window",
+                    "kind": "note",
+                    "meta": "Unclassified",
+                    "x": 340,
+                    "y": 128,
+                    "w": 210,
+                    "h": 52,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Unclassified"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "ear-note"
+                      },
+                      {
+                        "k": "id",
+                        "v": "ear-note"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "ear-note|about|voice-ear",
+                    "from": "ear-note",
+                    "to": "voice-ear",
+                    "kind": "about"
+                  }
+                ]
+              },
+              "": {
+                "nodes": [
+                  {
+                    "id": "voice",
+                    "label": "Voice",
+                    "kind": "topic",
+                    "meta": "Topics",
+                    "x": 60,
+                    "y": 60,
+                    "w": 210,
+                    "h": 52,
+                    "drillTo": "voice",
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "Topics"
+                      },
+                      {
+                        "k": "status",
+                        "v": "open"
+                      },
+                      {
+                        "k": "name",
+                        "v": "voice"
+                      },
+                      {
+                        "k": "id",
+                        "v": "voice"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "group:unattached",
+                    "label": "Unattached",
+                    "kind": "group",
+                    "meta": "1 memories reach no topic",
+                    "x": 60,
+                    "y": 148,
+                    "w": 210,
+                    "h": 52,
+                    "drillTo": "group:unattached",
+                    "facts": [
+                      {
+                        "k": "memories",
+                        "v": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "group:record-notes",
+                    "label": "Record notes",
+                    "kind": "group",
+                    "meta": "1 memories about a code record",
+                    "x": 60,
+                    "y": 216,
+                    "w": 210,
+                    "h": 52,
+                    "drillTo": "group:record-notes",
+                    "facts": [
+                      {
+                        "k": "memories",
+                        "v": "1"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
               }
             }
           }
