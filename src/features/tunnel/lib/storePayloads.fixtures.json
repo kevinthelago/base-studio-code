@@ -1,5 +1,5 @@
 {
-  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 14 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain.",
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 15 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain, `glanceGraph` (a DrillGraph with health) by glance-graph-reaches-the-phone.",
   "domains": {
     "glance": {
       "projects": [
@@ -1020,6 +1020,214 @@
                     "from": "parse.rs",
                     "to": "hash.rs",
                     "kind": "composes"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "glanceGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "network-home",
+            "label": "Home",
+            "levels": {
+              "demo": {
+                "label": "Demo",
+                "nodes": [
+                  {
+                    "id": "director",
+                    "label": "director",
+                    "kind": "session",
+                    "meta": "building",
+                    "x": 322,
+                    "y": 70,
+                    "w": 186,
+                    "h": 66,
+                    "status": "warn",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "warning (from a dependency)"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "building"
+                      },
+                      {
+                        "k": "role",
+                        "v": "infra"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "api",
+                    "label": "api worker",
+                    "kind": "session",
+                    "meta": "waiting on review",
+                    "x": 70,
+                    "y": 70,
+                    "w": 186,
+                    "h": 66,
+                    "status": "warn",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "warning"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "waiting"
+                      },
+                      {
+                        "k": "reason",
+                        "v": "waiting on review"
+                      },
+                      {
+                        "k": "role",
+                        "v": "service"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "e0",
+                    "from": "director",
+                    "to": "api",
+                    "kind": "api"
+                  }
+                ]
+              },
+              "": {
+                "nodes": [
+                  {
+                    "id": "demo",
+                    "label": "Demo",
+                    "kind": "project",
+                    "meta": "build broke",
+                    "x": 322,
+                    "y": 70,
+                    "w": 186,
+                    "h": 66,
+                    "status": "error",
+                    "drillTo": "demo",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "error"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "building"
+                      },
+                      {
+                        "k": "reason",
+                        "v": "build broke"
+                      },
+                      {
+                        "k": "role",
+                        "v": "service"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "sketch",
+                    "label": "Sketch",
+                    "kind": "project",
+                    "meta": "planning",
+                    "x": 322,
+                    "y": 172,
+                    "w": 186,
+                    "h": 66,
+                    "status": "ok",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "healthy"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "planning"
+                      },
+                      {
+                        "k": "role",
+                        "v": "service"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "architect:network-home",
+                    "label": "Home architect",
+                    "kind": "architect",
+                    "meta": "idle",
+                    "x": 70,
+                    "y": 121,
+                    "w": 186,
+                    "h": 66,
+                    "status": "off",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "off"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "idle"
+                      },
+                      {
+                        "k": "role",
+                        "v": "infra"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "kit:react-ui",
+                    "label": "React UI",
+                    "kind": "kit",
+                    "meta": "idle",
+                    "x": 582,
+                    "y": 121,
+                    "w": 186,
+                    "h": 66,
+                    "status": "off",
+                    "facts": [
+                      {
+                        "k": "health",
+                        "v": "off"
+                      },
+                      {
+                        "k": "activity",
+                        "v": "idle"
+                      },
+                      {
+                        "k": "role",
+                        "v": "infra"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "ownedby:demo>network-home",
+                    "from": "demo",
+                    "to": "architect:network-home",
+                    "kind": "owned-by"
+                  },
+                  {
+                    "id": "ownedby:sketch>network-home",
+                    "from": "sketch",
+                    "to": "architect:network-home",
+                    "kind": "owned-by"
+                  },
+                  {
+                    "id": "usekit:demo>react-ui",
+                    "from": "demo",
+                    "to": "kit:react-ui",
+                    "kind": "uses-kit"
                   }
                 ]
               }
