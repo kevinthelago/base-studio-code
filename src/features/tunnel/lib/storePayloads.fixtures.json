@@ -1,5 +1,5 @@
 {
-  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 17 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain, `glanceGraph` (a DrillGraph with health) by glance-graph-reaches-the-phone, `lanGraph` and `memoryGraph` by lan-and-memory-graphs-reach-the-phone.",
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 20 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760, `componentsGraph` (a DrillGraph) by components-graph-reaches-the-phone, `runTree` by run-lists-networks-and-sessions, `algorithmsGraph` (a DrillGraph) by tunnel-project-algorithms-domain, `glanceGraph` (a DrillGraph with health) by glance-graph-reaches-the-phone, `lanGraph` and `memoryGraph` by lan-and-memory-graphs-reach-the-phone, `teamsGraph`, `soundsGraph` and `dataGraph` by teams-data-and-sounds-reach-the-phone.",
   "domains": {
     "glance": {
       "projects": [
@@ -1720,6 +1720,274 @@
                       {
                         "k": "memories",
                         "v": "1"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    "teamsGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "teams",
+            "label": "All teams",
+            "levels": {
+              "o1": {
+                "label": "Pipeline",
+                "nodes": [
+                  {
+                    "id": "pool:p1",
+                    "label": "Backend dev",
+                    "kind": "pool",
+                    "meta": "worker",
+                    "x": 0,
+                    "y": 0,
+                    "w": 206,
+                    "h": 116,
+                    "facts": [
+                      {
+                        "k": "department",
+                        "v": "Engineering"
+                      },
+                      {
+                        "k": "role",
+                        "v": "worker"
+                      },
+                      {
+                        "k": "pool",
+                        "v": "sized by the planner"
+                      },
+                      {
+                        "k": "about",
+                        "v": "APIs"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              },
+              "": {
+                "nodes": [
+                  {
+                    "id": "o1",
+                    "label": "Pipeline",
+                    "kind": "team",
+                    "meta": "1 agent · 1 department",
+                    "x": 60,
+                    "y": 56,
+                    "w": 288,
+                    "h": 160,
+                    "drillTo": "o1",
+                    "facts": [
+                      {
+                        "k": "positions",
+                        "v": "1"
+                      },
+                      {
+                        "k": "agents",
+                        "v": "1"
+                      },
+                      {
+                        "k": "departments",
+                        "v": "Engineering"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    "soundsGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "bsc/signal",
+            "label": "Signal",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "p:sine",
+                    "label": "Sine",
+                    "kind": "primitive",
+                    "meta": "primitive",
+                    "x": 48,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "primitive"
+                      },
+                      {
+                        "k": "id",
+                        "v": "sine"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "v:blip",
+                    "label": "Blip",
+                    "kind": "voice",
+                    "meta": "voice",
+                    "x": 428,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "voice"
+                      },
+                      {
+                        "k": "id",
+                        "v": "blip"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "c:done",
+                    "label": "Done",
+                    "kind": "cue",
+                    "meta": "notify",
+                    "x": 808,
+                    "y": 48,
+                    "w": 172,
+                    "h": 58,
+                    "facts": [
+                      {
+                        "k": "kind",
+                        "v": "cue"
+                      },
+                      {
+                        "k": "category",
+                        "v": "notify"
+                      },
+                      {
+                        "k": "id",
+                        "v": "done"
+                      }
+                    ]
+                  }
+                ],
+                "edges": [
+                  {
+                    "id": "v:blip~p:sine",
+                    "from": "v:blip",
+                    "to": "p:sine"
+                  },
+                  {
+                    "id": "c:done~v:blip",
+                    "from": "c:done",
+                    "to": "v:blip"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "dataGraph": {
+      "graph": {
+        "tabs": [
+          {
+            "id": "typescript",
+            "label": "TypeScript",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "app-store",
+                    "label": "AppStore",
+                    "kind": "entity",
+                    "meta": "single instance",
+                    "x": 40,
+                    "y": 40,
+                    "w": 240,
+                    "h": 84,
+                    "facts": [
+                      {
+                        "k": "id",
+                        "v": "app-store"
+                      },
+                      {
+                        "k": "summary",
+                        "v": "The live Zustand store."
+                      },
+                      {
+                        "k": "shape",
+                        "v": "table"
+                      },
+                      {
+                        "k": "instances",
+                        "v": "single"
+                      },
+                      {
+                        "k": "fields",
+                        "v": "kits, teams"
+                      },
+                      {
+                        "k": "provides",
+                        "v": "@/store"
+                      },
+                      {
+                        "k": "src",
+                        "v": "src/store/index.ts"
+                      }
+                    ]
+                  }
+                ],
+                "edges": []
+              }
+            }
+          },
+          {
+            "id": "rust",
+            "label": "Rust",
+            "levels": {
+              "": {
+                "nodes": [
+                  {
+                    "id": "plan-store",
+                    "label": "PlanStore",
+                    "kind": "entity",
+                    "meta": "table",
+                    "x": 40,
+                    "y": 40,
+                    "w": 240,
+                    "h": 84,
+                    "facts": [
+                      {
+                        "k": "id",
+                        "v": "plan-store"
+                      },
+                      {
+                        "k": "summary",
+                        "v": "The plan.db rows."
+                      },
+                      {
+                        "k": "shape",
+                        "v": "table"
+                      },
+                      {
+                        "k": "instances",
+                        "v": "many"
+                      },
+                      {
+                        "k": "src",
+                        "v": "crates/plandb/src/lib.rs"
                       }
                     ]
                   }
