@@ -91,6 +91,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-cli-util",
+          "lead": [
+            "# Shared CLI scaffold (#1762): the per-command help catalog `bsc research` renders (`CmdDoc`, `handle_help`)."
+          ],
+          "value": "{ path = \"../bsc-cli-util\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-sqlite-util",
           "lead": [
             "# Shared SQLite plumbing (#1863): the `:memory:`-aware open + default-path + JSON-blob row helpers",
