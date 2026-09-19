@@ -126,6 +126,18 @@
           "key": "zip",
           "lead": [],
           "value": "{ version = \"6\", default-features = false }"
+        },
+        {
+          "cont": [],
+          "key": "llm",
+          "lead": [],
+          "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
+        },
+        {
+          "cont": [],
+          "key": "tokio",
+          "lead": [],
+          "value": "{ version = \"1\", features = [\"rt\"] }"
         }
       ],
       "lead": [
