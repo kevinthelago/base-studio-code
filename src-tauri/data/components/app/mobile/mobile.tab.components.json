@@ -1,0 +1,19 @@
+{
+  "id": "mobile.tab.components",
+  "name": "Components",
+  "kitId": "mobile-studio-code",
+  "role": "page",
+  "folder": "mobile",
+  "feature": "core",
+  "description": "The phone's Components tab: the desktop's Components workspace as one DrillGraph (the componentsGraph domain) — every kit, every folder level, laid out by the desktop's own folderGroups/drillLayer. Layout only; the data is bound, never baked in.",
+  "spec": {
+    "type": "DrillGraphPage",
+    "props": {
+      "title": "Components",
+      "hint": "by folder"
+    },
+    "binds": {
+      "graph": "componentsGraph.graph"
+    }
+  }
+}
