@@ -31,6 +31,16 @@ describe("devWatchIgnored", () => {
       .toBe(false);
   });
 
+  it("ignores the PROMOTE GATE — the full checkout `npm run promote` keeps inside the root to gate develop", () => {
+    // Measured 2026-09-19: `npm run tauri -- dev` died with ENOSPC (inotify's 65536 watches) inside
+    // `.promote-gate/.bsc-records/…`. The gate is a git worktree like any `wt-*`, refreshed by every promote
+    // (a dry run included), so it was a second repo plus its emitted records inside the watched root.
+    // The DIRECTORY match is what prunes its `.bsc-records/` (chokidar never descends) — the same rule as the
+    // worktree cases; under `dot: false` the matcher alone does not match the dot-child, by design.
+    expect(ignored(at(".promote-gate"))).toBe(true);
+    expect(ignored(at(".promote-gate/src/app/App.tsx"))).toBe(true);
+  });
+
   it("still ignores the build/output trees the list was written for", () => {
     expect(ignored(at("target/debug/bsc.exe"))).toBe(true);
     expect(ignored(at("src-tauri/data/ui/react-ui-kit.meta.json"))).toBe(true);
