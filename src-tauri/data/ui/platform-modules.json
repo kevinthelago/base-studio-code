@@ -625,6 +625,7 @@
   "@data/components/app/shared/ui/overlay/standardfooter.json",
   "@data/components/app/shared/ui/pages/collectionpage.json",
   "@data/components/app/shared/ui/pages/dashboardpage.json",
+  "@data/components/app/shared/ui/pages/drillgraphpage.json",
   "@data/components/app/shared/ui/pages/networkpage.json",
   "@data/components/app/shared/ui/pages/pageheader.json",
   "@data/components/app/shared/ui/pages/pipelinepage.json",
