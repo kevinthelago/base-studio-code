@@ -56,10 +56,13 @@ The desktop connects, allocates a room, and shows the pairing QR.
 ## Abuse controls
 
 - **Room ids** are high-entropy, URL-safe, 16–64 chars (`validateRoomId`) — unguessable.
-- **Capacity**: one host + up to `MAX_GUESTS` guests per room (`roleFor`). A second host
-  is rejected (`409 host_taken`). A guest arriving at a full room pushes out the guest
-  seen least recently (`guestsToEvict`, close `4001`) — a phone that dropped in the
-  background leaves a socket that never closed, and refusing would lock it out.
+- **Capacity — one phone per room**: one host + `MAX_GUESTS` (1) guest (`roleFor`); the
+  desktop serves exactly one phone per room. A second host is rejected (`409 host_taken`).
+  A guest arriving at a full room replaces the one there (`guestsToEvict`, close `4001`) —
+  in practice the same phone coming back, whose old socket died without closing.
+- **Liveness sweep**: while a guest is in the room the alarm also wakes every
+  `LIVENESS_SWEEP_MS` (30 s) and closes a guest that has heartbeated but been silent for
+  `GUEST_STALE_MS` (60 s) — close `4002`. A guest that never pinged is never judged.
 - **Heartbeat**: a peer may send the text `ping`; the runtime answers `pong` itself
   (Hibernation auto-response), without waking the room or forwarding it, and records when
   each socket last pinged — that is how a live-but-quiet guest stays fresh.

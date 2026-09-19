@@ -18,7 +18,18 @@ leaves the timestamp admission reads. The host is never evicted by a guest, and 
 host is still `host_taken`: the desktop serves one phone per room, so the realistic newcomer
 is the same phone coming back, but taking the host seat is a different trust question.
 
-**Why least-recently-seen and not newest-wins.** Newest-wins would make two live devices
+**Revised the same day — one phone per room, and an active sweep** (maintainer). `MAX_GUESTS`
+is now 1, matching the desktop, which serves one phone per room: with one slot, arrival
+eviction IS newest-wins, and the phone does not auto-redial a `4001`, so two devices cannot
+push each other out in a loop. And rather than only finding a dead phone when a reconnect
+bumps into it, the room's alarm also wakes every 30 s while a guest is present and closes one
+that heartbeated and then went silent for 60 s (`4002`, `staleGuests`). A sweep scheduled is
+never pushed later by traffic — MEASURED in `wrangler dev`: re-arming at now+30 s on each host
+frame meant the sweep never ran (`nextWakeAt` keeps the pending one). The teardown deadline is
+persisted for the sweep to tell the two alarms apart, throttled to moves of 30 s so a streaming
+host does not add a storage write per frame.
+
+**Why least-recently-seen and not newest-wins (superseded by the one-phone cap above).** Newest-wins would make two live devices
 push each other out forever, each auto-reconnecting. Least-recently-seen evicts only once
 the room is full, and a live guest that heartbeats is never the oldest.
 
