@@ -200,7 +200,9 @@ impl TunnelHost for EarHost {
             | ClientMsg::AutomationRunNow { .. }
             | ClientMsg::PlanAdvance { .. }
             | ClientMsg::PlanConfirm { .. }
-            | ClientMsg::PlanChat { .. } => {}
+            | ClientMsg::PlanChat { .. }
+            // An ear hosts no sessions, so there is nothing here to wake.
+            | ClientMsg::SessionWake { .. } => {}
         }
     }
 
