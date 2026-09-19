@@ -13,6 +13,12 @@ import {
   MAX_GUESTS,
   IDLE_TIMEOUT_MS,
   ROOM_TTL_MS,
+  guestsToEvict,
+  lastSeenOf,
+  staleGuests,
+  nextWakeAt,
+  GUEST_STALE_MS,
+  LIVENESS_SWEEP_MS,
 } from "../src/protocol";
 
 describe("/health probe payload (#930)", () => {
@@ -120,5 +126,71 @@ describe("parseConnect", () => {
   });
   it("rejects a malformed room id", () => {
     expect(at("?room=short")).toEqual({ ok: false, error: "bad_room" });
+  });
+});
+
+describe("guestsToEvict — a full room admits a new guest by pushing out the silent one (relay-evicts-the-silent-guest)", () => {
+  it("evicts nobody while there is a free slot", () => {
+    expect(guestsToEvict([])).toEqual([]);
+    expect(guestsToEvict([{ lastSeen: 1 }, { lastSeen: 2 }], 3)).toEqual([]);
+  });
+
+  it("ONE PHONE PER ROOM: a phone that comes back replaces its own old socket", () => {
+    expect(MAX_GUESTS).toBe(1);
+    expect(guestsToEvict([{ lastSeen: 1_000 }])).toEqual([0]);
+  });
+
+  it("with a larger cap, evicts the least recently seen — keeping a live guest that joined first", () => {
+    const guests = [{ lastSeen: 3_000 }, { lastSeen: 1_000 }, { lastSeen: 2_000 }];
+    expect(guestsToEvict(guests, 3)).toEqual([1]);
+    const live = { lastSeen: lastSeenOf(0, undefined, 9_000) };
+    const dead = [{ lastSeen: lastSeenOf(5_000) }, { lastSeen: lastSeenOf(6_000, 6_500) }];
+    expect(guestsToEvict([live, ...dead], 3)).toEqual([1]);
+  });
+
+  it("evicts enough to leave exactly one free slot if the room is somehow over-full, oldest first, stable on ties", () => {
+    expect(guestsToEvict([{ lastSeen: 5 }, { lastSeen: 5 }, { lastSeen: 1 }, { lastSeen: 5 }], 3)).toEqual([2, 0]);
+  });
+
+  it("a last sign of life is the latest of join, frame and heartbeat", () => {
+    expect(lastSeenOf(10)).toBe(10);
+    expect(lastSeenOf(10, 30, 20)).toBe(30);
+    expect(lastSeenOf(10, undefined, null)).toBe(10);
+    expect(lastSeenOf(10, 5, 40)).toBe(40);
+  });
+});
+
+describe("the liveness sweep — the relay closes a phone that stopped answering (relay-evicts-the-silent-guest)", () => {
+  it("closes a heartbeating guest once it has been silent for GUEST_STALE_MS", () => {
+    const now = 100_000;
+    expect(staleGuests([{ pinged: true, lastSeen: now - GUEST_STALE_MS + 1 }], now)).toEqual([]);
+    expect(staleGuests([{ pinged: true, lastSeen: now - GUEST_STALE_MS }], now)).toEqual([0]);
+  });
+
+  it("never judges a guest that has never pinged — an older phone build is silent AND alive", () => {
+    expect(staleGuests([{ pinged: false, lastSeen: 0 }], 10 * GUEST_STALE_MS)).toEqual([]);
+  });
+
+  it("wakes for the next sweep while a guest is present, and sleeps to teardown when the room is empty", () => {
+    const teardownAt = 1_000_000;
+    expect(nextWakeAt(teardownAt, 0, true).wakeAt).toBe(LIVENESS_SWEEP_MS);
+    expect(nextWakeAt(teardownAt, 0, false)).toEqual({ wakeAt: teardownAt, sweepAt: undefined });
+    // Never later than the teardown itself.
+    expect(nextWakeAt(teardownAt, teardownAt - 5, true).wakeAt).toBe(teardownAt);
+  });
+
+  it("a host streaming frames every few seconds does NOT push the sweep back — it still runs on time", () => {
+    // Measured in workerd: re-arming at now+sweep on every frame meant the sweep never fired.
+    const teardownAt = 10_000_000;
+    let pending: number | undefined;
+    let wake = 0;
+    for (let now = 0; now < LIVENESS_SWEEP_MS; now += 5_000) {
+      const r = nextWakeAt(teardownAt, now, true, pending);
+      pending = r.sweepAt;
+      wake = r.wakeAt;
+    }
+    expect(wake).toBe(LIVENESS_SWEEP_MS);
+    // Once that sweep has run (it is in the past), the next is scheduled a full interval on.
+    expect(nextWakeAt(teardownAt, LIVENESS_SWEEP_MS + 1, true, pending).sweepAt).toBe(2 * LIVENESS_SWEEP_MS + 1);
   });
 });
