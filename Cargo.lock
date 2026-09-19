@@ -6205,6 +6205,7 @@ dependencies = [
 name = "research"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
  "mcp-rpc",

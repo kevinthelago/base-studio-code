@@ -23,7 +23,7 @@ bsc capability get <network-id> --context   # the same, as prose
 bsc session ask <network-id>:architect "…"  # the one session you can ask
 bsc session reply                           # answer a loop you are already part of
 bsc web …                                   # the web
-bsc mcp research                            # literature research (also given to you as an MCP server)
+bsc research …                              # literature research: search · paper · fulltext · refs · semantic
 bsc say "…"                                 # speak aloud to the user
 ```
 
