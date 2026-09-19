@@ -56,5 +56,10 @@ export function devWatchIgnored(repoRoot: string): string[] {
     // match a source path that merely contains the word.
     `${repoRoot}/.claude/worktrees/*`,
     `${repoRoot}/.claude/worktrees/*/**`,
+    // The PROMOTE GATE: the worktree `npm run promote` checks develop out into to gate it (bsc-app promote).
+    // A full repo plus its `.bsc-records/` inside the root, refreshed on every promote — measured 2026-09-19,
+    // it took `tauri dev` past inotify's 65536 watches (ENOSPC).
+    `${repoRoot}/.promote-gate`,
+    `${repoRoot}/.promote-gate/**`,
   ];
 }
