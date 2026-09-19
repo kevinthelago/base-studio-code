@@ -431,6 +431,14 @@
         },
         {
           "cont": [],
+          "key": "bsc-jobs",
+          "lead": [
+            "# `bsc jobs` — job applications: the experience bank + profile (jobs.db)."
+          ],
+          "value": "{ path = \"../bsc-jobs\" }"
+        },
+        {
+          "cont": [],
           "key": "bsc-widget",
           "lead": [],
           "value": "{ path = \"../bsc-widget\" }"
