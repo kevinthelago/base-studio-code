@@ -75,3 +75,8 @@
 .lan-node-detail { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-soft, var(--border)); }
 .lan-claim { display: flex; flex-direction: column; gap: 6px; }
 .lan-error { color: var(--danger, #f85149); white-space: pre-wrap; }
+
+/* ── the keeper dock (`a-lan-device-has-a-keeper-agent`) ── */
+.lan-keeper { display: flex; flex-direction: column; height: 340px; border-top: 1px solid var(--border); background: var(--bg-panel, var(--bg)); }
+.lan-keeper-head { padding: 6px 12px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+.lan-keeper-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px; }
