@@ -499,7 +499,7 @@
         "bsc request note",
         "bsc errors run",
         "bsc cost",
-        "bsc perf",
+        "bsc logs frontend",
         "bsc logs",
         "bsc session ask",
         "bsc session reply",
