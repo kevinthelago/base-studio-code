@@ -114,6 +114,12 @@
             "# `new`/`rename` compose and patch the stored row without a typed model."
           ],
           "value": "\"1\""
+        },
+        {
+          "cont": [],
+          "key": "bsc-capability",
+          "lead": [],
+          "value": "{ path = \"../bsc-capability\" }"
         }
       ],
       "lead": [
