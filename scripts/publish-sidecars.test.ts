@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { copyPreservingMtime, publishDecision, stagingPathFor } from "./publish-sidecars.mjs";
+import { copyPreservingMtime, publishDecision, stagingPathFor, HANDSHAKE_ARGS, handshakeVerdict } from "./publish-sidecars.mjs";
 import { classifyArtifact } from "./build-artifact-plan.mjs";
 
 type Stat = { size: number; mode: number; isFile: boolean } | null;
@@ -98,5 +98,21 @@ describe("publish-sidecars: mtime preservation (#187)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /** A NOUN FOLD MOVED THIS VERB ONCE and nothing noticed: `version` folded into `self` (2026-09-20), the
+   *  handshake kept asking `bsc version`, and every new binary was refused as "incoherent" — so the app ran a
+   *  two-day-old `bsc` whose verbs the Jobs screen called and did not find. The handshake must accept whatever
+   *  spelling the surface currently uses. */
+  it("names itself through a verb the binary still has, whatever the nouns were folded into", () => {
+    // The CURRENT surface answers; an old one answered differently. Both must pass, or a fold breaks staging.
+    const current = (args: string[]) => (args.join(" ") === "self version" ? "bsc 0.1.0\n  built 2026-09-20" : null);
+    const older = (args: string[]) => (args.join(" ") === "version" ? "bsc 0.1.0\n  built 2026-09-01" : null);
+    expect(handshakeVerdict(current)).toBe(true);
+    expect(handshakeVerdict(older)).toBe(true);
+    // A binary that answers to NOTHING, or answers as something else, is still refused.
+    expect(handshakeVerdict(() => null)).toBe(false);
+    expect(handshakeVerdict(() => "bash: line 1: syntax error")).toBe(false);
+    expect(HANDSHAKE_ARGS[0]).toEqual(["self", "version"], "the current spelling is tried first");
   });
 });
