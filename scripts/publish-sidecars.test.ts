@@ -113,6 +113,7 @@ describe("publish-sidecars: mtime preservation (#187)", () => {
     // A binary that answers to NOTHING, or answers as something else, is still refused.
     expect(handshakeVerdict(() => null)).toBe(false);
     expect(handshakeVerdict(() => "bash: line 1: syntax error")).toBe(false);
-    expect(HANDSHAKE_ARGS[0]).toEqual(["self", "version"], "the current spelling is tried first");
+    // The CURRENT spelling is tried first, so a healthy binary answers on the first call.
+    expect(HANDSHAKE_ARGS[0]).toEqual(["self", "version"]);
   });
 });
