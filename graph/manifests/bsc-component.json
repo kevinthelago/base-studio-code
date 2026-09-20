@@ -86,7 +86,7 @@
           "key": "bsc-runtime",
           "lead": [
             "# Runtime attestations (#doctor-reads-the-runtime) - the --runtime lens reads what the app OBSERVED",
-            "# while running. The ANALYSIS lives there, beside the data, so bsc graph doctor asks the same question",
+            "# while running. The ANALYSIS lives there, beside the data, so bsc algorithms doctor asks the same question",
             "# of the same rows; only the presentation is here."
           ],
           "value": "{ path = \"../bsc-runtime\" }"

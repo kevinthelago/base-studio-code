@@ -137,7 +137,7 @@ impl Store {
     /// `$BSC_EAR_DB`, else `~/.base-studio-code/ear.db`.
     ///
     /// BESIDE the base dir, not inside `ear/`, because that is where every other store lives and
-    /// where `bsc studio`'s capture guard looks for `<segment>.db`. A store tucked inside the
+    /// where `bsc snapshot`'s capture guard looks for `<segment>.db`. A store tucked inside the
     /// crate's own directory would be invisible to the backup roster.
     pub fn default_path() -> Option<PathBuf> {
         bsc_sqlite_util::default_store_path("BSC_EAR_DB", &["ear.db"])

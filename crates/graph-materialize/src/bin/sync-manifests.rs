@@ -10,7 +10,7 @@
 //! (`npm run emit:manifests`) produces its `Cargo.toml`. `import` is the migration direction and is
 //! not how a crate is created — it reads files that already exist.
 //!
-//! This belongs on the `bsc` surface as `bsc graph manifests`, and a request is filed to move it. It
+//! This belongs on the `bsc` surface as `bsc algorithms manifests`, and a request is filed to move it. It
 //! is a `src/bin/` here because `bsc-graph` compiles FROM the graph, so adding a verb to it is itself
 //! a record write — the operation this command exists to make safe.
 
@@ -25,7 +25,7 @@ fn main() {
 
     // The root is the last positional for `import`, and the one after the name for `new`. Default to
     // the cwd, and REFUSE anything that is not a checkout rather than creating `graph/manifests`
-    // somewhere arbitrary and reporting success — the `bsc studio save --dir <empty>` lesson.
+    // somewhere arbitrary and reporting success — the `bsc snapshot save --dir <empty>` lesson.
     let root = match verb {
         "new" => positional.get(2).map(PathBuf::from),
         _ => positional.iter().find(|p| p.as_str() != "import").map(|p| PathBuf::from(p.as_str())),

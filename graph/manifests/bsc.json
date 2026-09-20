@@ -295,7 +295,7 @@
           "cont": [],
           "key": "bsc-studio",
           "lead": [
-            "# `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state."
+            "# `bsc snapshot` — the Studio store (#2890): shareable snapshots of the app's library state."
           ],
           "value": "{ path = \"../bsc-studio\" }"
         },
@@ -391,7 +391,7 @@
           "cont": [],
           "key": "bsc-graph",
           "lead": [
-            "# `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only."
+            "# `bsc algorithms` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only."
           ],
           "value": "{ path = \"../bsc-graph\" }"
         },

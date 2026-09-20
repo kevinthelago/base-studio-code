@@ -145,7 +145,7 @@
           "cont": [],
           "key": "tree-sitter",
           "lead": [
-            "# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.",
+            "# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc algorithms harvest`.",
             "# Same pinned versions bsc-graph already locks, so this adds no new workspace dependency."
           ],
           "value": "\"0.26\""

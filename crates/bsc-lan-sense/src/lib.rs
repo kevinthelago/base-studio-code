@@ -50,9 +50,9 @@ pub fn assess_host() -> Posture {
 // src/attest.rs, src/config.rs, src/emit.rs, src/emitloop.rs, src/error.rs, src/estate.rs, src/eve.rs, src/posture.rs, src/receive.rs, src/rf.rs, src/run.rs, src/spectrum.rs, src/procnet.rs, src/transport.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
-//     bsc graph impl get bsc-lan-sense--<module>.rs
-//     bsc graph impl set --id bsc-lan-sense--<module>.rs --code-file <f>
-//     bsc graph promote --id bsc-lan-sense--<module>.rs
+//     bsc algorithms impl get bsc-lan-sense--<module>.rs
+//     bsc algorithms impl set --id bsc-lan-sense--<module>.rs --code-file <f>
+//     bsc algorithms promote --id bsc-lan-sense--<module>.rs
 //
 // This header is still a file because this root holds crate-level code of its own. A root
 // down to its //! docs and this include is migrated too: the docs become the

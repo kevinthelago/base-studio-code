@@ -22,9 +22,9 @@ mod tests;
 // committed graph/algorithms.json, materialized into $OUT_DIR by `graph_materialize::emit();`, called from this
 // crate's own build.rs (a package gets exactly ONE build script, and this one was taken).
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
-//     bsc graph impl get src-tauri--<module>.rs
-//     bsc graph impl set --id src-tauri--<module>.rs --code-file <f>
-//     bsc graph promote --id src-tauri--<module>.rs
+//     bsc algorithms impl get src-tauri--<module>.rs
+//     bsc algorithms impl set --id src-tauri--<module>.rs --code-file <f>
+//     bsc algorithms promote --id src-tauri--<module>.rs
 //
 // This header stays a file because include! refuses crate-level //! docs and #![…] inner
 // attributes (E0753 / "an inner attribute is not permitted in this context").

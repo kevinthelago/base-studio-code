@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "The store invariants a MERGE REVIEW checks — read by `bsc graph invariants` (request #317).",
+    "The store invariants a MERGE REVIEW checks — read by `bsc algorithms invariants` (request #317).",
     "These were four hand-written sqlite3 queries repeated after every one of nine merges. They are data",
     "now so the next reviewer adds a ROW instead of retyping a query, and so the REASON travels with the",
     "check. Adding one is cheap and is the intended way to use this file.",

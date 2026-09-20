@@ -14,6 +14,6 @@
 //
 // A carried Rust test is therefore a FIRST-CLASS cargo test target: `cargo nextest` compiles and runs
 // it exactly as it runs a file, and a broken record turns the gate red. That is the whole reason this
-// file exists — before it, `bsc graph test <id> --run` was the only executor, it was manual, and
+// file exists — before it, `bsc algorithms test <id> --run` was the only executor, it was manual, and
 // nothing in any gate ever reached a record's carried Rust test.
 include!(concat!(env!("OUT_DIR"), "/tests/", env!("CARGO_CRATE_NAME"), ".rs"));

@@ -51,7 +51,7 @@ ok "plan"  "$(count_json "$ROOT/plan.json") items"
 # The /usr/bin/bsc in this distro predates `graph` entirely, hence --graph/--ui taking a
 # pre-exported file from whichever bsc does know the verb.
 if [ -n "$GRAPH_JSON" ]; then cp "$GRAPH_JSON" "$ROOT/graph.json"
-else HOME="$BSC_HOME" bsc graph impl list > "$ROOT/graph.json" 2>/dev/null; fi
+else HOME="$BSC_HOME" bsc algorithms impl list > "$ROOT/graph.json" 2>/dev/null; fi
 ok "graph" "$(count_json "$ROOT/graph.json") implementations"
 if [ -n "$UI_JSON" ]; then cp "$UI_JSON" "$ROOT/ui.json"
 else HOME="$BSC_HOME" bsc ui list > "$ROOT/ui.json" 2>/dev/null; fi

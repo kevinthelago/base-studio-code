@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"Studio store (SQLite store at ~/.base-studio-code/studios.db) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc studio` CLI.\""
+          "value": "\"Studio store (SQLite store at ~/.base-studio-code/studios.db) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc snapshot` CLI.\""
         }
       ],
       "lead": [],

@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`.\""
+          "value": "\"The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc algorithms`.\""
         }
       ],
       "lead": [],
@@ -155,7 +155,7 @@
           "key": "bsc-graph-store",
           "lead": [
             "# THE DATABASE the records are moving into (`epic-retire-json-ledgers-for-db-and-git-drivers`).",
-            "# `bsc graph store import|db` reaches it from here; the JSON ledgers stay readable until every reader",
+            "# `bsc algorithms store import|db` reaches it from here; the JSON ledgers stay readable until every reader",
             "# has moved, because an import that cannot be checked against its source is not one anyone will trust."
           ],
           "value": "{ path = \"../bsc-graph-store\" }"
