@@ -89,7 +89,7 @@ around. Better learned before the toggle is gone.
 the rail organizes by. `crates/bsc-graph` is now free (#4154 landed), so this can go immediately and
 alone.
 
-Note the shape of the recent fix there: `bsc graph impl set` merges (#4154), the provenance gate now
+Note the shape of the recent fix there: `bsc algorithms impl set` merges (#4154), the provenance gate now
 reads the **stored** record, and unknown flags error. Do not reintroduce a gate that inspects only the
 supplied flags — that was the defect that blocked 17 entries.
 

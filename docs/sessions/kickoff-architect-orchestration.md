@@ -32,7 +32,7 @@ personas; it **creates directors seeded with the discovery files**; it **starts 
 system sessions become **per technology**.
 
 Grounding already checked: the algorithms graph partitions on `tech` (95 rust · 70 typescript · 13
-python) and `bsc graph impl list --tech <t>` exists, so per-technology sessions map onto a partition
+python) and `bsc algorithms impl list --tech <t>` exists, so per-technology sessions map onto a partition
 that is already there.
 
 Three items carry supersession notes pointing at the epic — read them before touching their code:

@@ -15,7 +15,7 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
 
       /plan     the plan store. items/<ref>/{status,title,body,acceptance,labels,dependsOn}
                 and by-status/<status>/<ref>. This replaces `bsc plan get` / `bsc plan list`.
-      /graph    the algorithms library, impl/<id>/code byte-for-byte -- `bsc graph impl get`.
+      /graph    the algorithms library, impl/<id>/code byte-for-byte -- `bsc algorithms impl get`.
       /ui       the component store -- `bsc ui`.
       /coord    the coordination log as a stream, plus index dirs that group its lines.
 

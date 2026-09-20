@@ -35,8 +35,8 @@ The tree in question: **331 `.rs` files · 127,508 lines · 6.33 MB** across `sr
 back to **exactly the path it came from**. That round trip is real and I ran it:
 
 ```
-bsc graph harvest crates/bsc-persona/src/lib.rs --module --apply   → id=lib.rs, src=crates/bsc-persona/src/lib.rs
-bsc graph emit impl lib.rs <dir>                                   → <dir>/crates/bsc-persona/src/lib.rs
+bsc algorithms harvest crates/bsc-persona/src/lib.rs --module --apply   → id=lib.rs, src=crates/bsc-persona/src/lib.rs
+bsc algorithms emit impl lib.rs <dir>                                   → <dir>/crates/bsc-persona/src/lib.rs
 ```
 
 It lands back over its own file because `emit_path` is `<folder>/<id>` and, for a *module* record, the
@@ -84,7 +84,7 @@ The guard is good and it refuses correctly:
 ```
 bsc: 'lib.rs' already names a DIFFERENT module: crates/bsc-persona/src/lib.rs
 This harvest would overwrite it, because a module id comes from the file stem and `impl set` merges by id.
-Rename one of the files, or write the record deliberately with `bsc graph impl set --id <a-distinct-id>`.
+Rename one of the files, or write the record deliberately with `bsc algorithms impl set --id <a-distinct-id>`.
 ```
 
 But **the workaround it suggests breaks emit.** Measured: writing the teams module as
@@ -152,7 +152,7 @@ linked: 0, unmatched: 41`. It recovers a *missing* `src`, not a *stale* one.
 
 ### One thing that is NOT a hazard, checked
 
-`bsc graph emit all` against the repo root would write 948 files, 83 of them `.rs`, and **overwrite
+`bsc algorithms emit all` against the repo root would write 948 files, 83 of them `.rs`, and **overwrite
 zero existing tracked files**. The 83 are new stray files (`crates/cve/src/split-segments.rs`,
 `core/merge-sort.rs`, …). They are clutter, and their hyphenated names could never be compiled as
 modules, but there is no data-loss trap sitting in the tree today.

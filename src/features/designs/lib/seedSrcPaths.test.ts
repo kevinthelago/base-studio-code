@@ -4,7 +4,7 @@
 // case-insensitive filesystem hid it completely — every `existsSync`, every editor jump, every `bsc ui
 // backing` call resolved it fine — so it sat for months looking like an "id collision". What it actually
 // broke is anything matching the path as a STRING: a coverage sweep reported the module as unmigrated, and
-// `bsc graph harvest <src>` would have re-harvested it to a second record. On a case-sensitive filesystem
+// `bsc algorithms harvest <src>` would have re-harvested it to a second record. On a case-sensitive filesystem
 // (CI, Linux, macOS with a case-sensitive volume) it stops resolving at all.
 //
 // The check is against a DIRECTORY LISTING, not `existsSync`, because on Windows `existsSync` answers the

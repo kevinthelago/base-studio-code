@@ -198,7 +198,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -1130,7 +1130,7 @@
           "git",
           "gh",
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "tee",
           "dd",
           "truncate",
@@ -1197,7 +1197,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -1307,7 +1307,7 @@
           "git",
           "gh",
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "tee",
           "dd",
           "truncate",
@@ -1519,7 +1519,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -1838,7 +1838,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -1947,7 +1947,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -2057,7 +2057,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -2164,7 +2164,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -2273,7 +2273,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -2383,7 +2383,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -3047,7 +3047,7 @@
         ],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"

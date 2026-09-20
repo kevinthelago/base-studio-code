@@ -155,7 +155,7 @@ export function isSqliteStore(path) {
 /**
  * Read a DATABASE store — natively, with `node:sqlite`, and NOT by shelling to `bsc`.
  *
- * The first version asked `bsc graph dump --repo`, to keep ONE implementation of the rule that decides
+ * The first version asked `bsc algorithms dump --repo`, to keep ONE implementation of the rule that decides
  * what a store contains. That was the right instinct and the wrong call, because it makes every JS
  * gate leg depend on a working binary — and the gate's own `clippy --all-targets` ZEROES
  * `target/debug/bsc` partway through, so legs after it got a zero-byte binary and a store that read as
@@ -265,7 +265,7 @@ export function writeStore(store, storePath = 'graph/algorithms.json') {
     throw new Error(
       `refusing to write ${storePath}: it is a record DATABASE and writeStore writes JSON, which would replace ` +
         'the store the build compiles from. Change a record through the ledger instead: ' +
-        'bsc graph impl set --repo --root <checkout> --tech <tech> --id <id> --role <role> --name <its name> ' +
+        'bsc algorithms impl set --repo --root <checkout> --tech <tech> --id <id> --role <role> --name <its name> ' +
         '--composes a,b --crate-deps a,b',
     );
   }

@@ -763,7 +763,7 @@ real defect to fix, not a note to skim:
   `@bsc/algorithms/<name>` — you declared or imported a name that collides with a real node in the
   Algorithms knowledge graph (the librarian's library, #3116/#3118). **Verify it with
   `bsc ui library get <name>`** (bsc request #118) — the ONE reach into that graph this surface grants
-  you, answering the same question `bsc graph impl get` would without needing the librarian's
+  you, answering the same question `bsc algorithms impl get` would without needing the librarian's
   permissions. `{ resolves: true, ... }` means the finding is real: **compose from that record's `src`
   instead of re-coding it** (an import the preview sandbox cannot resolve is a platform-registration
   gap, not a reason to hand-roll a copy — raise it rather than working around it). `{ resolves: false }`
@@ -779,7 +779,7 @@ times, and honor reduced-motion (it does automatically), so the kit's motion rea
 
 The library does not have to be authored one component at a time. **`bsc ui harvest <repo-dir>` scans a
 real repository** and lifts every React component it finds into a CANDIDATE record — the component twin
-of the librarian's `bsc graph harvest`. Reach for it when a project has already built UI worth keeping,
+of the librarian's `bsc algorithms harvest`. Reach for it when a project has already built UI worth keeping,
 so the graph fills from code that actually shipped instead of from scratch.
 
 - `bsc ui harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
@@ -814,7 +814,7 @@ outside every allowed root, say so and ask.
 
 ### When a candidate depends on a file the harvest does not lift
 
-A harvest lifts **components**; `bsc graph harvest` lifts **functions**. Neither lifts a **const/type
+A harvest lifts **components**; `bsc algorithms harvest` lifts **functions**. Neither lifts a **const/type
 module** — a metadata table like `STATUS_META`, a shared types file — yet those are exactly what a good
 candidate imports (`ProjectCard`, `StatusTile` and `ProjectsRail` all import one). Read its text directly:
 
@@ -858,14 +858,14 @@ A data-driven component (a chart, a table, a graph) previews with a trivial buil
 `[]` or a placeholder — which reads poorly. For a **realistic** preview, an ALGORITHM can generate the
 data: the app runs it in the sandbox and feeds its output into the component's preview.
 
-You don't write algorithms — the **librarian** owns them (the `bsc graph` library, a surface you never
+You don't write algorithms — the **librarian** owns them (the `bsc algorithms` library, a surface you never
 run directly). So, reuse-first:
 
 - **Check a specific name first** with `bsc ui library get <name>` if you already suspect a fitting
   algorithm exists (its name usually surfaces on you already — a `doctor` finding, a sibling component's
-  import, a name you recall from a prior session). `bsc graph impl list` — browsing the WHOLE catalog —
+  import, a name you recall from a prior session). `bsc algorithms impl list` — browsing the WHOLE catalog —
   is the librarian's surface, not yours; do not reach for it (bsc request #118: your permitted surface
-  is `bsc ui`, nothing under `bsc graph`).
+  is `bsc ui`, nothing under `bsc algorithms`).
 - **No specific name to check, or it doesn't resolve? Commission the librarian** (the spec is what the
   data should REPRESENT, on stdin):
 

@@ -23,7 +23,7 @@
 
 **Why paired.** The two studios split the whole artifact surface, and the planner already routes on
 exactly that line — *a component is UI (designer, `bsc ui`); an algorithm is computation (librarian,
-`bsc graph impl`)*. Asking only about the UI would leave the **executed** half unstated, which is the
+`bsc algorithms impl`)*. Asking only about the UI would leave the **executed** half unstated, which is the
 more dangerous half to be wrong about: it runs code rather than rendering it. They also differ often —
 owning the UI while still drawing algorithms from the graph is a normal project — so a single combined
 answer would be wrong for it in one direction or the other.

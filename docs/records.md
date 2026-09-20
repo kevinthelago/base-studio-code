@@ -24,7 +24,7 @@ is epic #3604, "the graph IS the app".
 > ```bash
 > find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l   # files left
 > find src-tauri/data/components/app -name "*.json" | wc -l                     # component records
-> bsc graph store                                                              # layout + record count
+> bsc algorithms store                                                              # layout + record count
 > ```
 
 If you have opened `src/` looking for a module and it was not there, this document is why, and what to do
@@ -37,8 +37,8 @@ instead.
 ```bash
 bsc ui list --full                 # every component record, with its source
 bsc ui get <id>                    # one component record
-bsc graph impl list                # every algorithm implementation
-bsc graph impl get <id>            # one implementation
+bsc algorithms impl list                # every algorithm implementation
+bsc algorithms impl get <id>            # one implementation
 ```
 
 A record claims the module it stands for through **`provides`** — the `@/…` specifier it answers. So the
@@ -49,7 +49,7 @@ To **edit** a retired module you edit the record, not a file:
 
 ```bash
 bsc ui set --by <you> --note "<why>"      # component JSON on stdin, MERGED into the record
-bsc graph impl set --id <id> --tech typescript --role algorithm --code "<source>"
+bsc algorithms impl set --id <id> --tech typescript --role algorithm --code "<source>"
 bsc ui revert <id> [--to <rev>]           # records keep history; writes are revertible
 ```
 
@@ -75,7 +75,7 @@ There are two copies of every record and they are not the same thing.
 |---|---|---|
 | **seed** (components) | what SHIPS, and for a COMPONENT also the committed home. Checked into git, identical for everyone. | `src-tauri/data/components/app/**` |
 | **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and the materialized Rust crates. Checked into git, ONE DATABASE, merged by a git driver and rendered readable by a textconv. | `graph/algorithms.db` (named by `graph/store.toml`) |
-| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc graph`, never off the file. | `~/.base-studio-code/…` via `bsc ui` / `bsc graph` |
+| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc algorithms`, never off the file. | `~/.base-studio-code/…` via `bsc ui` / `bsc algorithms` |
 
 The two committed homes are asymmetric and it matters: an ALGORITHM record has a git-tracked home that is
 not the packaged seed, and a COMPONENT record does not — `bsc ui promote` writes a new component record
@@ -86,7 +86,7 @@ path and the component seed cannot be, yet.
 git-ignored `.bsc-records/` tree, which is what the compilers resolve against. So:
 
 - A record that exists only in your **runtime store** cannot retire its file. It has to be **promoted**
-  into the committed copy first (`bsc graph promote` for an algorithm, `bsc ui promote` for a component),
+  into the committed copy first (`bsc algorithms promote` for an algorithm, `bsc ui promote` for a component),
   or the module vanishes for everyone else.
 - The two drift, in both directions. A designer edits the store; a merge moves the file. Never assume one
   is authoritative — `bsc ui retirable` grades the three-way (seed vs store vs file), and
@@ -158,7 +158,7 @@ And two whole categories of module must stay files:
 - **`graphPlatform.ts`** — they register the platform that record resolution goes *through*. Circular.
 - **A registered module holding module state** — `provides` beats the platform registry, so a record of a
   stateful module vendors a **second copy of that state** to every consumer. `renderGate`'s `lastGood`,
-  `theme`'s `activeThemes`, `announcer`'s `useAnnouncer`. `bsc graph harvest` refuses these; a bare
+  `theme`'s `activeThemes`, `announcer`'s `useAnnouncer`. `bsc algorithms harvest` refuses these; a bare
   `impl set --provides` does not, so do not hand-write the claim.
 - **`src/shared/lib/algorithms/*.ts`** — these exist precisely to BE files. `seedAlgorithms.gen.test.ts`
   generates a packaged node's `code` *from* the module, so tsc checks it and its sibling test executes it.
@@ -338,8 +338,8 @@ their own, and the rule that picks between the two is mechanical.
 
 | distinct records | home | verb |
 |---|---|---|
-| 1 | that record's `tests[]` | `bsc graph tests set --id <id> --src <file>` (`bsc ui tests set` for a component) |
-| 2 or more | an **edge** whose `members` are exactly those ids | `bsc graph edge set --id <id> --members a,b --src <file>` |
+| 1 | that record's `tests[]` | `bsc algorithms tests set --id <id> --src <file>` (`bsc ui tests set` for a component) |
+| 2 or more | an **edge** whose `members` are exactly those ids | `bsc algorithms edge set --id <id> --members a,b --src <file>` |
 
 Both are emitted into `.bsc-records/` and run in the default gate, so the file is deleted in the same
 change — the whole point is that there is one copy.
@@ -355,7 +355,7 @@ imports still resolve from the record's directory — `componentBridge.previewEr
 these, and they are the cheap version of finding out.
 
 **A member must be an ALGORITHM impl id.** `bsc-graph`'s `seed_parses_impl_only_and_is_primitives_rooted`
-asserts every packaged edge member is an id in `implementations[]`, and `bsc graph edge set` does not
+asserts every packaged edge member is an id in `implementations[]`, and `bsc algorithms edge set` does not
 check it — so a component-record member reaches the seed and reddens a Rust leg three gates later. The
 frontend's records live in two stores, so a test spanning a component AND an impl has no legal edge
 today: of 55 candidates, 49 were all-impl, 12 had to drop a component member, and 7 fell below two
@@ -373,9 +373,9 @@ Four categories are NOT edge material, and saying so is the point rather than a 
 
 Two write hazards, both measured and both filed:
 
-- **`bsc graph tests set --seed` REPLACES the seed record's `tests` array** while the store half
+- **`bsc algorithms tests set --seed` REPLACES the seed record's `tests` array** while the store half
   appends, so it silently drops whatever the record already carried. Write the store, then
-  `bsc graph impl sync-seed <id> --seed-dir src-tauri/data/knowledge --only tests --apply`.
+  `bsc algorithms impl sync-seed <id> --seed-dir src-tauri/data/knowledge --only tests --apply`.
 - **`bsc ui tests set` / `bsc ui tests adopt` replace too**, on both copies — so a component record
   that already carries a test cannot yet gain a second one.
 
@@ -468,7 +468,7 @@ mechanical reason, listed below.
 
 | count | class | why a record cannot stand for it |
 |---|---|---|
-| 26 | **module state whose specifier is REGISTERED** | a record wins over the registry, so it would be a SECOND live copy of that state. `bsc graph impl set` refuses this itself — see the rule below |
+| 26 | **module state whose specifier is REGISTERED** | a record wins over the registry, so it would be a SECOND live copy of that state. `bsc algorithms impl set` refuses this itself — see the rule below |
 | 14 | `import.meta.glob` | a **Vite build-time transform**. esbuild emits it verbatim and it is not a function at runtime, so the record throws the moment a consumer evaluates it |
 | 10 | statically imported by `main.tsx` / `App.tsx` | the dev server's pre-transform pass resolves the `@/` alias before the records plugin is installed, so the app fails to boot. Only `dev-boot-check.mjs` observes it |
 | 7 | type-only (`store/types/*`) | they emit no JavaScript, so there is nothing for a record to be |
@@ -488,7 +488,7 @@ The rule is **not** "a module with state can never be a record". It is:
 > runs before the registry, so the record's copy wins for every graph consumer while the registered one
 > keeps serving everybody else.
 
-`bsc graph impl set` enforces exactly this and refuses the write. When **nothing registers the
+`bsc algorithms impl set` enforces exactly this and refuses the write. When **nothing registers the
 specifier**, the record is the only copy and its state is fine.
 
 That distinction is what the "16 `graphPlatform.ts` registrars are permanent floor" claim got wrong. It

@@ -6,7 +6,7 @@
 // So each algorithm animates by ITS OWN mechanics — bubble/insertion/quick/heap/merge look different
 // because they ARE different. An impl with no program shows NO animation (never a wrong category one).
 // This SUPERSEDES the category-representative per-kind example (#3209 S2). `kind` (#3210) stays for the
-// datatype-renderer pick + `bsc graph doctor`; `resolveKind` is retained for those.
+// datatype-renderer pick + `bsc algorithms doctor`; `resolveKind` is retained for those.
 //
 // SCOPE (slice B, #3215): today the programs are in-app modules. The durable end state runs the program
 // from the impl's STORED code in the preview sandbox (`shared/lib/preview/`, #3177), so the librarian
@@ -247,7 +247,7 @@ const EXAMPLE_BY_KEY: Record<string, VizExample> = {
 };
 
 /** Resolve an implementation's kind (#3210): the CREATOR-assigned `kind` wins; otherwise the heuristic
- *  classifier infers it. Retained for the datatype-renderer pick + `bsc graph doctor` (the viz TRACE now
+ *  classifier infers it. Retained for the datatype-renderer pick + `bsc algorithms doctor` (the viz TRACE now
  *  comes from the program, not the kind). `null` when neither yields a kind. */
 export function resolveKind(impl: Pick<AlgoImpl, "kind"> & Classifiable): AlgoKind | null {
   return impl.kind ?? classifyKind(impl);

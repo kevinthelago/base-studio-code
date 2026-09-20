@@ -5,7 +5,7 @@
 // STEM, so promoting `features/algorithms/viz/examples/sort.ts` appended a second `sort.ts` beside a
 // curated one and the seed failed with "expected 603 to be 604".
 //
-// Nothing upstream caught it: `bsc graph harvest` refuses a stem collision only when it can compare
+// Nothing upstream caught it: `bsc algorithms harvest` refuses a stem collision only when it can compare
 // `src`, and the curated entry had none — no `src`, no `provides`, 28 lines of a 90-line module.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

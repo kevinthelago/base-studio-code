@@ -28,7 +28,7 @@
     "catalog": [
       "ui",
       "plan",
-      "graph",
+      "algorithms",
       "persona",
       "teams",
       "request",
@@ -85,7 +85,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -166,7 +166,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -245,7 +245,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "bsc logs",
         "git",
         "gh",
@@ -327,7 +327,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "bsc logs",
         "git",
         "gh",
@@ -412,7 +412,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -494,7 +494,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -551,7 +551,7 @@
         "writeGlobs": [],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -633,7 +633,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -712,7 +712,7 @@
         "writeGlobs": [],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -798,7 +798,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -881,7 +881,7 @@
         "writeGlobs": [],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -965,7 +965,7 @@
         ],
         "allow": [
           "bsc ui",
-          "bsc graph",
+          "bsc algorithms",
           "bsc persona whatami",
           "bsc memory"
         ],
@@ -1628,7 +1628,7 @@
       },
       "deniedCommands": [
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -1713,7 +1713,7 @@
       },
       "deniedCommands": [
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -2175,7 +2175,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "git push",
         "git commit",
         "git merge",
@@ -2282,7 +2282,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "git push",
         "git commit",
         "git merge",
@@ -3129,7 +3129,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -3205,7 +3205,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -3279,7 +3279,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -3359,7 +3359,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -3441,7 +3441,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -3519,7 +3519,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -4651,7 +4651,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -4753,7 +4753,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -4853,7 +4853,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -4958,7 +4958,7 @@
       },
       "deniedCommands": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -5066,7 +5066,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -5169,7 +5169,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -5230,7 +5230,7 @@
           "scratch/**"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -5310,7 +5310,7 @@
           "contracts/**/*.json"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -5390,7 +5390,7 @@
           "scratch/**"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -5474,7 +5474,7 @@
           "contracts/**/*.json"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -5558,7 +5558,7 @@
           "scratch/**"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -5640,7 +5640,7 @@
           "contracts/**/*.json"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",
@@ -6531,7 +6531,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "git push",
@@ -6660,7 +6660,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "git push",
@@ -8231,7 +8231,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8307,7 +8307,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8382,7 +8382,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -8462,7 +8462,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -8545,7 +8545,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8623,7 +8623,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8692,7 +8692,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8764,7 +8764,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -8834,7 +8834,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc persona",
         "bsc teams",
         "bsc request",
@@ -8911,7 +8911,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc persona",
         "bsc teams",
         "bsc request",
@@ -8990,7 +8990,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -9064,7 +9064,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -10148,7 +10148,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -10256,7 +10256,7 @@
         "git",
         "gh",
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -10360,7 +10360,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -10472,7 +10472,7 @@
       "deniedCommands": [
         "bsc ui",
         "bsc plan",
-        "bsc graph",
+        "bsc algorithms",
         "bsc teams",
         "bsc fleet",
         "bsc logs",
@@ -10584,7 +10584,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -10694,7 +10694,7 @@
         "bsc app",
         "git",
         "gh",
-        "bsc graph",
+        "bsc algorithms",
         "tee",
         "dd",
         "truncate",
@@ -10756,7 +10756,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -10843,7 +10843,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -10930,7 +10930,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -11021,7 +11021,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -11112,7 +11112,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"
@@ -11200,7 +11200,7 @@
         "allow": [],
         "surfaces": [
           "plan",
-          "graph",
+          "algorithms",
           "ui",
           "files",
           "errors"

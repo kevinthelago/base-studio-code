@@ -288,7 +288,7 @@ export function backfillPlan() {
 export function implSetCommand(p) {
   const q = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
   const r = p.rec;
-  const parts = ['bsc graph impl set --repo --root "$PWD"', `--tech ${q(r.tech)}`, `--id ${q(r.id)}`, `--role ${q(r.role)}`, `--name ${q(r.name)}`];
+  const parts = ['bsc algorithms impl set --repo --root "$PWD"', `--tech ${q(r.tech)}`, `--id ${q(r.id)}`, `--role ${q(r.role)}`, `--name ${q(r.name)}`];
   if (p.composes) parts.push(`--composes ${q(p.composes.join(','))}`);
   if (p.crateDeps) parts.push(p.crateDeps.length ? `--crate-deps ${q(p.crateDeps.join(','))}` : '--clear crateDeps');
   if (p.componentDeps) parts.push(p.componentDeps.length ? `--component-deps ${q(p.componentDeps.join(','))}` : '--clear componentDeps');
@@ -360,7 +360,7 @@ else if (mode === '--apply') {
   // A DATABASE store is REFUSED, and the plan is printed as ledger writes instead
   // (`graph-relationships-apply-overwrites-the-committed-store`). `writeStore` writes JSON; pointed at
   // `graph/algorithms.db` it replaced the store the build compiles from, and the --check leg told people
-  // to run exactly this. A revision per record through `bsc graph impl set --repo` is the only write that
+  // to run exactly this. A revision per record through `bsc algorithms impl set --repo` is the only write that
   // store takes.
   if (isDatabase(STORE)) {
     if (!plan.length) {

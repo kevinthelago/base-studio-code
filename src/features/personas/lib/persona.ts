@@ -43,7 +43,7 @@ export interface PersonaPermissions {
   net: AccessTier;
   ui: AccessTier;
   /**
-   * The `bsc graph` ALGORITHMS store — the twin of {@link PersonaPermissions.ui} one store over
+   * The `bsc algorithms` ALGORITHMS store — the twin of {@link PersonaPermissions.ui} one store over
    * (`the-algorithms-graph-has-no-write-gate`).
    *
    * OPTIONAL, unlike the five above, because every persona authored before the axis existed carries

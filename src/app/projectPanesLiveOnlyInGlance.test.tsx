@@ -21,7 +21,7 @@ import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import appSource from "@/app/App.tsx?raw";
 import detachedSource from "@/app/DetachedWindow.tsx?raw";
 import terminalHostSource from "@/app/console/terminal/TerminalHost.tsx?raw";
-// A record, emitted as `.tsx` (`bsc graph impl get projects.ts`).
+// A record, emitted as `.tsx` (`bsc algorithms impl get projects.ts`).
 import projectsSource from "@/store/slices/projects.tsx?raw";
 
 const ROOT = resolve(__dirname, "../..");

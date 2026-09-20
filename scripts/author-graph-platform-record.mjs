@@ -14,7 +14,7 @@
 // list — there the second copy swallowed every announcement.
 //
 // TWO MECHANICAL TRAPS THIS EXISTS TO AVOID:
-//   * `bsc graph harvest --module` derives the id from the FILE STEM, so all sixteen derive
+//   * `bsc algorithms harvest --module` derives the id from the FILE STEM, so all sixteen derive
 //     `graph-platform.ts` and each `--apply` would overwrite the last under one id. The shipped eight use
 //     `<feature>-graph-platform.ts`; this follows that.
 //   * `execFileSync`, never a shell. Git Bash rewrites an argument that looks like a path, so

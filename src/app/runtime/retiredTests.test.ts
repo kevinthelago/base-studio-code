@@ -202,7 +202,7 @@ describe("an edge test is executed, not merely stored", () => {
   // and the store keeps the test, so any later `git checkout`, revert or merge that resurrects the
   // path re-creates the pair.
   //
-  // Unlike a node test, an edge is never MIRRORED — `bsc graph edge set --src` is the migration verb,
+  // Unlike a node test, an edge is never MIRRORED — `bsc algorithms edge set --src` is the migration verb,
   // not a harvest — so a populated `edgeShadowed` has no legitimate reading. Reads the packaged SEED,
   // not the shared runtime store, so a half-finished migration in someone else's session cannot
   // redden this for everyone; only a COMMITTED one can.
@@ -222,7 +222,7 @@ describe("an edge test is executed, not merely stored", () => {
 
   // ── AN EDGE'S `src` IS REPO-RELATIVE, OR NOTHING RUNS IT (`an-orphaned-test-moves-onto-its-record`) ──
   //
-  // `bsc graph edge set --src` stores the path EXACTLY as it was typed, and an agent working in a
+  // `bsc algorithms edge set --src` stores the path EXACTLY as it was typed, and an agent working in a
   // worktree naturally types the absolute one its shell just printed. `bsc-emit` then has nowhere to
   // put the test — `.bsc-records/` mirrors `src/`, so a path that is not under `src/` has no image in
   // it — and the edge lands in `edgeUnresolvable`: stored, named, explained, and never executed.
@@ -253,7 +253,7 @@ describe("an edge test is executed, not merely stored", () => {
     expect(
       bad,
       "an edge's `src` is where bsc-emit puts the test back; an absolute or missing one means the " +
-        "edge's assertions run NOWHERE. Re-run `bsc graph edge set --id <id> --members … --src " +
+        "edge's assertions run NOWHERE. Re-run `bsc algorithms edge set --id <id> --members … --src " +
         "src/<repo-relative path>` from the checkout, then promote it to the seed.",
     ).toEqual([]);
     // Non-vacuity, floored per the same reasoning as the sibling above: a filter that stopped matching

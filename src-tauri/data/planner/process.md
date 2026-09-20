@@ -32,7 +32,7 @@ or an **algorithm** you don't already have, go **reuse-first**:
   ```
 
 - **Algorithms / logic** → the **librarian** (the algorithms library). First check:
-  `bsc graph impl list`. If nothing fits, commission one:
+  `bsc algorithms impl list`. If nothing fits, commission one:
 
   ```
   echo "lay out a force-directed graph from nodes + edges" | bsc-commission librarian
@@ -570,7 +570,7 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   "defined" once it has `name` + `behavior` + ≥1 `acceptance` + a non-empty `requires` (`bsc plan
   feature list` shows ✓/·).
   **`requires` — what this feature BUILDS ON, and it is not optional.** It names ids in the two
-  libraries: algorithm implementations (`bsc graph impl list`) and UI components (`bsc ui list`). The
+  libraries: algorithm implementations (`bsc algorithms impl list`) and UI components (`bsc ui list`). The
   fleet renders it into each worker's `CLAUDE.local.md` as a *Reference implementations* section
   pointing at the store, so a worker is handed what already exists instead of re-deriving it — the
   `reimplemented-component` problem, caught BEFORE the code is written.
@@ -583,9 +583,9 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
 
   ```
   bsc ui list --feature <slug>              # the components that feature already owns
-  bsc graph impl list --feature <slug>      # its algorithm implementations
+  bsc algorithms impl list --feature <slug>      # its algorithm implementations
   bsc ui list --feature core                # the shared baseline — usable by ANY feature
-  bsc graph impl list --feature core
+  bsc algorithms impl list --feature core
   ```
 
   Name what the capability genuinely needs, including from `core` — that is what the baseline is for.
