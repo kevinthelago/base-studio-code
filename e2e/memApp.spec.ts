@@ -1,17 +1,17 @@
-// `bsc cost app`'s measurement half — the app's populations, read once, printed as ONE machine-readable
+// `bsc resources app`'s measurement half — the app's populations, read once, printed as ONE machine-readable
 // line for the CLI to parse.
 //
 // WHY A SEPARATE SPEC FROM `glanceProfile.spec.ts`. That one is an INVESTIGATION: it holds a page
 // mounted for 150s by default, samples a curve, prints a table a human reads, and asserts a listener
 // budget. This one is a READING — the smallest thing that answers "what does the app hold right now"
-// so a worker can diff it across a change. Folding them together would make every `bsc cost app` pay
+// so a worker can diff it across a change. Folding them together would make every `bsc resources app` pay
 // two and a half minutes, and would put a CLI's output contract inside a spec whose job is to fail
 // loudly on a budget.
 //
 // ⚠️ THE SAME LIMIT APPLIES AND IS NOT A DETAIL: this is CHROMIUM, and the app ships on WebKitGTK. An
 // engine-level WebKit leak will not reproduce here. What carries over is application-level — retained
 // JS, accumulating listeners, a runaway render loop. A clean number is evidence about the APP, never
-// about the renderer that dies. `bsc cost app`'s own help says so too, because the person reading the
+// about the renderer that dies. `bsc resources app`'s own help says so too, because the person reading the
 // number is usually not the person who read this file.
 import { test, expect } from "@playwright/test";
 import type { CDPSession } from "@playwright/test";
@@ -19,7 +19,7 @@ import type { CDPSession } from "@playwright/test";
 const HARNESS = "/e2e/harness/graph-pages-harness.html";
 
 /** The marker `bsc_mem::app::parse_report` matches on. Changing it breaks the CLI — the Rust side
- *  pins the same string as a const, and `bsc cost app` reports "no measurement" rather than a zero if
+ *  pins the same string as a const, and `bsc resources app` reports "no measurement" rather than a zero if
  *  the two ever drift, which is the failure mode worth having. */
 const MARKER = "BSC_MEM_APP ";
 
@@ -60,7 +60,7 @@ test("the app's populations, as one machine-readable reading", async ({ page, co
   const reading: Record<string, number> = {};
   for (const k of WATCHED) if (typeof m[k] === "number") reading[k] = m[k];
 
-  // A reading with no heap in it is not a reading. Failing here is deliberate: `bsc cost app` reports
+  // A reading with no heap in it is not a reading. Failing here is deliberate: `bsc resources app` reports
   // "could not read a measurement" rather than a zero, and a spec that printed an empty object would
   // turn that honest failure into a confident 0 MB.
   expect(Object.keys(reading), "CDP returned none of the watched metrics").not.toHaveLength(0);

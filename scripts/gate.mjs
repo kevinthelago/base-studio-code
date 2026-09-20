@@ -88,7 +88,7 @@ function workspace() {
  * The gate is the one command every worktree agent runs, and it is where the expensive builds actually
  * happen — cargo, vitest, tsc. It has always printed each leg's seconds and thrown them away, so this
  * project has hand-measured build figures written into CLAUDE.md and no history behind any of them.
- * Now every leg lands a row, and `bsc cost build --source gate:clippy` is a trend rather than a memory.
+ * Now every leg lands a row, and `bsc resources build --source gate:clippy` is a trend rather than a memory.
  *
  * MEASURE-ONLY, and that is the whole reason this is safe to do here. `CLAUDE.md` is explicit that the
  * gate must not file faults — ten worktree agents gating in parallel would pin every project node red

@@ -60,7 +60,7 @@
           "cont": [],
           "key": "serde",
           "lead": [
-            "# `bsc capacity` — probed machine capacity, configured reserves and red lines, and a pure admission decision."
+            "# `bsc resources` — probed machine capacity, configured reserves and red lines, a pure admission decision, and (delegated to `bsc-mem`) what the work actually cost."
           ],
           "value": "{ version = \"1\", features = [\"derive\"] }"
         },
@@ -103,6 +103,12 @@
             "# The machine roster is the deploy roster: one list of the machines this app drives."
           ],
           "value": "{ path = \"../bsc-deploy\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-mem",
+          "lead": [],
+          "value": "{ path = \"../bsc-mem\" }"
         }
       ],
       "lead": [
