@@ -19,7 +19,7 @@
  *
  * # Why this cannot live in the binary
  *
- * `bsc version` exists and reports build time and path. It is useless here: asking a broken binary about
+ * `bsc self version` exists and reports build time and path. It is useless here: asking a broken binary about
  * itself returns the same silent success as asking it anything else. Detection that runs INSIDE the
  * binary is unreachable exactly when it is needed, so these checks inspect the FILE and then demand a
  * real handshake.
@@ -78,7 +78,7 @@ export function inspect(path, { statSize, run }) {
 /**
  * Is `binaryMtime` behind the newest source change?
  *
- * This is the practical form of "which build am I?". The `built …` line `bsc version` prints comes from
+ * This is the practical form of "which build am I?". The `built …` line `bsc self version` prints comes from
  * the exe's own MTIME (`current_exe()` + metadata), not a compile-time stamp — so a COPY reports when it
  * was copied, and a month-old binary staged today looks fresh. Comparing against the tree sidesteps that
  * entirely and costs no build change.
