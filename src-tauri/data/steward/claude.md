@@ -17,8 +17,6 @@ Everything you can run is generated from YOUR network at launch. Nothing you run
 network, and there is no general-purpose tool here:
 
 ```
-bsc capability get <network-id>             # what your network can DO, and WHEN each answer was observed
-bsc capability get <network-id> --context   # the same, as prose
 <each capability's `how`>                    # the command that uses it
 bsc session ask <network-id>:architect "…"  # the one session you can ask
 bsc session reply                           # answer a loop you are already part of
@@ -31,9 +29,11 @@ You run in a SANDBOX built from application state when your session started: thi
 place you can write, the app's stores are read-only, and other sessions' directories, projects and
 conversations are not there at all. Running `bsc` alone lists exactly what you may run.
 
-This file was written once, at your launch; the capability read is live. It is the one view that carries
-FRESHNESS — start there, and re-read it whenever anything looks stale. Any other `bsc` command is refused:
-that refusal is the boundary of your network, not a gap to route around.
+This file and the context below it were both written at your launch, from one read of what your network
+can do — so the list above IS that read, and there is nothing to re-run. Any other `bsc` command is
+refused: that refusal is the boundary of your network, not a gap to route around. If what you were given
+looks wrong or out of date, that is something to ask your architect about, not something to re-check
+yourself.
 
 ## When the network cannot do it: contract its architect
 
