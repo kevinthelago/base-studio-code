@@ -1060,6 +1060,10 @@
                       {
                         "k": "role",
                         "v": "infra"
+                      },
+                      {
+                        "k": "paneId",
+                        "v": "demo:director"
                       }
                     ]
                   },
@@ -1089,6 +1093,10 @@
                       {
                         "k": "role",
                         "v": "service"
+                      },
+                      {
+                        "k": "paneId",
+                        "v": "demo:api"
                       }
                     ]
                   }
