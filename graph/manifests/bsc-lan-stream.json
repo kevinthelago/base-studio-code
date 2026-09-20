@@ -144,9 +144,9 @@
         "# would have silently given up.",
         "#",
         "# To change it, edit the EDGE and promote it — editing a file here would be editing nothing:",
-        "#     bsc graph edge get bsc-lan-stream--wire-contract",
-        "#     bsc graph edge set --id bsc-lan-stream--wire-contract --members <...> --src <file>",
-        "#     bsc graph promote --id bsc-lan-stream--wire-contract --root \"$PWD\""
+        "#     bsc algorithms edge get bsc-lan-stream--wire-contract",
+        "#     bsc algorithms edge set --id bsc-lan-stream--wire-contract --members <...> --src <file>",
+        "#     bsc algorithms promote --id bsc-lan-stream--wire-contract --root \"$PWD\""
       ],
       "name": "[[test]]"
     },

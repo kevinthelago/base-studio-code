@@ -617,7 +617,7 @@
             "# app and the CLI cannot drift onto different files.",
             "#",
             "# It ALSO still backs the test below (#3391): the packaged librarian spec (`data/librarian/claude.md`)",
-            "# TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from",
+            "# TEACHES the `bsc algorithms` CLI, so its content test derives the expected verb/flag surface from",
             "# `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list."
           ],
           "value": "{ path = \"../crates/bsc-graph\" }"

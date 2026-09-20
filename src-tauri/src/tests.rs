@@ -413,7 +413,7 @@
     /// Two shapes, because the two behave completely differently under migration and only one of them
     /// is visible to the tool:
     ///
-    /// * `include_str!("<basename>")` — compile time. `bsc graph migrate-crate` REFUSES `--apply` over
+    /// * `include_str!("<basename>")` — compile time. `bsc algorithms migrate-crate` REFUSES `--apply` over
     ///   this one (`refuse_reason`, lexically, so prose about it does not count).
     /// * the module's own repo-relative path as a string literal, which is how a runtime disk read
     ///   spells it — `Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shot/mod.rs")`, and equally the
@@ -503,7 +503,7 @@
         }
         assert!(
             offenders.is_empty(),
-            "a module reads its OWN source by a path `bsc graph migrate-crate src-tauri` deletes. The \
+            "a module reads its OWN source by a path `bsc algorithms migrate-crate src-tauri` deletes. The \
              record cannot read a file that no longer exists, so this blocks the migration of the \
              whole crate — and the disk-read spelling is invisible to the tool's own refusal, so it \
              would break AFTER `--apply` succeeded. Resolve through `crate::testutil::module_source(\
@@ -520,7 +520,7 @@
     /// `module_source` has two homes: the file, and this crate's section of `$OUT_DIR/crate.rs`. Today
     /// this crate owns ZERO records, so the second half is **dead code that no test can reach** — and
     /// it is the half every self-scanning guard falls onto the moment
-    /// `bsc graph migrate-crate src-tauri --apply` runs. Shipping it unexercised would mean five
+    /// `bsc algorithms migrate-crate src-tauri --apply` runs. Shipping it unexercised would mean five
     /// behaviour guards break at exactly the moment nobody is looking at them.
     ///
     /// So this drives the REAL emitter — `graph_materialize::emit_into`, the same call
@@ -1255,7 +1255,7 @@
     const KNOWN_SEED_EMBEDS: &[(&str, &str)] = &[(
         "crates/bsc-sound/src/release/mod.rs",
         "#bsc-sound-still-embeds-the-signal-seed-as-a-record — the fix is a graph-store write \
-         (`bsc graph impl set` + `promote` on `bsc-sound--release.rs`), out of scope here",
+         (`bsc algorithms impl set` + `promote` on `bsc-sound--release.rs`), out of scope here",
     )];
 
     /// Does one source line `include_str!` one of the high-churn packaged seeds?

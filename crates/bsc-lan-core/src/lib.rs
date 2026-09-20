@@ -51,9 +51,9 @@ pub use ttl::Ttl;
 // src/action.rs, src/actor.rs, src/adapters/mod.rs, src/adapters/dhcp.rs, src/adapters/dns.rs, src/adapters/firewall.rs, src/adapters/host.rs, src/adapters/nac.rs, src/adapters/switch.rs, src/adapters/telemetry.rs, src/adapters/wireless.rs, src/asset.rs, src/audit.rs, src/error.rs, src/evidence.rs, src/primitives.rs, src/proposal.rs, src/target.rs, src/tier.rs, src/ttl.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
-//     bsc graph impl get bsc-lan-core--<module>.rs
-//     bsc graph impl set --id bsc-lan-core--<module>.rs --code-file <f>
-//     bsc graph promote --id bsc-lan-core--<module>.rs
+//     bsc algorithms impl get bsc-lan-core--<module>.rs
+//     bsc algorithms impl set --id bsc-lan-core--<module>.rs --code-file <f>
+//     bsc algorithms promote --id bsc-lan-core--<module>.rs
 //
 // This header is still a file because this root holds crate-level code of its own. A root
 // down to its //! docs and this include is migrated too: the docs become the

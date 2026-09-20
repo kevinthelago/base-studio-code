@@ -122,7 +122,7 @@
           "cont": [],
           "key": "plandb",
           "lead": [
-            "# Project completion (issues done/total) for `bsc metrics` (#3449) — Tauri-free, bundled SQLite."
+            "# Project completion (issues done/total) for `bsc logs metrics` (#3449) — Tauri-free, bundled SQLite."
           ],
           "value": "{ path = \"../plandb\" }"
         },

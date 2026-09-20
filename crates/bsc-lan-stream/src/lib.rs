@@ -40,9 +40,9 @@ pub use subscription::{Finding, Rejections, Subscription};
 // src/crypto.rs, src/envelope.rs, src/error.rs, src/frame.rs, src/liveness.rs, src/sequence.rs, src/subscription.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
-//     bsc graph impl get bsc-lan-stream--<module>.rs
-//     bsc graph impl set --id bsc-lan-stream--<module>.rs --code-file <f>
-//     bsc graph promote --id bsc-lan-stream--<module>.rs
+//     bsc algorithms impl get bsc-lan-stream--<module>.rs
+//     bsc algorithms impl set --id bsc-lan-stream--<module>.rs --code-file <f>
+//     bsc algorithms promote --id bsc-lan-stream--<module>.rs
 //
 // This header is still a file because this root holds crate-level code of its own. A root
 // down to its //! docs and this include is migrated too: the docs become the

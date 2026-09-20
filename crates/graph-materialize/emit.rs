@@ -205,7 +205,7 @@ impl Plan {
     /// ONLY THE MODULE RECORD, never a function lifted out of the same file. Both carry the same `src`:
     /// `unquote.rs` is 8 lines lifted out of `crates/cve/src/install.rs`, while `cve--install.rs` IS
     /// that file. Selecting on `src` alone saw two records claiming module `install` and stopped the
-    /// build. The discriminator is the id, and it is the same one `bsc graph emit` uses: a module
+    /// build. The discriminator is the id, and it is the same one `bsc algorithms emit` uses: a module
     /// record's id is DERIVED from its path, so it is exactly the statement "this record is that whole
     /// file". `plan.rs::expected_id` is that derivation, and
     /// `expected_id_agrees_with_extract_module_id` pins it against `extract::module_id` over every real
@@ -327,7 +327,7 @@ impl Plan {
     /// program is its root, and a binary reaches the shared root through `[[bin]] path` exactly as a
     /// library does through `[lib] path`. `lib.rs` WINS when both exist, and it is deliberate rather
     /// than incidental: `$OUT_DIR` is per PACKAGE, not per target, so a package that migrated BOTH
-    /// roots would need two `crate.rs` and get one. `bsc graph migrate-crate` cannot produce that
+    /// roots would need two `crate.rs` and get one. `bsc algorithms migrate-crate` cannot produce that
     /// state — `migrate::crate_root` picks `lib.rs` first, so the binary root of a package that also
     /// has a lib is never harvested — and this order is what makes the two agree about which root the
     /// generated file belongs to.
@@ -436,7 +436,7 @@ impl Plan {
         if let Some(dup) = out.windows(2).find(|w| w[0].name == w[1].name) {
             return Err(format!(
                 "two edges claim test target `{}` of crate `{}`: `{}` and `{}`. One is superseded — \
-                 remove it (`bsc graph edge remove <id>`) and re-promote.",
+                 remove it (`bsc algorithms edge remove <id>`) and re-promote.",
                 dup[0].name, self.crate_dir, dup[0].id, dup[1].id
             ));
         }
@@ -464,7 +464,7 @@ impl Plan {
             return match adoption {
                 Adoption::Required => Err(format!(
                     "crate `{}` opted into graph materialization but no record in {} has a `src` under {}. \
-                     Author one (`bsc graph impl set --src {}<module>.rs`) and `bsc graph promote --id <id>`.",
+                     Author one (`bsc algorithms impl set --src {}<module>.rs`) and `bsc algorithms promote --id <id>`.",
                     self.crate_dir,
                     self.store_path.display(),
                     self.src_prefix,

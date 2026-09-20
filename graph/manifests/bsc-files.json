@@ -87,7 +87,7 @@
           "key": "bsc-graph",
           "lead": [
             "# #82 — `read` resolves a missing path against the algorithms store before calling it absent, reusing",
-            "# the SAME lookup `bsc graph harvest` uses (#75) rather than restating it here. A retired module's file",
+            "# the SAME lookup `bsc algorithms harvest` uses (#75) rather than restating it here. A retired module's file",
             "# is deliberately gone, so the filesystem alone is the wrong thing to answer with."
           ],
           "value": "{ path = \"../bsc-graph\" }"

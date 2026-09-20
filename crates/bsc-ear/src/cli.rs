@@ -457,7 +457,7 @@ With --dir the store is <base>/ear.db; otherwise $BSC_EAR_DB, else ~/.base-studi
 bsc ear imagine <once|watch|status|sweep> …
 
 Draws what was said. `watch` follows this ear's transcripts and draws each new one; `once` draws
-text you supply. It was the top-level noun `bsc imagine`.
+text you supply. It was the top-level noun `bsc ear imagine`.
 
 Its `status` and `sweep` are the IMAGINATION's, not the ear's — which is why it is a sub-surface
 and not four more verbs here. `bsc ear imagine help` for them.",

@@ -396,7 +396,7 @@ pub fn topo_order(crates: &[CrateRecord]) -> Result<Vec<String>, String> {
 //     objection is a category error, not a crash.)
 //  2. IT WOULD NOT SURVIVE. `bsc_graph::repo_store::write_at` says it plainly: "any record file whose
 //     id is no longer in the document is removed". Manifest records exist only in the repo store and
-//     never in the runtime ledger, so the next `bsc graph` write by ANY session on the box would
+//     never in the runtime ledger, so the next `bsc algorithms` write by ANY session on the box would
 //     delete all 80 — silently, and long after whoever wrote them had moved on.
 //
 // A sibling directory is swept by nothing and merged into nothing, so both problems disappear rather
@@ -1271,13 +1271,13 @@ mod store_tests {
         assert!(r.unchanged.len() >= 81, "only {} unchanged (80 crates + the workspace)", r.unchanged.len());
     }
 
-    /// Manifest records must NOT live where a `bsc graph` write would sweep them.
+    /// Manifest records must NOT live where a `bsc algorithms` write would sweep them.
     ///
     /// The hazard survived the store becoming a database, it only changed shape. It used to be
     /// `repo_store::write_at` deleting any file under `graph/records/` whose id was absent from the
     /// document; it is now `write_db`, which RETIRES any id in the store that the document no longer
     /// carries. A manifest record is never in that document, so if one were ever written into the
-    /// committed store the next `bsc graph` write by any session would tombstone it — and the crate
+    /// committed store the next `bsc algorithms` write by any session would tombstone it — and the crate
     /// would stop building with no file to notice missing.
     ///
     /// So the invariant is asserted where it now lives: no id in the committed store looks like a
@@ -1302,7 +1302,7 @@ mod store_tests {
             .unwrap_or_default();
         assert!(
             strays.is_empty(),
-            "manifest records found in the committed store, which a `bsc graph` write sweeps: {strays:?}"
+            "manifest records found in the committed store, which a `bsc algorithms` write sweeps: {strays:?}"
         );
         assert_ne!(manifests_dir(repo()), store, "the manifests are not the record store");
     }

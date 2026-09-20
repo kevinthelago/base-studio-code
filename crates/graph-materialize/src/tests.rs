@@ -273,7 +273,7 @@ fn a_required_adopter_with_no_record_is_a_hard_error_that_names_the_prefix() {
     let err = emit_into(&root.join("crates").join("mine"), &out, None, Adoption::Required)
         .expect_err("opted in, owns nothing");
     assert!(err.contains("crates/mine/src/"), "names the prefix it searched: {err}");
-    assert!(err.contains("bsc graph impl set"), "says how to fix it: {err}");
+    assert!(err.contains("bsc algorithms impl set"), "says how to fix it: {err}");
     assert!(!out.join("crate.rs").exists(), "and writes nothing");
 }
 
