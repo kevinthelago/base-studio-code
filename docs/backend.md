@@ -39,9 +39,9 @@ React/TypeScript WebView frontend. The Rust side is the focus of this document.
 > hunting for a file that was deliberately deleted.
 >
 > ```bash
-> bsc graph impl get src-tauri--platform--paths.rs --field code --raw   # read it
-> bsc graph impl set --id src-tauri--platform--paths.rs --code-file <f> # change it
-> bsc graph promote --id src-tauri--platform--paths.rs --root "$PWD"    # …and make it compile
+> bsc algorithms impl get src-tauri--platform--paths.rs --field code --raw   # read it
+> bsc algorithms impl set --id src-tauri--platform--paths.rs --code-file <f> # change it
+> bsc algorithms promote --id src-tauri--platform--paths.rs --root "$PWD"    # …and make it compile
 > ```
 >
 > [`docs/records.md`](records.md) carries the rest, including what must be true before retiring one.
@@ -66,7 +66,7 @@ spawnable libraries/CLIs live under [`crates/`](../crates/).
 block is GENERATED — `graph_tauri_handler!()`, written into `$OUT_DIR/crate.rs` by
 `crates/graph-materialize` from the `tauriCommands` facet of every record
 (`a-tauri-command-is-a-record-facet`). The canonical index of the backend's command surface is
-therefore the STORE, and `bsc graph impl get <id>` reads it; the 201-entry hand-written list that used
+therefore the STORE, and `bsc algorithms impl get <id>` reads it; the 201-entry hand-written list that used
 to live in `run.rs` is gone, along with the drift between it and the attributes it mirrored.
 
 | Folder | Owns | Key files |
@@ -192,7 +192,7 @@ cwd-keyed `--continue` history) stays stable.
 Both peers dial *out* to a Cloudflare relay (`relay/`); the relay forwards only opaque
 `{ room, ciphertext }`. The payload is an end-to-end **Noise IK** session
 (`Noise_IK_25519_ChaChaPoly_BLAKE2s`, the graph record `bsc-tunnel--noise.rs` —
-`bsc graph impl get bsc-tunnel--noise.rs`) — the
+`bsc algorithms impl get bsc-tunnel--noise.rs`) — the
 desktop is the **responder** with a long-lived static keypair; the mobile is the **initiator** and
 learns the desktop's static public key from the **QR**. `TunnelState`
 (`mod.rs`) is the in-process bus that tees PTY output, holds

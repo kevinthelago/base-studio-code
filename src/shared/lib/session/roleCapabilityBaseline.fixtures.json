@@ -86,7 +86,7 @@
       "writeGlobs": [],
       "allow": [
         "bsc ui",
-        "bsc graph",
+        "bsc algorithms",
         "bsc persona whatami",
         "bsc memory"
       ],
@@ -397,7 +397,7 @@
         "scratch/**"
       ],
       "allow": [
-        "bsc graph",
+        "bsc algorithms",
         "bsc ui list",
         "bsc ui get",
         "bsc request new",
@@ -728,7 +728,7 @@
       "writeGlobs": [],
       "surfaces": [
         "plan",
-        "graph",
+        "algorithms",
         "ui",
         "files",
         "errors"

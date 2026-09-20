@@ -3,7 +3,7 @@
  * `node scripts/graph-promote-check.mjs` — the gate's half of the repo-store seam.
  *
  * Under files-to-zero the build compiles from `graph/algorithms.json`, a COMMITTED file, while authoring
- * happens in the per-user runtime store. `bsc graph promote` moves records across, and that seam has a
+ * happens in the per-user runtime store. `bsc algorithms promote` moves records across, and that seam has a
  * drift surface by construction: an author can edit a record and never promote it, leaving the thing the
  * compiler reads silently behind the thing the author believes is current. This is the check for it.
  *
@@ -15,7 +15,7 @@
  *    is reported loudly on stdout and the gate moves on. (A compile failure is never treated this way —
  *    see the sweep, which fails hard.)
  *  * **No runtime store.** A machine that never authored these records has no opinion about whether the
- *    committed ones are stale. `bsc graph promote --check` already returns `checked: 0` there; this
+ *    committed ones are stale. `bsc algorithms promote --check` already returns `checked: 0` there; this
  *    wrapper just does not invent a failure around it.
  *
  * What DOES fail: a record that exists in both stores and differs. That is an edit which never reached
@@ -47,7 +47,7 @@ export function drifted(stdout) {
 }
 
 /**
- * The wall-clock bound for the underlying `bsc graph promote --check`, in milliseconds.
+ * The wall-clock bound for the underlying `bsc algorithms promote --check`, in milliseconds.
  *
  * This leg execs a `bsc` subcommand that compares the committed store against the SHARED runtime store
  * every concurrent session authors. MEASURED 2026-09-07: at store size 1395, with ~13 sessions
@@ -252,7 +252,7 @@ export function promoteCheckTimeoutVerdict(ms, signal, error) {
   return `${[
     "",
     `graph: TIMED OUT — repo-store drift was NOT verified (${detail}).`,
-    "  `bsc graph promote --check` compares the committed store against the SHARED runtime store that",
+    "  `bsc algorithms promote --check` compares the committed store against the SHARED runtime store that",
     "  every concurrent session authors; under heavy concurrent authoring it can spin far past its",
     "  normal ~37s. This leg was aborted so it could NOT hold the full-gate slot (request #253).",
     "  This is NOT a pass. Re-run the gate when the box is quieter, or raise",
@@ -274,7 +274,7 @@ export function ago(iso, nowMs) {
 /**
  * Name WHO and WHEN for each drifted node.
  *
- * The bare failure says only "the repo store is out of date — run `bsc graph promote`", and following
+ * The bare failure says only "the repo store is out of date — run `bsc algorithms promote`", and following
  * that advice blind is how someone else's HALF-WRITTEN record reaches the build's source of truth. This
  * check compares a git-tracked file against a SHARED, MUTABLE runtime store that every concurrent
  * session writes to, so a red is often not stale drift at all — it is another session authoring right
@@ -314,7 +314,7 @@ export function attribute(ids, historyFor, nowMs, opts = {}) {
     lines.push(
       "",
       "  One of these was authored in the last 5 minutes: ANOTHER SESSION IS PROBABLY MID-EDIT.",
-      "  Do NOT `bsc graph promote` it — that commits their in-flight record to the build's source of truth.",
+      "  Do NOT `bsc algorithms promote` it — that commits their in-flight record to the build's source of truth.",
     );
   }
   return `${lines.join("\n")}\n`;
@@ -458,7 +458,7 @@ export function diagnose(ids, io, opts = {}) {
   if (collapsed) {
     lines.push(
       "",
-      "  DO NOT `bsc graph promote` a collapsed node — that writes the stub over the record permanently.",
+      "  DO NOT `bsc algorithms promote` a collapsed node — that writes the stub over the record permanently.",
       "  Restore the runtime copy from the committed one instead, then re-run this check.",
     );
   }
@@ -702,7 +702,7 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
     const short = expected > 0 ? coverageShortfall(parse(out), expected) : null;
     if (short) {
       process.stdout.write(
-        `\ngraph: REFUSING a clean verdict — \`bsc graph promote --check\` covered ${short.checked} ` +
+        `\ngraph: REFUSING a clean verdict — \`bsc algorithms promote --check\` covered ${short.checked} ` +
           `implementation(s) of the ${short.expected} this checkout's committed store holds.\n` +
           `  The binary at ${usable.path} disagrees with this script about what the store IS. The usual ` +
           `cause is a stale one: records live one-per-file under \`graph/records/\` and a binary from ` +

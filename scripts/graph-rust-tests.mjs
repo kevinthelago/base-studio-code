@@ -152,7 +152,7 @@ export function drifted(edges, read) {
     if (file !== e.bodies[0]) {
       out.push(
         `${e.id} — the record and ${e.src} have DRIFTED. Cargo runs the file, so the record's copy is ` +
-          `assertions nobody executes. Re-harvest it (\`bsc graph edge set --id ${e.id} --src ${e.src}\`) ` +
+          `assertions nobody executes. Re-harvest it (\`bsc algorithms edge set --id ${e.id} --src ${e.src}\`) ` +
           `and promote, or migrate the test (delete the file, declare the [[test]] target).`
       );
     }

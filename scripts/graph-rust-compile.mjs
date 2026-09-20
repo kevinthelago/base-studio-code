@@ -8,7 +8,7 @@
  * # THIS IS THE FAST SWEEP, NOT THE AUTHORITY
  *
  * The convention below is implemented TWICE on purpose, and the other copy is the authority:
- * `crates/bsc-graph/src/rust_test.rs`, reached as `bsc graph test <id> --run`. That one materializes a
+ * `crates/bsc-graph/src/rust_test.rs`, reached as `bsc algorithms test <id> --run`. That one materializes a
  * real crate and runs `cargo`, so it can execute a node's paired tests; this one drives `rustc` per
  * file and can only answer "does it compile".
  *

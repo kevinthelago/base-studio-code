@@ -175,7 +175,7 @@ export function directReads(units: { name: string; text: string }[]): string[] {
 const LOADERS = [
   "scripts/lib/recordStore.mjs",
   "crates/graph-materialize/emit.rs",
-  // The `bsc graph store` verb's own help prose and the `repo_store` module that IS the merge.
+  // The `bsc algorithms store` verb's own help prose and the `repo_store` module that IS the merge.
   "record:bsc-graph--cli.rs",
   "record:bsc-graph--repo-store--mod.rs",
   // THIS FILE. The scanner has to hold both shapes it recognises as literal fixtures, or the bite test

@@ -91,11 +91,11 @@ work is sound, the timing is what is in question.
 edit → harvest → ui set → promote → seed → retire → regenerate → gate
 ```
 
-**Logic modules** (`.ts`): `bsc graph harvest <file> --module --apply` writes straight to the store.
+**Logic modules** (`.ts`): `bsc algorithms harvest <file> --module --apply` writes straight to the store.
 
 **Components** (`.tsx`): there is no one-step path.
 ```bash
-bsc graph harvest <file> --module          # module-shaped, carries `provides`
+bsc algorithms harvest <file> --module          # module-shaped, carries `provides`
 # reshape to a COMPONENT record: {id, name, kitId:"base-studio-code", role, provides,
 #                                 srcText:<candidate.code>, composes, src, folder}
 cat rec.json | bsc ui set                  # from a FILE or stdin — NEVER argv
@@ -143,7 +143,7 @@ The census's **blocker ranking is the work queue**, not diagnostic output. One 5
 (`SettingsControls`) unblocked 14 — nearly as many files as harvesting 39 cards one at a time.
 
 ```bash
-node scripts/promote-records.mjs --store <(bsc ui list --full) --impls <(bsc graph impl list) \
+node scripts/promote-records.mjs --store <(bsc ui list --full) --impls <(bsc algorithms impl list) \
   | grep "unresolvable import" | sed 's/.*needs //' | tr ',' '\n' | sort | uniq -c | sort -rn
 ```
 

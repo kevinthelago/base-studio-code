@@ -34,14 +34,14 @@ describe("graph-promote-check attribution", () => {
   /**
    * THE CASE THIS EXISTS FOR. A gate went red 31 seconds after another session authored the record —
    * the check reads a SHARED runtime store, so a red is often live authoring rather than stale drift.
-   * Following the bare "run `bsc graph promote`" advice there commits someone's half-written record.
+   * Following the bare "run `bsc algorithms promote`" advice there commits someone's half-written record.
    */
   it("warns off a promote when the drift is seconds old", () => {
     const h = { rev: 4, updatedBy: "", updatedAt: "2026-09-01T15:21:27Z" };
     const out = attribute(["session-roles.ts"], () => h, NOW);
     expect(out).toContain("31s ago");
     expect(out).toContain("ANOTHER SESSION IS PROBABLY MID-EDIT");
-    expect(out).toContain("Do NOT `bsc graph promote`");
+    expect(out).toContain("Do NOT `bsc algorithms promote`");
     expect(out).toContain("unknown"); // an unattributed write is itself the finding
   });
 
@@ -266,7 +266,7 @@ describe("graph-promote-check diagnosis", () => {
   };
 
   /**
-   * THE WHOLE POINT OF THIS SLICE. The old output named an id and advised `bsc graph promote`. Reading
+   * THE WHOLE POINT OF THIS SLICE. The old output named an id and advised `bsc algorithms promote`. Reading
    * it took forty minutes to establish that following that advice would destroy the record; this must
    * say so in one screen.
    */
@@ -278,7 +278,7 @@ describe("graph-promote-check diagnosis", () => {
     expect(out).toContain("code 3263 -> 33 chars");
     expect(out).toContain("name");
     expect(out).toContain("the shape of a TEST that");
-    expect(out).toContain("DO NOT `bsc graph promote`");
+    expect(out).toContain("DO NOT `bsc algorithms promote`");
   });
 
   it("does not warn off a promote for ordinary drift", () => {
@@ -455,7 +455,7 @@ describe("graph-promote-check as a CLI", () => {
 
 // ── the WALL-CLOCK BOUND, proven end to end ──────────────────────────────────────────────────────
 //
-// The bug (request #253) was that `bsc graph promote --check` could spin for 32+ minutes while
+// The bug (request #253) was that `bsc algorithms promote --check` could spin for 32+ minutes while
 // `gate.mjs` held the single full-gate slot. No in-process test can prove the fix, because the bound
 // is enforced around a spawned `bsc` and the value that matters is that the leg's PROCESS terminates
 // fast and non-zero. So this points the CLI at a stub `bsc` whose `--check` SLEEPS far past the bound,
@@ -622,7 +622,7 @@ describe("graph-promote-check filters (pure)", () => {
 const MANY = 40;
 const MANY_IDS = Array.from({ length: MANY }, (_, i) => `node-${i}.ts`);
 /** The sentence the REAL `bsc` prints on stderr, with every id in it — the blob under test. */
-const BLOB = `bsc: the repo store is out of date — ${MANY} drifted (${MANY_IDS.join(", ")}). Run \`bsc graph promote\` to bring it forward.`;
+const BLOB = `bsc: the repo store is out of date — ${MANY} drifted (${MANY_IDS.join(", ")}). Run \`bsc algorithms promote\` to bring it forward.`;
 
 /**
  * A checkout whose stub `bsc` reports MANY drifted ids, exactly as the real one does: the JSON line on
@@ -655,9 +655,9 @@ function stubManyCheckout(): string {
       "  exit 0; fi",
       `echo '${JSON.stringify({ checked: MANY, drifted: MANY_IDS, ok: false })}'`,
       // SINGLE-QUOTED, AND THAT IS LOAD-BEARING. `BLOB` ends with the real message's
-      // "Run `bsc graph promote` to bring it forward." — and BACKTICKS INSIDE A DOUBLE-QUOTED SHELL
+      // "Run `bsc algorithms promote` to bring it forward." — and BACKTICKS INSIDE A DOUBLE-QUOTED SHELL
       // STRING ARE COMMAND SUBSTITUTION. Written as `echo "$BLOB"`, this stub executed a bare
-      // `bsc graph promote` on every run, with cwd = the worktree, which promoted every tracked record
+      // `bsc algorithms promote` on every run, with cwd = the worktree, which promoted every tracked record
       // from the runtime ledger into the COMMITTED store: 127 records rewritten the first time,
       // stamped `by: repo store`, five of them losing `pub use` re-exports so `bsc-util` stopped
       // compiling — a test silently rewriting the thing the build compiles from.
@@ -781,9 +781,9 @@ describe("graph-promote-check filters (CLI)", () => {
    * A TEST MUST NOT WRITE THE COMMITTED RECORD STORE — the thing the build compiles from.
    *
    * THIS GUARD EXISTS BECAUSE THIS FILE DID EXACTLY THAT, and nothing anywhere could see it. `BLOB`
-   * ends with the real failure message's "Run `bsc graph promote` to bring it forward.", and the stub
+   * ends with the real failure message's "Run `bsc algorithms promote` to bring it forward.", and the stub
    * wrote it into a `/bin/sh` script as `echo "$BLOB"` — where BACKTICKS ARE COMMAND SUBSTITUTION. So
-   * every run of the tests above executed a bare `bsc graph promote` (a real one: `bsc` is on PATH)
+   * every run of the tests above executed a bare `bsc algorithms promote` (a real one: `bsc` is on PATH)
    * with cwd = this worktree, promoting every tracked record from the per-user ledger into
    * `graph/algorithms.db`. MEASURED: 127 records rewritten the first time and 262 on later runs,
    * stamped `by: repo store`; five of them lost `pub use` re-exports, so `bsc-util` stopped compiling

@@ -16,7 +16,7 @@
 // WHY THIS IS A FILE AND NOT A RECORD
 // It holds MODULE STATE (the registry below) on a specifier the page records resolve through the platform
 // registry (`appModules`). A record there would be a second copy of that state for every graph-loaded
-// page, and `bsc graph impl set` refuses exactly that shape. One module, one registry.
+// page, and `bsc algorithms impl set` refuses exactly that shape. One module, one registry.
 //
 // THE CONTRACT
 // - Published from an EFFECT, so what is registered is what COMMITTED. A reader sees the view that

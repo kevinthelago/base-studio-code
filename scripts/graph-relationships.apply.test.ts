@@ -69,7 +69,7 @@ describe("writeStore never writes JSON over a record database", () => {
 
   it("refuses a .db path that does not exist yet, and does not mint one", () => {
     const path = join(scratch(), "graph", "algorithms.db");
-    expect(() => writeStore({ implementations: [] }, path)).toThrow(/bsc graph impl set --repo/);
+    expect(() => writeStore({ implementations: [] }, path)).toThrow(/bsc algorithms impl set --repo/);
     expect(existsSync(path)).toBe(false);
   });
 
@@ -93,7 +93,7 @@ describe("graph-relationships.mjs against a record database", () => {
     const run = relationships("--apply", db);
     expect(run.status, run.stderr).toBe(1);
     expect(run.stderr).toContain("is a record DATABASE");
-    expect(run.stdout).toContain("bsc graph impl set --repo");
+    expect(run.stdout).toContain("bsc algorithms impl set --repo");
     expect(run.stdout).toContain("--id 'a.ts'");
     expect(run.stdout).toContain("--composes 'b.ts'");
     expect(run.stdout, "the name is shell-quoted, apostrophe and all").toContain("--name 'Alpha'\\''s view'");

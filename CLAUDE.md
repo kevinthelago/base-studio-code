@@ -339,7 +339,7 @@ base-studio-code/
 │                            #   main.rs, tests.rs and one undeclared orphan. A record's module path
 │                            #   IS its old file path, so every path below still names where a module
 │                            #   BELONGS and `crate::console::pty` still resolves — you just open it
-│                            #   with `bsc graph impl get src-tauri--console--pty--mod.rs` rather than
+│                            #   with `bsc algorithms impl get src-tauri--console--pty--mod.rs` rather than
 │                            #   with an editor. build.rs calls `graph_materialize::emit_when_adopted()`
 │                            #   as a fifth job (a package gets exactly ONE build script, and this one
 │                            #   was taken), which writes `$OUT_DIR/crate.rs` for lib.rs to `include!`.
@@ -413,7 +413,7 @@ base-studio-code/
 >
 > The floor reasons, as last derived (summing to ~68 against the 69 of that day, NOT to today's 91):
 > 26 hold MODULE STATE on a specifier that is also REGISTERED
-> (two live copies — `bsc graph impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
+> (two live copies — `bsc algorithms impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
 > STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
 > generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
 > that won't compile as TSX, and one seed/file disagreement awaiting adjudication.
@@ -421,10 +421,10 @@ base-studio-code/
 > **The module-state rule is narrower than it sounds**: state disqualifies only when something ELSE
 > registers the same specifier. When the record is the only copy, state is fine — which is why the
 > `graphPlatform.ts` registrars, long listed here as permanent floor, are all records now (and so is
-> `componentLoader.ts`, the loader itself). Measure with `bsc graph harvest <f> --module` and read
+> `componentLoader.ts`, the loader itself). Measure with `bsc algorithms harvest <f> --module` and read
 > `moduleState`; it is never visible from a module's name.
 > The paths below still describe where a module *belongs*; they no longer promise it is on disk. If you
-> cannot find a module, it is a record: `bsc ui get <id>` / `bsc graph impl get <id>`, matched by its
+> cannot find a module, it is a record: `bsc ui get <id>` / `bsc algorithms impl get <id>`, matched by its
 > `provides` specifier.
 > **Read [`docs/records.md`](docs/records.md) before retiring a file, authoring new UI, or wondering why
 > a module you can see imported does not exist** — it carries the preconditions for deleting anything,
@@ -458,13 +458,13 @@ bsc memory read graph                # the record store itself
 - **The committed store is `graph/algorithms.db`**, named by `graph/store.toml`. Resolve it through that
   marker (`resolveStorePath` in `scripts/lib/recordStore.mjs`), never a hard-coded filename: opening a
   SQLite path that does not exist creates an empty file.
-- **Write what the build compiles:** `bsc graph impl set --repo --root "$PWD" --tech <t> --id <id> --role
+- **Write what the build compiles:** `bsc algorithms impl set --repo --root "$PWD" --tech <t> --id <id> --role
   algorithm --name <its current name> --code-file <file>`. Without `--repo` the write lands in the
   per-user runtime ledger the build ignores, and nothing says so. `--name` is required, and a wrong one
   silently renames the record.
-- **Take the base from the committed store** (`graph/algorithms.db`), not from `bsc graph impl get`, which
+- **Take the base from the committed store** (`graph/algorithms.db`), not from `bsc algorithms impl get`, which
   reads the runtime ledger and can be behind. After writing, diff the record's non-code fields.
-- **A frontend record owes more writes**: the runtime ledger too, `bsc graph impl sync-seed <id> --seed-dir
+- **A frontend record owes more writes**: the runtime ledger too, `bsc algorithms impl sync-seed <id> --seed-dir
   "$PWD/src-tauri/data/knowledge" --only code,tests --apply`, and the kit whenever the record — or a plain
   file — is in its runtime closure. `storesAgree` and `reactUiKit.1.test.ts` fail naming what is owed.
 - **Generated manifests go stale** after a pull, a merge or `npm run promote`; only the gate, `npm install`
@@ -474,7 +474,7 @@ bsc memory read graph                # the record store itself
   then `npm run emit:manifests`. Edit a manifest's record, never the generated file.
 - **Record stores are binary in git** (`graph/*.db`). A conflict takes the other side whole
   (`git checkout --theirs`) and re-applies your writes with `impl set --repo`; a record's isolation is its
-  LANE (`bsc graph lane …`, under the development workflow below).
+  LANE (`bsc algorithms lane …`, under the development workflow below).
 - **A red `graph-promote-check` is usually not yours**: it compares the shared runtime store with the
   committed one and prints each drifted node's author and age.
 
@@ -665,7 +665,7 @@ One click fills a build tab:
 - **Director** at the project hub (`projects/<key>/`), kickoff `prompts/director-kickoff.md` — sees every repo + worktree; coordinates, never writes feature code.
 - **Workers read from the STORES, not from copies (#4191).** `bsc` is in the always-allowed mandatory
   tier (`permissions/base.json`) and `worker` is a project role that never gets `restricted_allow`, so a
-  worker can read every store directly: `bsc graph impl get` (algorithms), `bsc ui get` (components),
+  worker can read every store directly: `bsc algorithms impl get` (algorithms), `bsc ui get` (components),
   `bsc plan` (this project's plan), `bsc files read`. The worker protocol states the precedence rule —
   **the store wins over anything quoted into the context**, which is assembled once at launch while the
   stores stay live. A feature's `requires` list is injected as ids + the fetch command, never as inlined
@@ -821,12 +821,12 @@ everything else reads through to `main`. MEASURED over this repo's last 40 merge
 store" answers itself.
 
 ```bash
-bsc graph lane list                      # every lane, and which one you are bound to
-bsc graph lane diff                      # what your lane changed, and whether main moved under it
-bsc graph lane conflicts                 # the records main moved under — base/ours/theirs, by id
-bsc graph lane rebase <id>               # "I have looked at both sides; mine still stands"
-bsc graph lane land                      # dry by default
-bsc graph lane land --apply              # applies the WHOLE lane to main in one transaction
+bsc algorithms lane list                      # every lane, and which one you are bound to
+bsc algorithms lane diff                      # what your lane changed, and whether main moved under it
+bsc algorithms lane conflicts                 # the records main moved under — base/ours/theirs, by id
+bsc algorithms lane rebase <id>               # "I have looked at both sides; mine still stands"
+bsc algorithms lane land                      # dry by default
+bsc algorithms lane land --apply              # applies the WHOLE lane to main in one transaction
 ```
 
 **A conflict is one RECORD, not a file.** `lane wrote x.rs from main rev 5, main is at rev 7` — base,
@@ -838,8 +838,8 @@ the whole migration exists for.
 slice on main is a state nobody asked for and nobody is watching. Landing does not delete the lane
 either: what was landed and from where stays answerable afterwards.
 
-**What this REMOVES.** `bsc graph promote` (runtime→repo), `bsc graph reseed` (seed→runtime),
-`graph-promote-check` (a whole gate leg that existed only to police drift), `bsc graph store
+**What this REMOVES.** `bsc algorithms promote` (runtime→repo), `bsc algorithms reseed` (seed→runtime),
+`graph-promote-check` (a whole gate leg that existed only to police drift), `bsc algorithms store
 split|merge`, "a record edit is four writes", and the 304-record drift — structurally, not by
 discipline.
 

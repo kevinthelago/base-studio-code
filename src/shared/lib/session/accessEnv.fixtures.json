@@ -571,7 +571,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc graph",
+          "bsc algorithms",
           "bsc ui list",
           "bsc ui get",
           "bsc request new",

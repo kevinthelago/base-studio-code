@@ -54,7 +54,7 @@ describe("the JS and Rust readers agree about the committed store", () => {
     expect(js.edges.length, "the JS reader found no edges").toBeGreaterThan(10);
   });
 
-  it("agrees with `bsc graph dump --repo`, id for id and body for body", () => {
+  it("agrees with `bsc algorithms dump --repo`, id for id and body for body", () => {
     const bsc = usableBsc();
     if (!bsc) {
       // NOT a silent skip: the assertion above still guards the population, and this says plainly why

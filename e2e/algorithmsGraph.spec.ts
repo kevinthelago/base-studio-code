@@ -9,7 +9,7 @@
 // crates, every `composes` edge inside a crate, crate links only via `crateDeps`), so the spec needs no
 // machine's store. To draw the REAL one:
 //
-//     bsc graph impl list > /var/tmp/impls.json
+//     bsc algorithms impl list > /var/tmp/impls.json
 //     ALGORITHMS_GRAPH_JSON=/var/tmp/impls.json npx playwright test e2e/algorithmsGraph.spec.ts
 //
 // ⚠️ Chromium is not WebKitGTK: the numbers are the APP's work, not the shipping renderer's speed.

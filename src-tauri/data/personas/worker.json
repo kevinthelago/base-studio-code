@@ -44,7 +44,7 @@
     ],
     "surfaces": [
       "plan",
-      "graph",
+      "algorithms",
       "ui",
       "files",
       "errors"

@@ -83,7 +83,7 @@ const ON_DISK: string[] = [
   "src/shared/data/skills.ts",
   // The screen registry `bsc app go` reads (`the-shared-navigation-mechanism-drill-select-and-show`):
   // module state on a specifier `appModules` registers for the graph-loaded pages, so a record would be a
-  // second copy of the registry — the shape `bsc graph impl set` refuses.
+  // second copy of the registry — the shape `bsc algorithms impl set` refuses.
   "src/shared/hooks/useScreenDescriptor.ts",
   "src/shared/lib/a11y/announcer.ts",
   "src/shared/lib/algorithms/groupTotals.ts",
@@ -129,7 +129,7 @@ describe("the frontend migration ratchets", () => {
     expect(
       unlisted,
       `${unlisted.length} module(s) under src/ are not in ON_DISK. A NEW module belongs in the ` +
-        `graph (bsc graph harvest <file> --module --apply, then promote), not in src/; see ` +
+        `graph (bsc algorithms harvest <file> --module --apply, then promote), not in src/; see ` +
         `docs/records.md. If it genuinely must be a file, add it here WITH ITS REASON:\n` +
         unlisted.join("\n"),
     ).toEqual([]);

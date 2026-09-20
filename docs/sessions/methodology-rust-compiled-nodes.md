@@ -1,6 +1,6 @@
 # Compiled nodes: a methodology for Rust in the algorithms graph
 
-> **SESSION ARTIFACT — not maintained.** A METHODOLOGY NOTE answering whether a node can carry its compiled counterpart. It can: `bsc graph build` compiles a node from its own composes closure and stamps the verdict, with `--wasm` writing to a content-addressed sidecar. The wider work is the OPEN epic `epic-compiled-nodes-carry-their-artifact`.
+> **SESSION ARTIFACT — not maintained.** A METHODOLOGY NOTE answering whether a node can carry its compiled counterpart. It can: `bsc algorithms build` compiles a node from its own composes closure and stamps the verdict, with `--wasm` writing to a content-addressed sidecar. The wider work is the OPEN epic `epic-compiled-nodes-carry-their-artifact`.
 > See [`README.md`](README.md) for why this lives here.
 
 Answering "can a node carry its compiled counterpart, and would that simplify testing/building/gating?"
@@ -137,11 +137,11 @@ the last review, restated: it does not make a module independently runnable (not
 
 1. **Fix the 18 non-compiling nodes.** Mostly restoring stripped `use` statements. The compile sweep is
    the oracle, so this is mechanical and verifiable.
-2. **Give `bsc graph test` a Rust path.** It is currently hardcoded TypeScript — it writes `{stem}.ts`,
+2. **Give `bsc algorithms test` a Rust path.** It is currently hardcoded TypeScript — it writes `{stem}.ts`,
    generates a `vitest.config.ts` and runs `npx vitest` (`cli.rs:90`). A Rust node handed to it today
    would have its source written into a `.ts` file and fed to vitest.
 3. **Add the `build` facet + the artifact cache**, with the hash as the cache key.
-4. **Wire `bsc graph gate` into `npm run gate`** — Tier R compiles and tests, Tier A attests. The gate
+4. **Wire `bsc algorithms gate` into `npm run gate`** — Tier R compiles and tests, Tier A attests. The gate
    is five steps today (typecheck, lint, vitest, clippy, nextest) and checks the graph **not at all**.
 5. **Then the wasm payoff:** replace hand-written `vizCode` with the compiled node, and run one shared
    test vector against the Rust and TypeScript artifacts of the 15 shared concepts.
