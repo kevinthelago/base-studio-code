@@ -79,7 +79,7 @@ PROFILE_SECONDS=600 npm run profile:glance   # a longer window
 
 > If Vite dies at startup with `ENOSPC: System limit for number of file watchers reached`, the box is out
 > of inotify watches — 36 worktrees against a stock 65536 limit. Prefix with `CHOKIDAR_USEPOLLING=1`; the
-> real fixes are raising `fs.inotify.max_user_watches` and `bsc worktree cap`. `devWatchIgnore.ts` is
+> real fixes are raising `fs.inotify.max_user_watches` and `bsc disk worktree cap`. `devWatchIgnore.ts` is
 > NOT at fault — it already anchor-ignores `wt-*` and `.claude/worktrees/*`.
 
 > **Gotcha — gesture granularity is load-bearing.** The preview's pan engine ignores movement under a 5px
@@ -209,7 +209,7 @@ clutter, and it is how a session's branch list quietly grows to dozens. Two halv
 because a branch checked out in a worktree cannot be deleted:
 
 ```bash
-bsc worktree cap                   # DESTRUCTIVE: remove merged/parked worktrees beyond the cap (frees their branches)
+bsc disk worktree cap                   # DESTRUCTIVE: remove merged/parked worktrees beyond the cap (frees their branches)
 git branch --merged develop --format='%(refname:short)' | grep -vxE 'develop|main' | xargs -r git branch -d
 ```
 
@@ -218,7 +218,7 @@ LANDED work — a branch still holding un-integrated commits is left alone, loud
 sweep where HEAD is `develop`/`main` (the post-promote root, or `wt-integrate`) — `git branch -d`
 resolves “merged” against the CURRENT branch, so from an unrelated worktree it wrongly refuses every one. Like `promote`
 itself the sweep is **explicit, not automatic** — it runs when you promote, never on every merge — and
-it only ever touches YOUR local refs. `bsc worktree cap` owns the worktree half; the branch-ref sweep
+it only ever touches YOUR local refs. `bsc disk worktree cap` owns the worktree half; the branch-ref sweep
 is a raw pipeline only until a first-class `bsc` verb is filed for it
 (`record-operations-belong-on-the-bsc-surface-not-in-scripts`).
 
@@ -1296,7 +1296,7 @@ one. **Never run two gates in one worktree** — they fight over `target/`.
 **Disk: three levers, all EXPLICIT except the sweep.** `bsc disk gc` (the `target/` sweep) is wired
 into the gate and `build:plan` and is fail-safe — a janitor must never redden a gate. `bsc disk dedupe`
 hard-links identical dependency artifacts across trees; it is **currently UNDONE deliberately**,
-because the trade reverses with fleet size. `bsc worktree cap` is the **biggest** lever (~20 GB per
+because the trade reverses with fleet size. `bsc disk worktree cap` is the **biggest** lever (~20 GB per
 parked tree) and is **DESTRUCTIVE**, so it is never wired into anything — it refuses a junction
 `node_modules` and refuses a **dirty tree** (`--force` is never passed, and that refusal is the
 feature: the first run correctly spared a parked tree holding 7 staged modifications).
