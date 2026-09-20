@@ -206,7 +206,9 @@ impl TunnelHost for EarHost {
             // An ear pushes nothing, so it has no use for a device token.
             | ClientMsg::SetPushToken { .. }
             // An ear holds no jobs store to move an application in.
-            | ClientMsg::JobsSetStatus { .. } => {}
+            | ClientMsg::JobsSetStatus { .. }
+            // An ear holds no record stores, so there is no node here to have a body.
+            | ClientMsg::NodeBodyRequest { .. } => {}
         }
     }
 
