@@ -21,7 +21,7 @@
 //     records, while the seed was clean and every gate was green.
 //
 // The store is deliberately NOT checked here: this guard has to hold on a fresh clone and in CI where
-// no local store exists. `bsc ui imports` is the store's half, and `--fix`
+// no local store exists. `bsc components imports` is the store's half, and `--fix`
 // repairs it.
 //
 // CARRIED TESTS ARE THE ONE EXEMPTION, and it is deliberate rather than an oversight. A test is

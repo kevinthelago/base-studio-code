@@ -126,7 +126,7 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
     // opposite shape. The first probe HITS, `resolveId` returns the stale file, and the staleness check
     // three lines further down is never reached — and an edit does not re-resolve anything in the first
     // place, so no amount of reordering inside that hook would help. The dev server therefore served a
-    // frozen copy of every record for its whole life, and nothing else covered the gap: `bsc ui set`
+    // frozen copy of every record for its whole life, and nothing else covered the gap: `bsc components set`
     // writes the LIVE STORE, `emitRecords` reads the PACKAGED SEED, and vite watches neither.
     //
     // MEASURED COST OF NOT HAVING THIS. The `pty_data` listener was made payload-tolerant at 1e914e11

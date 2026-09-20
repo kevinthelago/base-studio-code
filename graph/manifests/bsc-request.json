@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"Improvement-request store (SQLite) for base-studio-code (#3295, epic #3260) — the designer→debug channel: a confined session (bsc ui) files discrete, grounded requests a full-capability debug session reads and resolves. Contractual (each request stands alone), not a conversation.\""
+          "value": "\"Improvement-request store (SQLite) for base-studio-code (#3295, epic #3260) — the designer→debug channel: a confined session (bsc components) files discrete, grounded requests a full-capability debug session reads and resolves. Contractual (each request stands alone), not a conversation.\""
         }
       ],
       "lead": [],

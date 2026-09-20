@@ -70,21 +70,21 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     expect(architect.startPrompt).toMatch(/Only `running` reads you/);
   });
 
-  it("the designer persona (#2471) rides the designer role and kicks off onto the bsc ui surface", () => {
+  it("the designer persona (#2471) rides the designer role and kicks off onto the bsc components surface", () => {
     const designer = makeBuiltinPersonas().find((p) => p.id === "persona-designer")!;
     expect(designer.role).toBe("designer");
     expect(designer.builtin).toBe(true);
     // The start prompt IS the session kickoff (baked into the launch arg by useDesignerTerminal):
-    // it must anchor the session to the bsc ui contract + CRUD.
-    for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "composes"]) {
+    // it must anchor the session to the bsc components contract + CRUD.
+    for (const needle of ["bsc components", "bsc components schema", "bsc components validate", "composes"]) {
       expect(designer.startPrompt).toContain(needle);
     }
-    // ...and teach the graduated bsc ui ladder (#2585): the discover verbs, the per-rung edit
+    // ...and teach the graduated bsc components ladder (#2585): the discover verbs, the per-rung edit
     // verbs, and the default-to-the-highest-rung rule that makes the runtime design loop reachable.
-    for (const needle of ["ladder", "highest rung", "bsc ui tokens", "bsc ui components", "set-token", "define-variant"]) {
+    for (const needle of ["ladder", "highest rung", "bsc components tokens", "bsc components components", "set-token", "define-variant"]) {
       expect(designer.startPrompt).toContain(needle);
     }
-    // ...and, on a bsc ui wall, file a request for the debug session instead of asking for out-of-surface
+    // ...and, on a bsc components wall, file a request for the debug session instead of asking for out-of-surface
     // permissions (#3300 — the designer→debug channel), grounded in the failing command.
     for (const needle of ["bsc request new", "bsc request list --open", "FAILING COMMAND"]) {
       expect(designer.startPrompt).toContain(needle);

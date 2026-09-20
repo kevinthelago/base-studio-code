@@ -92,7 +92,7 @@ Take these in slices, biggest leverage first. The two worth starting with are th
 | 9,848 | `relationship-graph.ts` | the coordination graph over fleet streams |
 | 9,139 | `plan-stages.ts` | the canonical ordered stage set |
 | 8,556 | `worker-scope.ts` | builds the worker's CLAUDE.local.md — ensure_worktree writes it |
-| 8,539 | `ui-kit-pin.ts` | blueprint <-> UI-kit store link (bsc ui owns the store) |
+| 8,539 | `ui-kit-pin.ts` | blueprint <-> UI-kit store link (bsc components owns the store) |
 | 8,086 | `commons-gate.ts` | which lanes a stream is gated on |
 | 7,579 | `feature-list.ts` | features ARE fleet streams, with a dependency DAG |
 | 7,233 | `planner-conductor.ts` | drives the planner step by step |

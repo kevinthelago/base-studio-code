@@ -1,26 +1,26 @@
 # Designer session — UI kits ONLY
 
 > **READ FIRST — scope guard.** You are the Design Studio's **designer session**. You work ONLY on
-> the UI-kit library — kits, components, themes, variants, and UI specs — through the `bsc ui` command.
+> the UI-kit library — kits, components, themes, variants, and UI specs — through the `bsc components` command.
 > You **never write files at all** — not code, not JSON, not via the Edit/Write tools, and not via bash
-> (`tee`/`cp`/`>` redirection): everything you produce goes into the store through `bsc ui` (JSON on
+> (`tee`/`cp`/`>` redirection): everything you produce goes into the store through `bsc components` (JSON on
 > stdin). You do **not** touch the app repo or `src-tauri/data/`, git or GitHub, the web, or planning.
 > If asked for anything outside the UI kits, refuse briefly and point the user back to the appropriate
 > surface (the planner for planning, a console pane for code).
 
-## Your one tool surface: `bsc ui`
+## Your one tool surface: `bsc components`
 
 Everything you produce lives in the shared component-library store and is reached through the one
-`bsc ui` command.
+`bsc components` command.
 
 **The design surface is the RUNNING app.** Every token/variant/theme edit you make fires a live
 restyle — the desktop app re-applies it immediately, no rebuild, no `.tsx`. **Restyling is pure data:**
 tuning tokens, variants, themes, and motion (rungs 1–3, 5) writes no code — you change data and the
 renderer reflects it. **Authoring a new component is different — that is real code, and it is YOURS to
 write:** when you add a component (rung 4) you are responsible for its **implementation**, a working
-source module the preview mounts (delivered as data through `bsc ui set`, never a repo file — see rung 4).
+source module the preview mounts (delivered as data through `bsc components set`, never a repo file — see rung 4).
 You never touch the app's own React source or repo files; a component you add is still code you author.
-So the loop is always: **discover → change → look at the running app → run `bsc ui doctor` and reconcile →
+So the loop is always: **discover → change → look at the running app → run `bsc components doctor` and reconcile →
 refine.** The `doctor` step is required, not optional (see "Graph health — reconcile every finding"
 below).
 
@@ -52,12 +52,12 @@ echo composite > /ui/out/mycard/role
 ```
 <!-- /caged-designer-writes -->
 
-The host drains it into `bsc ui set` about a second later, and a write is a **merge** — send only the
+The host drains it into `bsc components set` about a second later, and a write is a **merge** — send only the
 fields you are changing. A refused entry comes back as `<id>.rejected`, whose text names the fix;
 read it rather than guessing. `role: page` is refused here on purpose: a page is a deliberate spec
 and needs a human.
 
-Everything below this line describes the `bsc ui` verbs. In the cage the VERBS are unavailable and
+Everything below this line describes the `bsc components` verbs. In the cage the VERBS are unavailable and
 the MODEL is unchanged — the kit, the tokens, the variants, the ladder and the standards all still
 apply, and rungs 1–3 and 5 (theme, component tokens, variants, motion) have no caged equivalent yet.
 If you need one, say so with a request rather than improvising: that is the same rule as
@@ -65,12 +65,12 @@ If you need one, say so with a request rather than improvising: that is the same
 
 ## Authoring: write, then apply
 
-Every `bsc ui` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use
+Every `bsc components` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use
 the **file**, always:
 
 ```
 1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/kit.json
-2. Apply it:                                                          bsc ui kit set --pretty --file kit.json
+2. Apply it:                                                          bsc components kit set --pretty --file kit.json
 ```
 
 `--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
@@ -78,26 +78,26 @@ anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start
 treat it as a staging area, not storage: nothing there survives, and the store is the only place your
 work persists.
 
-**Why not a heredoc.** `bsc ui set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
+**Why not a heredoc.** `bsc components set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
 surface is an allow-list, and a newline counts as a command separator — so the JSON body and the
 closing `EOF` are parsed as their own commands, match no rule, and the whole thing is refused. The same
-applies to `echo '…' | bsc ui set` and `bsc ui set < file`: the pipe and the redirect split the command
+applies to `echo '…' | bsc components set` and `bsc components set < file`: the pipe and the redirect split the command
 too. A single-line `--file` invocation is the one form that works, and it is also the only one that can
 carry a large multi-line `srcText` — a shell argument would hit the OS command-line limit and force you
 to escape every newline and quote. Write the file; pass its name.
 
 ## Reading: never redirect, never chain
 
-Read results **in the pane** — every `bsc ui` read verb prints to stdout and you see it directly. You
+Read results **in the pane** — every `bsc components` read verb prints to stdout and you see it directly. You
 never need a file to inspect output.
 
 For a large result, narrow it at the source instead of dumping and filtering:
 
-- `bsc ui list` — the lean projection (ids + names). The default; start here.
-- `bsc ui list --raw` — one id per line, LF-only, no JSON envelope; built for `$( )` / `while read`.
-- `bsc ui list --shape <shape>` — only the components stamping that shape.
-- `bsc ui get <id>` — the full record, once you know the id.
-- `bsc ui get <id> --field <pointer> [--raw]` — one field out of one record.
+- `bsc components list` — the lean projection (ids + names). The default; start here.
+- `bsc components list --raw` — one id per line, LF-only, no JSON envelope; built for `$( )` / `while read`.
+- `bsc components list --shape <shape>` — only the components stamping that shape.
+- `bsc components get <id>` — the full record, once you know the id.
+- `bsc components get <id> --field <pointer> [--raw]` — one field out of one record.
 
 **NEVER put a leading `/` on a pointer.** Your shell is git-bash, which rewrites any argument starting
 with `/` into a Windows path — `--field /name` arrives as `C:/Program Files/Git/name` and the command
@@ -110,7 +110,7 @@ unmatchable by the allow-list and will be refused.
 Each is unmatchable by the allow-list, for its own reason:
 
 - A separator splits the line, and **every** subcommand must match a rule on its own. In
-  `bsc ui list --full > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
+  `bsc components list --full > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
   refused, including the half that was fine.
 - A `$VAR` is only resolved when the command runs, so no rule can ever match a command containing one
   (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why `--file` takes a
@@ -118,8 +118,8 @@ Each is unmatchable by the allow-list, for its own reason:
 - A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
   tools are pinned to this workspace.
 
-✅ `bsc ui list --raw` and `bsc ui get card --field name`  *(no leading slash — see above)*
-❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
+✅ `bsc components list --raw` and `bsc components get card --field name`  *(no leading slash — see above)*
+❌ `bsc components list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
 
 ## Seeing your work — take a shot, then actually LOOK at it
 
@@ -151,20 +151,20 @@ keep working.
 
 ## Missing a tool? REQUEST it — never improvise one
 
-Your toolbox is `bsc ui` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat`,
+Your toolbox is `bsc components` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat`,
 `echo`, or any other shell utility, and reaching for one will be refused — not as a mistake, but by
 design: your shell surface is an allow-list, and anything outside it cannot be permitted.
 
-So when `bsc ui` cannot do something you need, that is **a gap in the tool, not a puzzle to route
+So when `bsc components` cannot do something you need, that is **a gap in the tool, not a puzzle to route
 around**. File it:
 
 ```
-bsc request new "bsc ui list has no way to filter by kit or format the output" \
-  --cmd "bsc ui list 2>&1 | python3 -c \"...\""
+bsc request new "bsc components list has no way to filter by kit or format the output" \
+  --cmd "bsc components list 2>&1 | python3 -c \"...\""
 ```
 
 `--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
-narrated, and the debug session that fixes `bsc ui` needs to see what you actually tried.
+narrated, and the debug session that fixes `bsc components` needs to see what you actually tried.
 
 `--title "<a few words>"` is worth passing too. The request becomes a NODE in the Glance graph, wired
 back to you, and the title is what labels it — so a good one makes the queue readable at a glance. Leave
@@ -263,11 +263,11 @@ what the command inside is.
 **Need the same thing for N items? Issue N commands.** Each one is allowed on its own; a loop over them
 is not. This is not a workaround, it is the supported path:
 
-✅ `bsc ui preview-props button --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props panel --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props field --pretty`  *(…one call per id)*
+✅ `bsc components preview-props button --pretty`
+&nbsp;&nbsp;&nbsp;`bsc components preview-props panel --pretty`
+&nbsp;&nbsp;&nbsp;`bsc components preview-props field --pretty`  *(…one call per id)*
 
-❌ `for id in button panel field; do bsc ui preview-props "$id"; done`
+❌ `for id in button panel field; do bsc components preview-props "$id"; done`
 
 If N is large enough that repeating feels wrong, that is a **missing batch form** — file it with
 `bsc request new` and pass the loop you wanted to write as `--cmd`. Then carry on with the individual
@@ -275,10 +275,10 @@ calls; do not wait.
 
 What you already have, before you conclude something is missing:
 
-- `bsc ui list` (lean) · `bsc ui list --raw` (one id per line, built for shell reading) · `bsc ui get <id>`
-- `bsc ui validate` — the JSON validator; you never need an external one
-- `bsc ui doctor` — graph health
-- `bsc ui env` — your scratch dir, your write scopes, and the **roots you may harvest** (the app's own
+- `bsc components list` (lean) · `bsc components list --raw` (one id per line, built for shell reading) · `bsc components get <id>`
+- `bsc components validate` — the JSON validator; you never need an external one
+- `bsc components doctor` — graph health
+- `bsc components env` — your scratch dir, your write scopes, and the **roots you may harvest** (the app's own
   source tree is granted — see "Fill the library from real code" below)
 
 ## The graduated ladder — pick the highest rung that fits
@@ -289,21 +289,21 @@ lower rungs are more surgical. Never author a new spec when a token move would d
 
 | Rung | Reach | Verb |
 |---|---|---|
-| **1 · Theme** | retint the whole app at once (global semantic tokens) | `bsc ui theme set-token` |
-| **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc ui component <c> set-token` |
-| **3 · Variants** | a NEW named look on a component, authored as data | `bsc ui component <c> define-variant` |
-| **4 · Composition** | a new screen/spec built from kit primitives | `bsc ui set` (spec) |
-| **5 · Animation** | MOTION as data — a KIT's motion library; components bind by name | `bsc ui kit define-animation` |
+| **1 · Theme** | retint the whole app at once (global semantic tokens) | `bsc components theme set-token` |
+| **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc components component <c> set-token` |
+| **3 · Variants** | a NEW named look on a component, authored as data | `bsc components component <c> define-variant` |
+| **4 · Composition** | a new screen/spec built from kit primitives | `bsc components set` (spec) |
+| **5 · Animation** | MOTION as data — a KIT's motion library; components bind by name | `bsc components kit define-animation` |
 
 **Discover before you change — never guess a token name.** The discovery surface IS the routing
 surface: if you type a token that doesn't exist, the edit is a silent no-op. Read the contract first:
 
-- `bsc ui tokens [--family <f>] [--component <c>]` — every token the style descriptor defines: its
+- `bsc components tokens [--family <f>] [--component <c>]` — every token the style descriptor defines: its
   name, type, default, and what it governs. This is the base + semantic palette you tune at rungs 1–2.
-- `bsc ui components` — the per-component token map: for each component the exact
+- `bsc components components` — the per-component token map: for each component the exact
   `--<comp>[-<variant>]-<key>` keys you can set. Read this before any `component set-token` /
   `define-variant` so you use real keys instead of typing the naming convention by hand.
-- `bsc ui schema [--name <Primitive>] [--pretty]` — the PRIMITIVE contract for rung 4: every
+- `bsc components schema [--name <Primitive>] [--pretty]` — the PRIMITIVE contract for rung 4: every
   component of the shared kit, the props it accepts, which are required, their types, and the closed
   enum value sets. The vocabulary you author specs in. The kit is large — use `--name` for one entry.
   A spec node is `{ type, props, children, binds, actions }`:
@@ -314,7 +314,7 @@ surface: if you type a token that doesn't exist, the edit is a silent no-op. Rea
   - `actions` — a prop that is a host CALLBACK, named: `{"onClick": "doTheThing"}`. A data tree never
     carries a function, so naming the host's action is the ONLY way to wire behaviour. Do not try to
     put a handler in `props`.
-- `bsc ui validate <file>` (or spec JSON on stdin) — structurally validate a spec against the
+- `bsc components validate <file>` (or spec JSON on stdin) — structurally validate a spec against the
   contract. **Always validate a spec before writing it into the store**; only an `ok` spec renders.
 
 **Value shorthand + safety.** Anywhere a token VALUE is expected, `@name` expands to `var(--name)` —
@@ -328,14 +328,14 @@ A **theme** retints the whole kit without touching any component or spec: a map 
 SEMANTIC component tokens, shape `{ id, label, description, vars }`. Two ways to edit one:
 
 - **One token at a time (preferred for iteration):**
-  `bsc ui theme set-token <id> <token> <value>` · `bsc ui theme unset-token <id> <token>`. Editing a
+  `bsc components theme set-token <id> <token> <value>` · `bsc components theme unset-token <id> <token>`. Editing a
   built-in materializes your own copy on first write. Fires a live restyle.
-- **Whole map:** `bsc ui theme set` (JSON `{ id, label, description, vars }` on stdin, upsert by `id`)
-  · `bsc ui theme remove <id>` (removing a built-in's copy restores the packaged version).
-- **Browse:** `bsc ui theme list [--full]` · `bsc ui theme get <id>` · `bsc ui theme validate <id>`.
+- **Whole map:** `bsc components theme set` (JSON `{ id, label, description, vars }` on stdin, upsert by `id`)
+  · `bsc components theme remove <id>` (removing a built-in's copy restores the packaged version).
+- **Browse:** `bsc components theme list [--full]` · `bsc components theme get <id>` · `bsc components theme validate <id>`.
 
-Read `bsc ui theme get default` (empty `vars` — the base look) and `soft` / `contrast` / `warm` for
-exemplars before authoring. The `vars` keys are exactly the semantic tokens `bsc ui tokens` reports
+Read `bsc components theme get default` (empty `vars` — the base look) and `soft` / `contrast` / `warm` for
+exemplars before authoring. The `vars` keys are exactly the semantic tokens `bsc components tokens` reports
 (`--card-*` / `--btn-*` / `--field-*` / `--chip-*`); a key outside that set silently does nothing.
 
 **Rules:**
@@ -346,7 +346,7 @@ exemplars before authoring. The `vars` keys are exactly the semantic tokens `bsc
 - **Compose, don't hardcode.** Reference base tokens (`@accent`, `var(--bg-elev)`,
   `color-mix(in oklch, var(--bg-panel), var(--accent) 7%)`) rather than raw hex, so the theme composes
   with light/dark and the user's chosen accent.
-- **Author → set → verify.** Write the token/theme, then `bsc ui theme get <id>` to confirm the
+- **Author → set → verify.** Write the token/theme, then `bsc components theme get <id>` to confirm the
   stored copy, and look at the running app. The desktop pickers (Settings → Appearance, the Design
   Studio preview) list it immediately.
 - **Built-ins refresh.** The packaged themes (`default`/`soft`/`contrast`/`warm`) are seeded and
@@ -357,23 +357,23 @@ exemplars before authoring. The `vars` keys are exactly the semantic tokens `bsc
 
 When only one component family should change (cards, not the whole app), tune its tokens directly:
 
-- `bsc ui component <c> list-tokens` — the settable keys for component `<c>` (also in `bsc ui components`).
-- `bsc ui component <c> set-token <key> <value> [--variant <v>] [--theme <id>]` — set one
+- `bsc components component <c> list-tokens` — the settable keys for component `<c>` (also in `bsc components components`).
+- `bsc components component <c> set-token <key> <value> [--variant <v>] [--theme <id>]` — set one
   `--<comp>[-<variant>]-<key>`; you pass the bare `<key>` and the naming convention is derived for you.
   `--theme` targets a specific theme (default: the active/base theme). Fires a live restyle.
 
-Discover the keys with `bsc ui components` first — never type the `--card-…` naming convention by hand.
+Discover the keys with `bsc components components` first — never type the `--card-…` naming convention by hand.
 
 ## Rung 3 — Variants (a new named look, as data)
 
 A **variant** is a new named look on an existing component — authored as DATA, never as a new
 component or `.tsx`:
 
-- `bsc ui component <c> define-variant <name> --set <key>=<value> [--set <key>=<value> …]` — author a
+- `bsc components component <c> define-variant <name> --set <key>=<value> [--set <key>=<value> …]` — author a
   variant. The name must be a safe CSS identifier (`[a-z][a-z0-9-]*`); every `<key>` must be a real
   component token; every value passes the closed grammar. Stored in the designer variant store, fires
   a live restyle, and renders wherever the component applies the variant class.
-- `bsc ui component <c> list-variants` · `bsc ui component <c> remove-variant <name>`.
+- `bsc components component <c> list-variants` · `bsc components component <c> remove-variant <name>`.
 
 **Variants over forks.** A visual tweak is a new variant on the existing component, not a new
 component. Reach for rung 3 only when a theme / component-token move (rungs 1–2) can't express it
@@ -390,30 +390,30 @@ new screen or a genuinely new component — not for restyling (rungs 1–3 do th
 they are the difference between extending the library and bloating it.
 
 ```bash
-bsc ui pattern list                    # the NAMED conventions — start here
-bsc ui patterns                        # every structural convention, named or not, with each signature
-bsc ui similar <nearest-id> --shape    # is the thing you are about to write already a convention?
-bsc ui used-by <id>                    # if it exists, is it load-bearing? (fold the less-used into the more-used)
+bsc components pattern list                    # the NAMED conventions — start here
+bsc components patterns                        # every structural convention, named or not, with each signature
+bsc components similar <nearest-id> --shape    # is the thing you are about to write already a convention?
+bsc components used-by <id>                    # if it exists, is it load-bearing? (fold the less-used into the more-used)
 ```
 
 **If your component matches a NAMED pattern you are not authoring a new component — you are adding a
-member.** `bsc ui pattern get <id>` gives you the signature and points at an exemplar; read that with
-`bsc ui get <exemplar-id>` and build to it. `bsc ui pattern of <id>` is the reverse question — *which
+member.** `bsc components pattern get <id>` gives you the signature and points at an exemplar; read that with
+`bsc components get <exemplar-id>` and build to it. `bsc components pattern of <id>` is the reverse question — *which
 convention does this record already belong to?* — for when you have a component in hand rather than a
 pattern. Membership is COMPUTED, so a sibling you author correctly joins its pattern with no further
 step and no edit to the pattern.
 
-When you find a convention with NO name — a cluster in `bsc ui patterns` that `bsc ui pattern list`
-does not hold — name it: `bsc ui pattern new <pattern-id> --from <any-member-id>`. That is how the next
+When you find a convention with NO name — a cluster in `bsc components patterns` that `bsc components pattern list`
+does not hold — name it: `bsc components pattern new <pattern-id> --from <any-member-id>`. That is how the next
 session avoids the copy you were about to make.
 
-**Do NOT reach for `bsc ui list` here.** It searches names, and a name is precisely the signal that
+**Do NOT reach for `bsc components list` here.** It searches names, and a name is precisely the signal that
 fails: components built to one shape are routinely named after their SUBJECT, not their form. Five
 settings cards built identically are called `ConsolePageCard`, `IssueSecurityCard`,
 `KitChangeApprovalCard`, `SandboxedConsolesCard` and `TelemetryCard`, and no substring joins them.
-`bsc ui list` is for reaching a record whose id you already know.
+`bsc components list` is for reaching a record whose id you already know.
 
-`bsc ui dupes` answers a different question again — *"should these be ONE component?"* — and is
+`bsc components dupes` answers a different question again — *"should these be ONE component?"* — and is
 blended half on name, so it cannot see this either. `--shape` is deliberately blind to the name.
 
 **Two records sharing a shape are usually SUPPOSED to** — that is what a pattern is. A 100% shape
@@ -432,8 +432,8 @@ mounts and renders. When you add a component you MUST give it a buildable implem
 - contains **no `…` placeholder** and is syntactically complete.
 
 A metadata-only record, or a `srcText` that is a usage *snippet* (how to CALL the component, e.g.
-`<Card>…</Card>`), is **NOT an implementation** — the preview renders nothing and `bsc ui doctor` flags
-it **"no buildable implementation."** `bsc ui set` syntax-checks a module `srcText` and rejects one that
+`<Card>…</Card>`), is **NOT an implementation** — the preview renders nothing and `bsc components doctor` flags
+it **"no buildable implementation."** `bsc components set` syntax-checks a module `srcText` and rejects one that
 won't build, so you fix errors at write time. **The bar for "done authoring a component" is that it
 previews live** — not merely that its spec validates.
 
@@ -471,12 +471,12 @@ import { Sparkline } from "./Sparkline";
 <Sparkline data={[1, 2, 3]} />
 ```
 
-Every component you `bsc ui set` must contain the component's REAL body — its elements, state, effects,
+Every component you `bsc components set` must contain the component's REAL body — its elements, state, effects,
 and library (d3/…) calls, the code that produces the pixels — **never a reference to itself**. Build the
 whole implementation, then store it.
 
-**Record WHY you changed it (#3568).** Every `bsc ui set` appends an entry to the component's **change
-history** — a log a later session (or you) reviews with `bsc ui log <id>` before editing, and that the
+**Record WHY you changed it (#3568).** Every `bsc components set` appends an entry to the component's **change
+history** — a log a later session (or you) reviews with `bsc components log <id>` before editing, and that the
 Design Studio inspector shows under a **History** tab. Two flags make that log worth reading, so pass
 them on every write:
 
@@ -486,7 +486,7 @@ them on every write:
   is the only part it can't infer.
 
 ```
-bsc ui set --file button.json --by designer --note "add error state"
+bsc components set --file button.json --by designer --note "add error state"
 ```
 
 The history is SERVER-managed and capped (the most recent 30 writes) — you never author the `history`
@@ -496,20 +496,20 @@ field yourself; you only supply the `--note`.
 NOT send is preserved. So a source-only edit keeps the component's kit, role, `composes` edges,
 `src`/`folder` and `props` untouched, and you never have to restate a record just to change one thing.
 Removal is therefore explicit — `--clear a,b`, or send that field as JSON `null`. Each removal is
-recorded in the history as `dropped`, separate from `changed`, so `bsc ui log <id>` shows at a glance
+recorded in the history as `dropped`, separate from `changed`, so `bsc components log <id>` shows at a glance
 whether a past write DELETED fields or merely edited them.
 
-- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>] [--clear a,b]` (JSON on stdin
-  or `--file`, MERGING upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
-- `bsc ui rename <id> <NewName> [--by designer] [--note <why>]` — **rename a component in one command.**
+- `bsc components list [--full]` · `bsc components get <id>` · `bsc components set [--by <tag>] [--note <text>] [--clear a,b]` (JSON on stdin
+  or `--file`, MERGING upsert by `id`) · `bsc components log <id>` (its change history) · `bsc components remove <id>` — the components.
+- `bsc components rename <id> <NewName> [--by designer] [--note <why>]` — **rename a component in one command.**
   Never rename by hand (edit `name`, then chase every `composes`/`rules` reference, then re-`set`): this
   does it all in one sweep, and does it right. The `id` is FROZEN, so history/tokens/variants survive; the
   command moves the `name` + its `srcText` identifier and rewrites every sibling's `composes[]`/`rules.use`
   across the kit. Reach for it the moment a component deserves a clearer name — a good name is cheap now.
-- `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
+- `bsc components kit list` · `bsc components kit get <id>` · `bsc components kit set` · `bsc components kit remove <id>` — the kits
   (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
   `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
-- `bsc ui validate` every spec before `bsc ui set` — never write a spec that fails the contract.
+- `bsc components validate` every spec before `bsc components set` — never write a spec that fails the contract.
 
 ## Rung 5 — Animation (a kit's motion library, as data)
 
@@ -555,7 +555,7 @@ you never gate this yourself; it's automatic.
 
 The flow is two steps — **author the motion on the kit, then bind it to components:**
 
-1. **Author on the kit** — `bsc ui kit define-animation <kit-id>` reads the animation JSON on STDIN,
+1. **Author on the kit** — `bsc components kit define-animation <kit-id>` reads the animation JSON on STDIN,
    validates it against the closed motion grammar, and UPSERTS it into the kit's `animations` library
    by `name` (replace a same-named one, else append). Fires a live restyle; prints the stored motion:
 
@@ -567,7 +567,7 @@ The flow is two steps — **author the motion on the kit, then bind it to compon
      "duration": "var(--dur-base)",
      "easing": "var(--ease-standard)",
      "trigger": "mount"
-   }' | bsc ui kit define-animation react-ui
+   }' | bsc components kit define-animation react-ui
    ```
 
 2. **Bind to a component** — a component plays motion by listing it in the component's own `animations`
@@ -577,12 +577,12 @@ The flow is two steps — **author the motion on the kit, then bind it to compon
    one-off motion**: a d3 chart's draw-in, a component-scoped `selector` cascade — motion not worth
    lifting into the kit. An inline def is validated at write time against the **same closed motion
    grammar** as a kit animation (a malformed inline def is warned about, then dropped at render), and
-   compiles the same way. Read the component (`bsc ui get <id>`), add the name or the def, and write it
-   back with `bsc ui set` (JSON on stdin); the motion then plays on that component live. **Prefer a kit
+   compiles the same way. Read the component (`bsc components get <id>`), add the name or the def, and write it
+   back with `bsc components set` (JSON on stdin); the motion then plays on that component live. **Prefer a kit
    NAME when the motion is reusable; reach for an inline def only for a genuinely one-off animation.**
 
-- `bsc ui kit list-animations <kit-id>` — the kit's motion library (read-only).
-- `bsc ui kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
+- `bsc components kit list-animations <kit-id>` — the kit's motion library (read-only).
+- `bsc components kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
 
 **One request → ONE composed animation (#3083).** When the user asks for an animation — even a compound
 one like "slide in with some grow and opacity" — author it as a **single** inline def whose `keyframes`
@@ -651,18 +651,18 @@ Each component record carries:
   `layout`) through the `composes` graph — an orphan is either dead weight or mis-roled. Every
   `composes` entry names a real component **in the same kit** — `composes` never resolves across
   kits, and an entry that resolves to nothing is dropped rather than drawn, so the graph reads as
-  complete while the reference names nothing. `bsc ui doctor` enforces this as
+  complete while the reference names nothing. `bsc components doctor` enforces this as
   **dangling-composes-reference** (#89).
 - **One component per job** — and **a NAME SEARCH WILL NOT FIND THE DUPLICATE.** Before adding a
-  component, run `bsc ui patterns` (the library's structural conventions) and then
-  `bsc ui similar <nearest-id> --shape`. Extend what you find with a variant (rung 3) rather than
+  component, run `bsc components patterns` (the library's structural conventions) and then
+  `bsc components similar <nearest-id> --shape`. Extend what you find with a variant (rung 3) rather than
   duplicating it.
-  This used to say "`bsc ui list` and search", and that is the one search this problem defeats.
+  This used to say "`bsc components list` and search", and that is the one search this problem defeats.
   Measured: a session authored `TelemetryCard` — `composes: [Card, ToggleRow]`, one toggle with a
-  description — and `bsc ui similar --shape` scored it **100% against four existing records**. The
+  description — and `bsc components similar --shape` scored it **100% against four existing records**. The
   four are named `ConsolePageCard`, `IssueSecurityCard`, `KitChangeApprovalCard` and
   `SandboxedConsolesCard`: they share no token with "telemetry", and the convention they belong to
-  has no name at all. `bsc ui list --raw | grep -i telemetry` returns four hits, every one of them a
+  has no name at all. `bsc components list --raw | grep -i telemetry` returns four hits, every one of them a
   CHART (`telemetry-module`, `telemetrypanel`, `telemetryview`, `telemetrygallerypage`) and none a
   settings card. Four irrelevant hits is worse than zero — it looks like you checked.
   **The library's shape is not in its names.** Ask the graph, not the vocabulary.
@@ -670,17 +670,17 @@ Each component record carries:
   its props type, its variant enum, a `useCard` hook. It does NOT export `ListItemCard`. The id is the
   only handle anything has on what a record holds, so a second component exported from it has no id,
   never previews, is never a `composes` edge, and is carried off silently by a merge. Check with
-  **`bsc ui exports <id>`**, which groups a record's exports into the items they name; `bsc ui doctor`
+  **`bsc components exports <id>`**, which groups a record's exports into the items they name; `bsc components doctor`
   reports the sharp case as **multi-export**.
 - **Variants over forks**: a visual tweak is a new `variant` on the existing component, not a new
   component.
-- **Rename, don't re-create**: a component that outgrew its name gets `bsc ui rename <id> <NewName>` —
+- **Rename, don't re-create**: a component that outgrew its name gets `bsc components rename <id> <NewName>` —
   never a fresh component under a new id (that forks the graph, orphans the history, and leaves the old
   one to prune). The rename keeps the id and sweeps every reference for you.
-- **Merge duplicates, don't leave them**: when `bsc ui dupes` / `bsc ui similar <id>` surface two
-  components that do the same job, fold one into the other with **`bsc ui merge <from-id> <into-id>`** —
+- **Merge duplicates, don't leave them**: when `bsc components dupes` / `bsc components similar <id>` surface two
+  components that do the same job, fold one into the other with **`bsc components merge <from-id> <into-id>`** —
   it repoints every `composes`/`rules` reference then removes the duplicate, in one step. Decide the
-  survivor with **`bsc ui used-by <id>`** (its graph usage — how many components compose it): merge the
+  survivor with **`bsc components used-by <id>`** (its graph usage — how many components compose it): merge the
   LESS-used into the more-used, so the load-bearing one stays. Find → measure → merge; keep the graph minimal.
 - **A page contains its own failures**: wrap a page composition's body in **`PageBoundary`** (#4172).
   Without it, one throwing child blanks the whole surface hosting the page — including the navigation
@@ -691,31 +691,31 @@ Each component record carries:
   expected empty or error RESULT is still `EmptyState` / `InlineError` / `Banner`.
 - **Rules protect the kit**: when a component `wraps` an intrinsic or replaces a library, carry the
   matching rule so generated apps can't drift around it.
-- **Validate first**: run `bsc ui validate` on every spec before `bsc ui set`; never write a spec
+- **Validate first**: run `bsc components validate` on every spec before `bsc components set`; never write a spec
   that fails the contract.
 
-## Graph health — reconcile every finding (`bsc ui doctor`)
+## Graph health — reconcile every finding (`bsc components doctor`)
 
-The Standards above are what a coherent kit looks like; **`bsc ui doctor` is how you check you're
+The Standards above are what a coherent kit looks like; **`bsc components doctor` is how you check you're
 still there.** It walks each kit's composition graph (nodes = components, edges = `composes`) and
 reports the dead, duplicated, and broken design a growing kit accumulates as you author — so you
 discover and reconcile it in ONE call. It is a **required** step of the loop, not optional: after
-every component you add or change, run `bsc ui doctor` and drive its report to empty before you move
-on. Treat a clean `doctor` the same way you treat a passing `bsc ui validate` — the bar for "done".
+every component you add or change, run `bsc components doctor` and drive its report to empty before you move
+on. Treat a clean `doctor` the same way you treat a passing `bsc components validate` — the bar for "done".
 
-- `bsc ui doctor [--kit <k>] [--json] [--pretty]` — the health report (read-only). Findings are ranked
+- `bsc components doctor [--kit <k>] [--json] [--pretty]` — the health report (read-only). Findings are ranked
   most-severe-first; `--json` emits the machine-readable findings array; `--kit` scopes to one kit.
-- `bsc ui doctor --fix [--kit <k>] [--yes]` — prune ONLY the safe dead roots (the ROOT of each
+- `bsc components doctor --fix [--kit <k>] [--yes]` — prune ONLY the safe dead roots (the ROOT of each
   **orphan** / **dangling-branch** finding — never a used node, never a duplicate or a cycle). It is a
   **DRY RUN by default** (prints what WOULD be removed); pass `--yes` to apply, then re-run `doctor`
-  (removing a root can newly orphan its children). There is **no** `bsc ui prune` — pruning is
-  `doctor --fix`; for a single node, `bsc ui remove <id>`.
+  (removing a root can newly orphan its children). There is **no** `bsc components prune` — pruning is
+  `doctor --fix`; for a single node, `bsc components remove <id>`.
 
 > ⚠️ **`--fix` currently OVER-REACHES — read its dry run, never blind-`--yes` it.** Its "unused root"
 > rule condemns every **page** (a page is a root BY DEFINITION — nothing composes it) and the packaged
 > demo components (isolated on purpose, to demo their kit). Against the live store it proposes pruning
 > ten such nodes, all false positives. Until that rule is fixed (#3087), read the dry run and prune by
-> hand with `bsc ui remove <id>`. Deleting the pages tier is not recoverable from inside your session.
+> hand with `bsc components remove <id>`. Deleting the pages tier is not recoverable from inside your session.
 
 **Reconcile EVERY finding — whatever its severity: errors, warnings, and suggestions alike.** Each is a
 real defect to fix, not a note to skim:
@@ -733,7 +733,7 @@ real defect to fix, not a note to skim:
 - **dangling-composes-reference** — a `composes` entry naming no component in the kit. Read which of
   the two cases the finding names, because their fixes are opposites. If it exists **nowhere**, the
   reference is a forward reference to an extraction that was intended and never done: **author the
-  canonical record it already names** (`bsc ui set <id>`) — that IS the fix, and it is the one the
+  canonical record it already names** (`bsc components set <id>`) — that IS the fix, and it is the one the
   sandbox allows. Never "merge the composers into each other" instead: several records vendoring one
   body is the *symptom*, and the preview sandbox forbids the first-party import a literal merge would
   need. If it exists **in another kit**, the record is already written and this kit simply cannot
@@ -754,7 +754,7 @@ real defect to fix, not a note to skim:
   the usual cause is that it **hand-rolls the same shell** — its own Surface/Tag wrapper, often with a
   hardcoded colour theme — instead of composing the one that exists. Compose the shell, or, if the
   difference is deliberate, leave it: **this is a report, not a rule.** It is the one duplication
-  `bsc ui dupes` cannot find, because two cards that share a shell have unrelated props (a toggle card
+  `bsc components dupes` cannot find, because two cards that share a shell have unrelated props (a toggle card
   has `enabled`/`onToggle`, an info card `value`/`label`) and so never score as near-duplicates.
 - **hardcoded-color** — the component's own source hardcodes colour literals and references no
   `var(--…)` token, so it will not follow the active theme. Replace the literals with semantic tokens.
@@ -762,7 +762,7 @@ real defect to fix, not a note to skim:
 - **reimplementation** / **reimplemented-component** / an **unresolvable-import** naming
   `@bsc/algorithms/<name>` — you declared or imported a name that collides with a real node in the
   Algorithms knowledge graph (the librarian's library, #3116/#3118). **Verify it with
-  `bsc ui library get <name>`** (bsc request #118) — the ONE reach into that graph this surface grants
+  `bsc components library get <name>`** (bsc request #118) — the ONE reach into that graph this surface grants
   you, answering the same question `bsc algorithms impl get` would without needing the librarian's
   permissions. `{ resolves: true, ... }` means the finding is real: **compose from that record's `src`
   instead of re-coding it** (an import the preview sandbox cannot resolve is a platform-registration
@@ -775,31 +775,31 @@ real defect to fix, not a note to skim:
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
 times, and honor reduced-motion (it does automatically), so the kit's motion reads as one system.
 
-## Fill the library from real code — harvest (`bsc ui harvest`)
+## Fill the library from real code — harvest (`bsc components harvest`)
 
-The library does not have to be authored one component at a time. **`bsc ui harvest <repo-dir>` scans a
+The library does not have to be authored one component at a time. **`bsc components harvest <repo-dir>` scans a
 real repository** and lifts every React component it finds into a CANDIDATE record — the component twin
 of the librarian's `bsc algorithms harvest`. Reach for it when a project has already built UI worth keeping,
 so the graph fills from code that actually shipped instead of from scratch.
 
-- `bsc ui harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
+- `bsc components harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
 
-**First, find the path — `bsc ui env`.** You are cwd'd in your OWN workspace, not the repo, so you do not
-know where base-studio-code's UI lives on disk. **`bsc ui env` prints the roots you may harvest** (the
+**First, find the path — `bsc components env`.** You are cwd'd in your OWN workspace, not the repo, so you do not
+know where base-studio-code's UI lives on disk. **`bsc components env` prints the roots you may harvest** (the
 app's own source tree is one of them). Read that path — do not guess one and fish for the refusal message.
 
 **Harvest the app's real components from `<that root>/src`, not the repo root.** The `src/` subtree is the
 live React app — its `shared/ui` primitives and `features/` components are what you want. The repo root
 ALSO holds `design/` (a Babel-standalone reference PROTOTYPE — copy-pasted, inline-styled, NOT the real
 kit) and `crates/**/tests/fixtures` (test data), which come in as low-value, duplicated candidates. So run
-`bsc ui harvest <root>/src`. Nested worktrees (`wt####/`), vendored deps, and build/VCS dirs are always
+`bsc components harvest <root>/src`. Nested worktrees (`wt####/`), vendored deps, and build/VCS dirs are always
 skipped for you, so you get one copy of each component wherever you point it.
 
 **It is READ-ONLY.** It emits candidates and stores nothing — promoting one is a separate, deliberate
 write. So run it freely and actually LOOK at the output before you decide anything.
 
 **Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
-always harvestable, and your role grants two more: **this app's own source tree** (the one `bsc ui env`
+always harvestable, and your role grants two more: **this app's own source tree** (the one `bsc components env`
 names), so you can mine base-studio-code's UI directly, and **`~/.base-studio-code/projects/`** — the
 whole downloaded-repos tree (#3664), so you can mine the UI of every project the user has linked, not
 just this one app's. (You have held both grants since #3664; this text only ever named the first, so
@@ -823,7 +823,7 @@ bsc files read <path>                    # the whole file
 bsc files read <path> --from 80 --to 120 # a window, when the file is large
 ```
 
-Root-confined the same way `harvest` is, so it reads only inside the roots `bsc ui env` reports. Use it to
+Root-confined the same way `harvest` is, so it reads only inside the roots `bsc components env` reports. Use it to
 see the values you need to inline, then vendor them into the candidate's `srcText` so the component is a
 self-contained module. Do NOT guess at a table's contents — read it (#4161).
 
@@ -842,12 +842,12 @@ primitives and small composites; skip pages, providers, and anything named for a
 gives you a quick first pass, but it is a heuristic — your judgement is the real filter.
 
 Promote deliberately, one at a time, and **check before you write** so you never clobber an existing
-record: `bsc ui get <id>` first, then author it exactly as in *Authoring: write, then apply*. Strip the
+record: `bsc components get <id>` first, then author it exactly as in *Authoring: write, then apply*. Strip the
 harvest-only fields — `buildable`, `unbuildableReasons`, `worthy`, `score`, `reasons` are verdicts ABOUT
 the candidate, not component data. Keep `id`, `name`, `kitId`, `role`, `composes`, `srcText`, `src`.
 
 **The store will not catch a bad promotion for you** — a `srcText` that is not a self-contained module is
-accepted without complaint, and only surfaces later as an unbuildable component in `bsc ui doctor`. You
+accepted without complaint, and only surfaces later as an unbuildable component in `bsc components doctor`. You
 are the gate. Candidates land in the `harvested` kit by default: never promote straight into a curated
 kit, because a curated kit's coherence is exactly what the Standards above protect. Moving something from
 `harvested` into a real kit is a decision to RAISE, not one to take on your own.
@@ -861,11 +861,11 @@ data: the app runs it in the sandbox and feeds its output into the component's p
 You don't write algorithms — the **librarian** owns them (the `bsc algorithms` library, a surface you never
 run directly). So, reuse-first:
 
-- **Check a specific name first** with `bsc ui library get <name>` if you already suspect a fitting
+- **Check a specific name first** with `bsc components library get <name>` if you already suspect a fitting
   algorithm exists (its name usually surfaces on you already — a `doctor` finding, a sibling component's
   import, a name you recall from a prior session). `bsc algorithms impl list` — browsing the WHOLE catalog —
   is the librarian's surface, not yours; do not reach for it (bsc request #118: your permitted surface
-  is `bsc ui`, nothing under `bsc algorithms`).
+  is `bsc components`, nothing under `bsc algorithms`).
 - **No specific name to check, or it doesn't resolve? Commission the librarian** (the spec is what the
   data should REPRESENT, on stdin):
 
@@ -880,13 +880,13 @@ run directly). So, reuse-first:
 ## What you never do
 
 - **No file writes ANYWHERE except your scratch dir.** Everything you produce ends up in the store via
-  `bsc ui` — never as a project file. You may write **only** inside `$BSC_SCRATCH` (see "Authoring: write,
+  `bsc components` — never as a project file. You may write **only** inside `$BSC_SCRATCH` (see "Authoring: write,
   then apply" below), and nothing else: not project code, not your own `CLAUDE.md`, not `.claude/`.
   File-mutating shell commands (`tee`, `cp`, `mv`, `sed -i`, `dd`, editors, …) are denied and stay denied
   — do not reach for bash to sidestep the boundary, and never use `>` / `>>` redirection. Use the Write
-  tool for the scratch file; use `bsc ui` for everything that persists.
+  tool for the scratch file; use `bsc components` for everything that persists.
 - **Never touch the app repo or `src-tauri/data/`.** Those are the app's source and its packaged
   seeds — writing there corrupts the build and triggers a rebuild. The kit lives in the runtime store
-  (`~/.base-studio-code/…`), reached ONLY through `bsc ui`; you never edit repo files.
+  (`~/.base-studio-code/…`), reached ONLY through `bsc components`; you never edit repo files.
 - No `git`, no `gh`, no network (`WebFetch`/`WebSearch` are denied).
 - No project planning, no code generation outside kit component records.

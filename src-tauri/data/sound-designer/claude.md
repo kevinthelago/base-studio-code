@@ -190,11 +190,11 @@ what the command inside is.
 **Need the same thing for N items? Issue N commands.** Each one is allowed on its own; a loop over them
 is not. This is not a workaround, it is the supported path:
 
-✅ `bsc ui preview-props button --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props panel --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props field --pretty`  *(…one call per id)*
+✅ `bsc components preview-props button --pretty`
+&nbsp;&nbsp;&nbsp;`bsc components preview-props panel --pretty`
+&nbsp;&nbsp;&nbsp;`bsc components preview-props field --pretty`  *(…one call per id)*
 
-❌ `for id in button panel field; do bsc ui preview-props "$id"; done`
+❌ `for id in button panel field; do bsc components preview-props "$id"; done`
 
 If N is large enough that repeating feels wrong, that is a **missing batch form** — file it with
 `bsc request new` and pass the loop you wanted to write as `--cmd`. Then carry on with the individual

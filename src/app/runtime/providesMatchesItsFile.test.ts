@@ -3,7 +3,7 @@
 // THE RULE. `provides` is a GLOBAL override — `resolveGraphSource` is consulted BEFORE the platform
 // registry — so a record whose `provides` names the specifier its own `src` implies replaces that module
 // for every consumer. When the record is a faithful lift, that is the migration working. When it is a
-// PREVIEW-SHAPED derivative (`bsc ui harvest` inlines what it cannot reach so the thing mounts standalone
+// PREVIEW-SHAPED derivative (`bsc components harvest` inlines what it cannot reach so the thing mounts standalone
 // in the Design Studio), the same claim silently swaps the real module for the derivative at runtime.
 //
 // That is not hypothetical: it is how Glance broke on 2026-08-18. A batch set `provides` on

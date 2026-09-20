@@ -1,5 +1,5 @@
 {
-  "note": "FROZEN. Captured from scripts/lib/claimCensus.mjs by claimCensus.fixtures.gen.test.ts, both of which were DELETED when `bsc ui census` replaced them. It is no longer a parity fixture — there is no second implementation to agree with — it is the REGRESSION baseline: the exact verdicts the JS produced, which the Rust had to reproduce and must keep reproducing. Do not hand-edit; a change here is a change to what the census decides, and wants its own argument.",
+  "note": "FROZEN. Captured from scripts/lib/claimCensus.mjs by claimCensus.fixtures.gen.test.ts, both of which were DELETED when `bsc components census` replaced them. It is no longer a parity fixture — there is no second implementation to agree with — it is the REGRESSION baseline: the exact verdicts the JS produced, which the Rust had to reproduce and must keep reproducing. Do not hand-edit; a change here is a change to what the census decides, and wants its own argument.",
   "cases": [
     {
       "label": "a record defining SAMPLE data its file does not is a preview derivative",

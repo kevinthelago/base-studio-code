@@ -1,6 +1,6 @@
 // Materialize retired modules from their packaged seeds into a generated, git-ignored tree.
 //
-// THE LOGIC LIVES IN RUST NOW — `crates/bsc-emit`, reached by `bsc ui emit records` for an agent and
+// THE LOGIC LIVES IN RUST NOW — `crates/bsc-emit`, reached by `bsc components emit records` for an agent and
 // by the `bsc-emit` binary for the build tree. This file is what remains: a ~60-line ADAPTER, so the
 // seven npm entries, the vite plugin and the gate guards keep their existing call sites while the 502
 // lines of decision logic they used to reach are gone.
@@ -158,7 +158,7 @@ function materializeComponentSeeds() {
   });
   if (!bsc) return 0;
   const r = spawnSync(bsc.path, ["ui", "store", "import", "--apply", "--root", REPO], { encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`bsc ui store import failed: ${(r.stderr || r.stdout || "").trim()}`);
+  if (r.status !== 0) throw new Error(`bsc components store import failed: ${(r.stderr || r.stdout || "").trim()}`);
   return Number(/"seeds":\s*(\d+)/.exec(r.stdout ?? "")?.[1] ?? 0);
 }
 

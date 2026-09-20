@@ -6,8 +6,8 @@
 // structure.
 //
 // TWO sources compose here (#2488): the PACKAGED registry (`@data/ui/themes.json`, also embedded by
-// `bsc ui theme`) is the boot fallback, and the designer-writable theme STORE (hydrated on boot by the
-// components slice via `bsc ui theme list --full`) is the live set once reachable. The hydrate pushes
+// `bsc components theme`) is the boot fallback, and the designer-writable theme STORE (hydrated on boot by the
+// components slice via `bsc components theme list --full`) is the live set once reachable. The hydrate pushes
 // the store's collection in through `setActiveKitThemes`, so every consumer of `themeById`/`themeVars`/
 // `applyThemeToRoot`/`<ThemeScope>` resolves against the SAME set without importing the Zustand store
 // (which would cycle: store → features → shared). Pure (the root apply takes the element as a param)
@@ -17,11 +17,11 @@ import type { CSSProperties } from "react";
 import THEMES_DATA from "@data/ui/themes.json";
 
 export interface KitTheme {
-  /** Stable id persisted in the store + used by `bsc ui theme get`. */
+  /** Stable id persisted in the store + used by `bsc components theme get`. */
   id: string;
   /** The DESIGN GROUP this theme belongs to (#2749) — the lowercase `tech` slug a kit carries
    *  (`react`, `vue`, …). REQUIRED and 1:1 from the theme's side: a theme belongs to exactly one
-   *  design group (a group hosts its own set of themes), so `bsc ui theme set`/`validate` reject a
+   *  design group (a group hosts its own set of themes), so `bsc components theme set`/`validate` reject a
    *  theme with no `tech` and the Themes page groups by it. Not optional — a theme is meaningless
    *  without the group whose token contract it is resolved and emitted against. */
   tech: string;
@@ -29,7 +29,7 @@ export interface KitTheme {
   description: string;
   /** The SURFACE the theme sits on (#2545). Absent ⇒ `"dark"` (the historical base). The Design
    *  Studio preview reads this to pick its sandbox surface, so light/dark is theme data (seeded in
-   *  `@data/ui/themes.json`, then served by `bsc ui theme`) rather than a hardcoded toggle. */
+   *  `@data/ui/themes.json`, then served by `bsc components theme`) rather than a hardcoded toggle. */
   base?: "dark" | "light";
   /** Semantic-token overrides — CSS var name → value. Empty for the base look. */
   vars: Record<string, string>;

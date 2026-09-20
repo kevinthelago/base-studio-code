@@ -8,7 +8,7 @@ import { entriesImportingStatically } from "./lib/recordSource.mjs";
 //
 // This exists as ONE definition because the tool that DELETES and the census that GRADES disagreed:
 // the census offered `useAppBoot`, `ConsoleGraphHost`, `TerminalHost` and `features/sounds/index` as
-// retirable, and `bsc ui retire` refused every one of them for this rule.
+// retirable, and `bsc components retire` refused every one of them for this rule.
 const FILES: Record<string, string> = {
   "/repo/src/app/App.tsx": [
     `import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";`,

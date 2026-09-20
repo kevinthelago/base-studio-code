@@ -7,9 +7,9 @@ import { loadStore, resolveStorePath } from './lib/recordStore.mjs';
  * EVERY `bsc` reader of the RUNNING APP's persisted state must resolve it the way tauri-plugin-store
  * writes it — `BaseDirectory::AppData`, the app-DATA dir, on every platform (request 310).
  *
- * The bug this exists to stop happening a fourth time: `bsc ui` resolved `app-state.json` under the
+ * The bug this exists to stop happening a fourth time: `bsc components` resolved `app-state.json` under the
  * CONFIG dir. On Linux — the only platform where config and data differ — that directory did not exist
- * at all, while the live file sat in the data dir at 178 KB. So `bsc ui theme active` reported its
+ * at all, while the live file sat in the data dir at 178 KB. So `bsc components theme active` reported its
  * `default` FALLBACK, and looked correct only because the live `kitTheme` happened to be `default`.
  *
  * This is a rule over the WHOLE tree rather than one crate's test, because the resolution is COPIED:
@@ -22,7 +22,7 @@ const APP_STATE = 'app-state.json';
 /** The records allowed to compose an app-state path, each checked below. A new one is not a failure to
  *  paper over — it is a copy of this rule that a human should see before it lands. */
 const KNOWN_RESOLVERS = [
-  'bsc-ui--cli.rs', // `bsc ui theme active` / `changes` / `adopt`
+  'bsc-ui--cli.rs', // `bsc components theme active` / `changes` / `adopt`
   'bsc-session--launch-plan--sources.rs', // the launch's user-settings + credential fallback
   'bsc-publish--token.rs', // a headless publish's last-resort GitHub token
 ];

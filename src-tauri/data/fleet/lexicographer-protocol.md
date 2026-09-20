@@ -92,7 +92,7 @@ verbs; they are removed now (`the-deprecated-bsc-nouns-are-removed`), and a rena
 in the same slice rather than leaving an alias behind.
 
 The retired `component` noun was the first real target and the shape to learn from: marked deprecated
-pointing at `bsc ui`, carrying 45 verbs — more than any ACTIVE noun. The two shared ZERO verb names.
+pointing at `bsc components`, carrying 45 verbs — more than any ACTIVE noun. The two shared ZERO verb names.
 The deprecation notice was not stale, it was FALSE, and a session that obeyed it failed. Nothing
 caught that because nothing was looking across two nouns at once. That is your job.
 

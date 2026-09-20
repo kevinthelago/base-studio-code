@@ -1,7 +1,7 @@
 // Every packaged component seed's `src` must name a REAL file, with EXACT case.
 //
 // `pageheader` carried `src/shared/ui/pages/PageHeader.tsx` while the file is `pageHeader.tsx`. Windows'
-// case-insensitive filesystem hid it completely — every `existsSync`, every editor jump, every `bsc ui
+// case-insensitive filesystem hid it completely — every `existsSync`, every editor jump, every `bsc components
 // backing` call resolved it fine — so it sat for months looking like an "id collision". What it actually
 // broke is anything matching the path as a STRING: a coverage sweep reported the module as unmigrated, and
 // `bsc algorithms harvest <src>` would have re-harvested it to a second record. On a case-sensitive filesystem

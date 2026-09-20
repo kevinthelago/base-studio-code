@@ -73,7 +73,7 @@ export interface GraphImplRecord {
  * production call passed `undefined` and only the tests exercised the path. The visible consequence:
  * `detachedwindow` and `app` import `@/app/lazyWorkspaces`, which the graph-impl record
  * `lazy-workspaces.ts` provides — and both were judged unbuildable and refused a preview, with
- * `bsc ui doctor` reporting `no-implementation` for a specifier that resolves.
+ * `bsc components doctor` reporting `no-implementation` for a specifier that resolves.
  *
  * Only the ALGORITHMS store: a component's own `provides` is already handled by the `providesMod` map,
  * and letting an impl answer a specifier a component claims would shadow a rendering component with a
@@ -122,7 +122,7 @@ export function makeGraphProvidesResolver(impls: readonly GraphImplRecord[]): Gr
 /** The buildable slice of the packaged kit artifact — each component's verbatim `source` and the
  *  `runtime` (non-component @/ closure), both keyed by their `src/`-relative path. This is exactly the
  *  `source` + `runtime` the `react-ui.json` artifact carries (built by reactUiKit.gen, consumed by
- *  `bsc ui emit`); the frontend already bundles it. */
+ *  `bsc components emit`); the frontend already bundles it. */
 export interface KitArtifact {
   components: { id: string; src: string; source?: string }[];
   runtime?: Record<string, string>;
@@ -648,7 +648,7 @@ export interface PreviewProps {
 
 /** The props the bootstrap passes `comp` in `state` — each non-`children` prop that samples to a
  *  non-`null` value, in `comp.props` (schema) order. The structured twin of the object literal
- *  {@link bootstrapSource} builds; `bsc ui preview-props` mirrors it (a shared parity fixture pins them).
+ *  {@link bootstrapSource} builds; `bsc components preview-props` mirrors it (a shared parity fixture pins them).
  *
  *  The component's own defaults are read ONCE here (not per prop) and threaded into the sampler, since
  *  that is the only thing that makes omitting a required container safe — see {@link propsWithOwnDefault}.
@@ -672,7 +672,7 @@ export function previewChild(comp: ComponentRecord): string | null {
 }
 
 /** The inspectable props the preview harness passes `comp` in each data-state (#3165) — exactly what
- *  {@link bootstrapSource} mounts, per state. The `bsc ui preview-props` verb replicates this in Rust; a
+ *  {@link bootstrapSource} mounts, per state. The `bsc components preview-props` verb replicates this in Rust; a
  *  shared JSON fixture (`previewProps.fixtures.json`) is asserted on BOTH sides to keep them in lockstep.
  *  Covers the original three states only — `error` (#3555) renders via {@link bootstrapSource}'s per-state
  *  path but is NOT part of this cross-language wire contract. */
@@ -717,7 +717,7 @@ export function previewCycleStates(comp: ComponentRecord): PreviewState[] {
  * The bootstrap entry source: import the component by `importSpec` and mount it into `#root` with the
  * sample props. Uses `createElement` (not JSX children) so children/props compose without JSX parsing
  * quirks. Resolves the component export by `name`, falling back to the default export. Builds the props
- * from {@link previewPropList} / {@link previewChild} (the SAME source `bsc ui preview-props` inspects).
+ * from {@link previewPropList} / {@link previewChild} (the SAME source `bsc components preview-props` inspects).
  */
 /** The props object-literal (JS source) `comp` is mounted with in `state`: the sampled props (schema
  *  order), then any resolved preview-data OVERRIDES layered on top (#2940) — a bound prop renders the
@@ -907,7 +907,7 @@ function anyOwnedByOther(m: Map<string, string[]>, exceptId: string): boolean {
  * Would {@link componentPreviewFiles} produce a build for `comp` — WITHOUT producing one?
  *
  * Exactly `componentPreviewFiles(comp, artifact, siblings) !== null`, and pinned to that by a test over
- * the real library. It exists because callers that only need the verdict (graph health, `bsc ui doctor`'s
+ * the real library. It exists because callers that only need the verdict (graph health, `bsc components doctor`'s
  * frontend twin, any "is this a spec or an implementation" check) were paying for a full bundle —
  * including the 5 MB artifact re-seed and the transitive sibling import walk — per component.
  *
@@ -1062,7 +1062,7 @@ export function componentPreviewFiles(
     // reads this same map) resolve it for free — `resolveInternalBase` already reduces the specifier to
     // exactly `components/<id>`. This is the frontend twin of Rust `kit_targets`' synthetic
     // `components/{id}.tsx` target (#3897, `graph_health.rs`); without it the preview refused to build a
-    // component `bsc ui doctor` reported as healthy.
+    // component `bsc components doctor` reported as healthy.
     if (source) sibByBase.set(`components/${s.id}`, { src: `components/${s.id}.tsx`, source });
   }
 

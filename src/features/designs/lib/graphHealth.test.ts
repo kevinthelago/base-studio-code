@@ -14,7 +14,7 @@ function comp(name: string, role: Role, used: number, composes: string[] = [], e
   };
 }
 
-describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
+describe("analyzeGraphHealth (#2680, mirrors bsc components doctor)", () => {
   it("a clean graph has no findings", () => {
     const comps = [comp("Page", "page", 1, ["Card"]), comp("Card", "composite", 3, ["Button"]), comp("Button", "primitive", 9)];
     expect(analyzeGraphHealth(comps)).toEqual([]);
@@ -100,7 +100,7 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs[0].nodeNames).toEqual(expect.arrayContaining(["DeadShell", "Widget"]));
   });
 
-  // bsc-request #110 (design-studio:designer-react): `bsc ui used-by toggle` showed `DeployToggle`
+  // bsc-request #110 (design-studio:designer-react): `bsc components used-by toggle` showed `DeployToggle`
   // composed by several real components, yet the Design Studio badged it as unused. Root cause: a
   // `page` (in-degree 0 by definition — nothing composes a page) had no explicit composer, so its
   // dangling-branch finding's `nodeIds` swept in every reachable descendant — including `DeployToggle`,
@@ -816,8 +816,8 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
   });
 });
 
-// ── motion checks (#3163, `bsc ui doctor --motion`) ─────────────────────────────────────────────────
-describe("analyzeMotion (#3163, mirrors bsc ui doctor --motion)", () => {
+// ── motion checks (#3163, `bsc components doctor --motion`) ─────────────────────────────────────────────────
+describe("analyzeMotion (#3163, mirrors bsc components doctor --motion)", () => {
   const kf = (props: Record<string, string>): KitAnimation["keyframes"] => ({ from: props, to: props });
   const anim = (over: Partial<KitAnimation> & { name: string }): KitAnimation => ({ keyframes: kf({ opacity: "1" }), ...over });
 

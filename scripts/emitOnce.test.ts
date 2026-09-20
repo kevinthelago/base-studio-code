@@ -135,7 +135,7 @@ describe("bscRecords re-emits a stale tree on a resolve miss", () => {
 // visible, because nothing can answer the specifier. An EDIT is the opposite shape: the first probe HITS
 // and `resolveId` returns the stale file, so the staleness check below it is never reached; and an edit
 // does not re-resolve anything in the first place, so no reordering inside that hook would help. Nothing
-// else covered the gap either — `bsc ui set` writes the LIVE STORE, `emitRecords` reads the PACKAGED
+// else covered the gap either — `bsc components set` writes the LIVE STORE, `emitRecords` reads the PACKAGED
 // SEED, and vite watches neither. A dev server therefore served a frozen copy of every record for its
 // whole life, which is how a payload-tolerant `pty_data` listener written at 09:56 was still the 09:05
 // version when the Rust half landed a minute later.

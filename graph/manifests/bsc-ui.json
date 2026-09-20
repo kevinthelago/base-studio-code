@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"The `bsc ui` CLI — the ONE UI-design-surface command (#2469): the spec-first SDK's KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) + structural validator + theme registry (#1852), with the component-library store verbs (list/get/set/remove · kit · eslint-preset · usage, #2281) mounted from bsc-component.\""
+          "value": "\"The `bsc components` CLI — the ONE UI-design-surface command (#2469): the spec-first SDK's KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) + structural validator + theme registry (#1852), with the component-library store verbs (list/get/set/remove · kit · eslint-preset · usage, #2281) mounted from bsc-component.\""
         }
       ],
       "lead": [],
@@ -85,7 +85,7 @@
           "cont": [],
           "key": "bsc-emit",
           "lead": [
-            "# `bsc ui emit records` is the agent-facing door onto the record emitter; the lean `bsc-emit`",
+            "# `bsc components emit records` is the agent-facing door onto the record emitter; the lean `bsc-emit`",
             "# binary is the build tree's. Same library, so the two cannot describe the same run differently."
           ],
           "value": "{ path = \"../bsc-emit\" }"
@@ -110,7 +110,7 @@
           "cont": [],
           "key": "bsc-component",
           "lead": [
-            "# The component-library store CLI (#2281), mounted under `bsc ui` (#2469): list/get/set/remove +",
+            "# The component-library store CLI (#2281), mounted under `bsc components` (#2469): list/get/set/remove +",
             "# kit/eslint-preset/usage delegate to bsc_component::cli; its CmdDocs compose into the merged help."
           ],
           "value": "{ path = \"../bsc-component\" }"
@@ -120,7 +120,7 @@
           "key": "bsc-json-store",
           "lead": [
             "# The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):",
-            "# `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json."
+            "# `bsc components theme set/remove` persist to ~/.base-studio-code/themes/<id>.json."
           ],
           "value": "{ path = \"../bsc-json-store\" }"
         },
@@ -145,7 +145,7 @@
           "cont": [],
           "key": "tree-sitter",
           "lead": [
-            "# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc algorithms harvest`.",
+            "# Tree-sitter TSX parsing for `bsc components harvest` (#3471) — the component half of `bsc algorithms harvest`.",
             "# Same pinned versions bsc-graph already locks, so this adds no new workspace dependency."
           ],
           "value": "\"0.26\""
@@ -179,7 +179,7 @@
           "cont": [],
           "key": "bsc-graph",
           "lead": [
-            "# `bsc ui census` reads BOTH record stores — the components here and the algorithm impls there —",
+            "# `bsc components census` reads BOTH record stores — the components here and the algorithm impls there —",
             "# because a record can claim a module from either. bsc-graph takes bsc-data with default-features off,",
             "# so this does NOT drag the DuckDB amalgamation back into `cargo check -p bsc-ui` (2m28s vs 20.8s,",
             "# measured — see bsc-graph's own Cargo.toml for why that dependency is pinned off)."
@@ -190,7 +190,7 @@
           "cont": [],
           "key": "bsc-graph-store",
           "lead": [
-            "# `bsc ui store export` writes the COMMITTED component store (graph/components.db) in the SAME",
+            "# `bsc components store export` writes the COMMITTED component store (graph/components.db) in the SAME",
             "# ledger schema the algorithms pillar uses, so one reader, one merge driver and one textconv serve",
             "# both pillars. Already in this crate's tree via bsc-graph, so it adds no new compile."
           ],

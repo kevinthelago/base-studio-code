@@ -1084,7 +1084,7 @@
       },
       {
         "verb": "adopt",
-        "summary": "carry the running app's persisted kit state into the store bsc ui owns"
+        "summary": "carry the running app's persisted kit state into the store bsc components owns"
       },
       {
         "verb": "store",

@@ -103,7 +103,7 @@
           "key": "sha2",
           "lead": [
             "# The vendored-file provenance stamp (#4192) — ONE content-hash form shared by every `emit`",
-            "# surface, so `bsc ui emit` and `bsc algorithms emit` cannot drift into two look-alike contracts."
+            "# surface, so `bsc components emit` and `bsc algorithms emit` cannot drift into two look-alike contracts."
           ],
           "value": "\"0.11\""
         }

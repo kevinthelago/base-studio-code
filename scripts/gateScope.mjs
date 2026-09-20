@@ -47,7 +47,7 @@ export function gateCommands(plan, base) {
   // is no record of it in the packaged seed to diff against, so a seed-only check is blind too.
   // docs/records.md names this as the case no gate observes.
   //
-  // `bsc ui census` is REUSED rather than reimplemented: it already classifies WHY a pair disagrees
+  // `bsc components census` is REUSED rather than reimplemented: it already classifies WHY a pair disagrees
   // (`preview-derivative` vs `newer-truth`), already reads the runtime stores, and already honours a
   // record's `srcDivergence` note, so an adjudicated multi-component module like `ui-charts` is not
   // reported as drift. A hand-rolled path-matching script gets all three wrong — mine did, and called

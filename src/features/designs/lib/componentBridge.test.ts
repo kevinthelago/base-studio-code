@@ -1,5 +1,5 @@
-// #2469: the component-library + kit-usage bridges call the MERGED `bsc ui …` surface (the former
-// `component` verbs now mount under `bsc ui`, and that old noun is removed). These tests
+// #2469: the component-library + kit-usage bridges call the MERGED `bsc components …` surface (the former
+// `component` verbs now mount under `bsc components`, and that old noun is removed). These tests
 // pin the exact argv so a regression back to the alias — or a verb typo — is caught here, not at runtime.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,13 +30,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("componentBridge → bsc ui (#2469)", () => {
-  it("loads components via `bsc ui list --full`", async () => {
+describe("componentBridge → bsc components (#2469)", () => {
+  it("loads components via `bsc components list --full`", async () => {
     expect(await loadComponents()).toEqual([]);
     expect(bsc).toHaveBeenCalledWith(null, ["ui", "list", "--full"]);
   });
 
-  it("loads kits via `bsc ui kit list --full`", async () => {
+  it("loads kits via `bsc components kit list --full`", async () => {
     expect(await loadKits()).toEqual([]);
     expect(bsc).toHaveBeenCalledWith(null, ["ui", "kit", "list", "--full"]);
   });
@@ -143,7 +143,7 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].spec).toBeUndefined();
   });
 
-  // #4197: `bsc ui set` MERGES by default (so a fleet worker's partial edit cannot delete the rest of a
+  // #4197: `bsc components set` MERGES by default (so a fleet worker's partial edit cannot delete the rest of a
   // record whose source file is gone). The app is the opposite case — it holds the WHOLE record, and
   // `reconcileSeed`'s seed-authoritative reset (#3723) only converges if the store copy is overwritten
   // field-for-field, so the bridge must keep asking for the verbatim write.
@@ -161,7 +161,7 @@ describe("componentBridge → bsc ui (#2469)", () => {
     // app's converge pushed its pre-edit copy back — destroying the fix with no notice to anyone.
     //
     // `--if-version` names the rev this write is BASED on; the store refuses when it has moved. The
-    // guard already existed in `bsc ui set` and nothing was sending it.
+    // guard already existed in `bsc components set` and nothing was sending it.
     const comp = { id: "plan-body-streams", srcText: "pre-edit" } as unknown as ComponentRecord;
     await pushComponent(comp, { ifVersion: 7 });
     expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace", "--if-version", "7"], comp);
@@ -217,7 +217,7 @@ describe("componentBridge → bsc ui (#2469)", () => {
   });
 
   // Request #98 — a background write the APP ITSELF issues (a seed reconcile push, a provenance
-  // restamp) must be `bsc ui log`-distinguishable from a write some other session/fork made to the
+  // restamp) must be `bsc components log`-distinguishable from a write some other session/fork made to the
   // same record: `by: "unknown"` on both looked identical, so a designer had to reconstruct which was
   // which from timing + content alone (dropdown rev 3, request #98's own repro).
   it("tags a component push as the caller names it (`opts.by`), untagged by default", async () => {
@@ -246,7 +246,7 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "set", "--by", "someone-else"], { id: "fleetpage", builtin: true, seedHash: "abc123" });
   });
 
-  it("records a preview runtime error via `bsc ui preview-error <id>` with the message on stdin (#3165)", async () => {
+  it("records a preview runtime error via `bsc components preview-error <id>` with the message on stdin (#3165)", async () => {
     await recordPreviewError("chart", "TypeError: x is undefined");
     expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "chart"], "TypeError: x is undefined");
   });
@@ -257,8 +257,8 @@ describe("componentBridge → bsc ui (#2469)", () => {
   });
 });
 
-describe("kitUsageBridge → bsc ui usage (#2469)", () => {
-  it("loads consumer edges via `bsc ui usage list --json`", async () => {
+describe("kitUsageBridge → bsc components usage (#2469)", () => {
+  it("loads consumer edges via `bsc components usage list --json`", async () => {
     expect(await loadKitUsage()).toEqual([]);
     expect(bsc).toHaveBeenCalledWith(null, ["ui", "usage", "list", "--json"]);
   });

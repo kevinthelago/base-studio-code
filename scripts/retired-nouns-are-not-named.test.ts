@@ -45,6 +45,7 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
   ["bsc capability", "bsc network capabilities"], // capability-becomes-a-network-verb
   ["bsc studio", "bsc snapshot"], // studio-is-renamed-snapshot
   ["bsc graph", "bsc algorithms"], // graph-and-ui-are-renamed-algorithms-and-components
+  ["bsc ui", "bsc components"], // ui-is-renamed-components
 ];
 
 /**
@@ -116,7 +117,17 @@ describe("a retired bsc noun is named nowhere live", () => {
     for (const rec of records) {
       const id = String(rec.id ?? "<unnamed>");
       for (const field of ["code", "tests"]) {
-        const text = JSON.stringify(rec[field] ?? "");
+        // A carried test is checked by its SOURCE, not its title. `tests` is an array of
+        // `{name, src}` and a `name` cannot be changed: the store UPSERTS by name and has no remove
+        // verb, so renaming an entry adds a second one and emits a duplicate test file (measured on
+        // `theme-bridge.ts`). Filed as `a-carried-test-entry-cannot-be-renamed-or-removed`; until it
+        // exists, a stale noun in a test's TITLE is a label nobody executes, while one in its source
+        // is an instruction a reader will follow.
+        const text = JSON.stringify(
+          field === "tests"
+            ? ((rec.tests ?? []) as Array<{ src?: string }>).map((t) => t.src ?? "")
+            : (rec[field] ?? ""),
+        );
         for (const [old, now] of RETIRED) {
           const hits = text.split(new RegExp(`${old}\\b`)).length - 1;
           if (hits) offenders.push(`${id}.${field}: ${hits}× \`${old}\` — it is \`${now}\` now`);

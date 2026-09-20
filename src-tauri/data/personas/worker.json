@@ -45,7 +45,7 @@
     "surfaces": [
       "plan",
       "algorithms",
-      "ui",
+      "components",
       "files",
       "errors"
     ]

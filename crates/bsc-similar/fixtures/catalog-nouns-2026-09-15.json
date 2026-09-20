@@ -142,8 +142,8 @@
   {
     "name": "component",
     "crate": "bsc-component",
-    "summary": "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)",
-    "store": "the component library — the same store `bsc ui` serves",
+    "summary": "DEPRECATED (#2469) → use `bsc components` (the component verbs now live there)",
+    "store": "the component library — the same store `bsc components` serves",
     "status": "deprecated"
   },
   {
@@ -303,7 +303,7 @@
   {
     "name": "request",
     "crate": "bsc-request",
-    "summary": "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)",
+    "summary": "improvement-request store: the designer→debug channel for bsc components surface gaps (#3295)",
     "store": "the improvement-request store — user",
     "status": "active"
   },
