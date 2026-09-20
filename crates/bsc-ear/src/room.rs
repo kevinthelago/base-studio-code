@@ -202,7 +202,9 @@ impl TunnelHost for EarHost {
             | ClientMsg::PlanConfirm { .. }
             | ClientMsg::PlanChat { .. }
             // An ear hosts no sessions, so there is nothing here to wake.
-            | ClientMsg::SessionWake { .. } => {}
+            | ClientMsg::SessionWake { .. }
+            // An ear pushes nothing, so it has no use for a device token.
+            | ClientMsg::SetPushToken { .. } => {}
         }
     }
 
