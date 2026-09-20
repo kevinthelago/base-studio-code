@@ -150,7 +150,7 @@ export default function App() {
               would kill and relaunch that PTY every time. They were previously kept mounted INSIDE the
               Planner — leaving them as plain `activeWorkspace === x && <X />` would have quietly
               regressed that, and a killed-and-restarted session looks like a slow page, not a bug. */}
-          {/* `label` tags the un-hide timing `bsc perf phases` can read
+          {/* `label` tags the un-hide timing `bsc logs frontend phases` can read
               (`request-177-components-graph-real-app-instrumentation`) — real-app numbers for exactly
               the visit KeptMountedPage exists to make cheap, instead of another synthetic-shell guess. */}
           <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />} label="components">
