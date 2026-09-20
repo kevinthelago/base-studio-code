@@ -2054,6 +2054,87 @@
           "sessions": []
         }
       ]
+    },
+    "jobs": {
+      "positions": [
+        {
+          "id": "adzuna-1",
+          "title": "Senior Rust Engineer",
+          "company": "Acme",
+          "location": "Duluth, GA",
+          "description": "We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipeline. We are looking for someone to own our ingestion pipe",
+          "truncated": true,
+          "posted": "2026-09-18",
+          "remote": true,
+          "links": [
+            {
+              "label": "adzuna",
+              "url": "https://example.test/jobs/adzuna-1"
+            }
+          ],
+          "state": "new",
+          "application": null,
+          "score": 87,
+          "matched": [
+            "rust",
+            "pipelines"
+          ]
+        },
+        {
+          "id": "lever-2",
+          "title": "Platform Engineer",
+          "company": "Globex",
+          "location": null,
+          "description": "Short and sweet.",
+          "truncated": false,
+          "posted": null,
+          "remote": null,
+          "links": [
+            {
+              "label": "lever",
+              "url": "https://example.test/jobs/lever-2"
+            }
+          ],
+          "state": "applied",
+          "application": "app-7",
+          "score": 64,
+          "matched": [
+            "platform"
+          ]
+        }
+      ],
+      "positionsTotal": 2,
+      "applications": [
+        {
+          "id": "app-7",
+          "title": "Platform Engineer",
+          "company": "Globex",
+          "url": "https://example.test/jobs/lever-2",
+          "status": "applied",
+          "hasResume": true,
+          "hasLetter": true,
+          "resumeAuthor": "agent",
+          "letterAuthor": "user",
+          "fit": {
+            "summary": "Strong on the platform half.",
+            "strengths": [
+              "rust",
+              "ci"
+            ],
+            "gaps": [
+              "kubernetes"
+            ]
+          }
+        }
+      ],
+      "bank": {
+        "confirmed": 2,
+        "draft": 1
+      },
+      "profile": {
+        "name": "Kevin Lago",
+        "headline": "Systems engineer"
+      }
     }
   },
   "variants": {
