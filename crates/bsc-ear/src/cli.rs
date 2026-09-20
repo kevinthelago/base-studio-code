@@ -445,6 +445,23 @@ columns are appended in one transaction, and a second run finds nothing to add.
 
 With --dir the store is <base>/ear.db; otherwise $BSC_EAR_DB, else ~/.base-studio-code/ear.db.",
     },
+    // THE ABSORBED NOUN (`ear-absorbs-imagine`). `imagine` is what this ear hears, drawn — one entry
+    // per thought — so it was a second noun on a capability this one already owns. It is a
+    // SUB-SURFACE rather than a flat verb because its own `status` and `sweep` would collide with
+    // this catalog's, and it is dispatched in `bsc`'s own table (the `app shot` shape) rather than
+    // here: `bsc-imagine` carries image encoding, and this crate has no reason to link it.
+    CmdDoc {
+        name: "imagine",
+        summary: "what the ear hears, as PICTURES: one entry per thought, bounded and local",
+        usage: "\
+bsc ear imagine <once|watch|status|sweep> …
+
+Draws what was said. `watch` follows this ear's transcripts and draws each new one; `once` draws
+text you supply. It was the top-level noun `bsc imagine`.
+
+Its `status` and `sweep` are the IMAGINATION's, not the ear's — which is why it is a sub-surface
+and not four more verbs here. `bsc ear imagine help` for them.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -2280,6 +2297,14 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("room") => cmd_room(&a, &p),
         Some("store") if a.positional.get(1).map(String::as_str) == Some("migrate") => cmd_migrate(&a, &p),
         Some("store") => Err(format!("usage: {prog} store migrate [--dir <base>] [--apply]")),
+        // `imagine` is advertised here but dispatched by `bsc` itself, which routes it to
+        // `bsc-imagine` before this fn is reached (`ear-absorbs-imagine`). Reaching this arm means
+        // something called `bsc_ear::cli::run` directly with it — a caller bypassing that routing,
+        // which is worth saying plainly rather than answering "unknown command" about a verb the
+        // help above promises.
+        Some("imagine") => Err(format!(
+            "{prog} imagine is served by `bsc ear imagine` — this entry point does not route it"
+        )),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -2300,7 +2325,9 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair", "store"
+                "diarize", "attribute", "imprint", "embed", "clean", "room", "pair", "store",
+                // the absorbed noun (`ear-absorbs-imagine`) — advertised here, dispatched by `bsc`
+                "imagine"
             ]
         );
     }
