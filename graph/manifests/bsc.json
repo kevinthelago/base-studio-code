@@ -377,7 +377,7 @@
           "cont": [],
           "key": "bsc-request",
           "lead": [
-            "# `bsc request` — the improvement-request store: the designer→debug channel for bsc ui gaps (#3295, epic #3260)."
+            "# `bsc request` — the improvement-request store: the designer→debug channel for bsc components gaps (#3295, epic #3260)."
           ],
           "value": "{ path = \"../bsc-request\" }"
         },

@@ -1,5 +1,5 @@
 // Components feature store slice (#2269) — the proven-component library, a WRITE-THROUGH cache over the
-// GLOBAL component store (reached via `bsc ui` — see lib/componentBridge.ts, #2281). The planner's
+// GLOBAL component store (reached via `bsc components` — see lib/componentBridge.ts, #2281). The planner's
 // `test_ui` pane and (later) the full Design Studio page share ONE library. On boot `hydrateComponents`
 // loads both collections through the bridge and reconciles the packaged built-ins with the hash-based
 // seed refresh (#2483, lib/seedRefresh.ts): pristine built-in copies track the seed (refreshed/deleted),
@@ -27,7 +27,7 @@ import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, appl
  *  Mirrors the `UiTouch` the `ui-activity` parser produces; declared here so the slice does not import
  *  the hook (which pulls in React) just for a shape. */
 export interface AiTouch {
-  /** `"touch"` = a WRITE (`bsc ui set/remove`) → focus + re-hydrate; `"focus"` = a READ (`bsc ui get`,
+  /** `"touch"` = a WRITE (`bsc components set/remove`) → focus + re-hydrate; `"focus"` = a READ (`bsc components get`,
    *  #3545) → focus only, nothing changed to reload. */
   kind: "touch" | "focus";
   /** The touched store collection — `component` · `kit` · `theme` · `variant`. */
@@ -64,7 +64,7 @@ export function foldTouches(ring: AiTouch[], fresh: AiTouch[]): AiTouch[] {
  *  moments ago may not be in `components` yet, so resolving from the store would miss exactly the
  *  newest work. A legacy 5-column line falls back to the store.
  *
- *  A touch whose kit resolves NEITHER way is not focusable — that is a #3725 tombstone from `bsc ui
+ *  A touch whose kit resolves NEITHER way is not focusable — that is a #3725 tombstone from `bsc components
  *  merge`/`suppress`, a retired id with no record behind it. It still enters the ring (it happened and
  *  the trail should show it), but there is nothing on screen to focus, and writing it to `aiFocusedId`
  *  would blank the Inspector for exactly the same reason a cross-kit id does. */
@@ -106,7 +106,7 @@ function scheduleAiHydrate(collections: string[], run: (cols: Set<string>) => vo
 /**
  * Re-pull the touched collections so the AI's edit appears without a relaunch (#2483/#2514/#2525).
  *
- * A designer session edits via the CLI (`bsc ui set` / `set-token` / `define-variant`), which lands as
+ * A designer session edits via the CLI (`bsc components set` / `set-token` / `define-variant`), which lands as
  * a `ui-touch` — the desktop `setComponent` fan-out never runs for it. So DIFF the reloaded library
  * against the pre-hydration snapshot and fan out each component whose contract changed, so a CLI edit
  * propagates exactly like a desktop edit (#2810). Deduped by `dispatchKey`.
@@ -151,7 +151,7 @@ export interface ComponentsSlice {
   components: ComponentRecord[];
   /** The kits (technology-scoped namespaces) the components belong to. */
   kits: Kit[];
-  /** Hydrate the library from the global `bsc ui` store on boot. No-op (keeps the seed) when the
+  /** Hydrate the library from the global `bsc components` store on boot. No-op (keeps the seed) when the
    *  bridge is unreachable. Applies the hash-based seed refresh (#2483): pushes refreshed/added
    *  built-ins, drops deleted ones, and surfaces the kept-but-diverged outcomes as `seedNotices`. */
   hydrateComponents: () => Promise<void>;
@@ -161,12 +161,12 @@ export interface ComponentsSlice {
    *  Settings picker + the Design Studio preview switcher read this; `themeById`/`ThemeScope`
    *  resolve against the same set via `setActiveKitThemes`. */
   kitThemes: KitThemeRecord[];
-  /** Hydrate the theme collection from the global `bsc ui theme` store on boot (#2488), mirroring
+  /** Hydrate the theme collection from the global `bsc components theme` store on boot (#2488), mirroring
    *  `hydrateComponents`: no-op (keeps the packaged seed) when the bridge is unreachable; reconciles
    *  built-ins via the #2483 seed refresh (theme notices ride the same `seedNotices` surface) and
    *  syncs the result into the shared theme resolvers. */
   hydrateThemes: () => Promise<void>;
-  /** Hydrate the data-defined component variants from the global `bsc ui variants` store (#2569) and
+  /** Hydrate the data-defined component variants from the global `bsc components variants` store (#2569) and
    *  compile them into the live managed `<style>` — so an LLM-authored variant renders without a
    *  relaunch. Re-run on boot and on a `ui-touch` "variant" write. No-op when the bridge is unreachable. */
   hydrateVariants: () => Promise<void>;
@@ -194,7 +194,7 @@ export interface ComponentsSlice {
   restampUnstamped: () => Promise<{ stamped: number; deferred: number }>;
 
   /** The consumer index (#2277) — which projects use which kit; the edges a kit CHANGE fans out over.
-   *  A write-through cache over the global `bsc ui usage` store (the `kit_usage` table of
+   *  A write-through cache over the global `bsc components usage` store (the `kit_usage` table of
    *  `components.db` since `the-kit-cluster-folds-into-bsc-ui`). */
   kitUsage: KitConsumer[];
   /** Whether the last hydrate could not READ the index — so {@link kitUsage} is a stale cache of unknown
@@ -221,7 +221,7 @@ export interface ComponentsSlice {
   setComponent: (component: ComponentRecord, changeOverride?: Partial<Pick<KitChange, "class" | "summary" | "migration">>) => void;
   /** Import a whole kit + its components (from a gist / share code, #2305 slice 1c) as a USER kit:
    *  collision-safe (a colliding kit or component id is freshly minted so a packaged built-in can never
-   *  be clobbered), write-through to the `bsc ui` store. Returns the (possibly re-id'd) kit. */
+   *  be clobbered), write-through to the `bsc components` store. Returns the (possibly re-id'd) kit. */
   importKit: (kit: Kit, components: ComponentRecord[]) => Kit;
   /** The pending fan-out — the planned per-consumer dispatches a kit change produced (notify-only by
    *  default; issue/assign only for breaking + opted-in consumers). Drained by the delivery slice. */
@@ -390,7 +390,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // them — the in-Studio SeedNoticesCard — was removed in #2948, and nothing replaced it. So a
     // packaged record whose seed moved while the store copy was edited has been kept SILENTLY ever
     // since: `algorithmspage` gained its technology tabs in the seed and the running app went on
-    // rendering the older copy, with no way for anyone to find out short of `bsc ui parity`.
+    // rendering the older copy, with no way for anyone to find out short of `bsc components parity`.
     //
     // A log line is not the eventual UI, but it is the difference between a drift that is discoverable
     // and one that is not — and it costs nothing on the common path, where there are no notices.
@@ -399,7 +399,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
       log.warn(
         `seed reconcile: ${upstream.length} packaged record(s) differ from the shipped seed and the ` +
           `STORE copy is being rendered — ${upstream.map((n) => n.id).slice(0, 12).join(", ")}` +
-          `${upstream.length > 12 ? ", …" : ""}. Compare with \`bsc ui parity src-tauri/data/components/app\`.`,
+          `${upstream.length > 12 ? ", …" : ""}. Compare with \`bsc components parity src-tauri/data/components/app\`.`,
       );
     }
     const refreshed = rc.notices.filter((n) => n.kind === "refreshed");

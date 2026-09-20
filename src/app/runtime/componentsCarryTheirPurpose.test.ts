@@ -1,10 +1,10 @@
 // EVERY REUSABLE COMPONENT CARRIES ITS PURPOSE AND ITS SHAPE — the population floor for
 // `components-carry-their-purpose-and-shape`.
 //
-// THE DEFECT THIS CLOSES. `bsc ui list` already takes `--shape`, `--feature` and `--tags`, and the
+// THE DEFECT THIS CLOSES. `bsc components list` already takes `--shape`, `--feature` and `--tags`, and the
 // Design Studio rail already groups by `folder` — but MEASURED 2026-09-12 the facets those filters
 // read were empty: of 460 stored component rows, `whenUse` was non-empty on 11 and `shapes` on ZERO,
-// so `bsc ui shapes` answered all seven shapes with `components: []`. A session that cannot see what
+// so `bsc components shapes` answered all seven shapes with `components: []`. A session that cannot see what
 // the library already holds writes a fourteenth variant of a row instead of composing the one that
 // exists, and that is how the library got to 460 rows in the first place.
 //
@@ -27,7 +27,7 @@ import { loadStore } from "@scripts/lib/recordStore.mjs";
 
 /** The seven-shape data vocabulary (#2475/#3517). Mirrors `DATA_SHAPES` in the designs model and
  *  `DATA_SHAPES` in the Rust component CLI — the three must agree, and an off-vocabulary value here
- *  is a typo that would make `bsc ui list --shape` silently return nothing for it. */
+ *  is a typo that would make `bsc components list --shape` silently return nothing for it. */
 const DATA_SHAPES = ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] as const;
 
 interface Comp {
@@ -72,16 +72,16 @@ describe("the component library carries its purpose and its shape", () => {
   it("every stamped shape is in the seven-value vocabulary", () => {
     const bad = RECORDS.flatMap((r) => filledStrings(r.shapes).filter((s) => !DATA_SHAPES.includes(s as never))
       .map((s) => `${r.id}:${s}`));
-    expect(bad, "off-vocabulary shapes are invisible to `bsc ui list --shape`").toEqual([]);
+    expect(bad, "off-vocabulary shapes are invisible to `bsc components list --shape`").toEqual([]);
   });
 
-  it("`bsc ui shapes` is not wholly unpopulated — every shape that has an ideal rendering names it", () => {
+  it("`bsc components shapes` is not wholly unpopulated — every shape that has an ideal rendering names it", () => {
     // The failure this replaces: all seven shapes answering `components: []`, which reads as "the kit
     // has no ideal layout for anything" when in fact nothing had been stamped. The floor is per-shape
     // rather than a single total, because one over-stamped shape would otherwise hide six empty ones.
     const byShape = new Map(DATA_SHAPES.map((s) => [s, RECORDS.filter((r) => filledStrings(r.shapes).includes(s)).length]));
     const empty = [...byShape].filter(([, n]) => n === 0).map(([s]) => s);
-    expect(empty, "these shapes have no ideal component — `bsc ui shapes <s>` answers nothing").toEqual([]);
+    expect(empty, "these shapes have no ideal component — `bsc components shapes <s>` answers nothing").toEqual([]);
     expect([...byShape.values()].reduce((a, b) => a + b, 0)).toBeGreaterThan(20);
   });
 });

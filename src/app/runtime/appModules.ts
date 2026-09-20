@@ -291,7 +291,7 @@ import * as RenderGate from "@/shared/lib/runtime/renderGate";
 // `compiles`, `compileCounts`, and the `lastGood` map it imports. A second copy is a second set of those,
 // so a page mounted through the record would compile against a different in-flight map and a different
 // last-good memory than the app's own. That is the stateful-record-shadows-a-live-module hazard
-// `bsc ui set` refuses at write time now; registering it here is the other half.
+// `bsc components set` refuses at write time now; registering it here is the other half.
 import * as GraphComponentHost from "@/shared/lib/runtime/GraphComponent";
 import * as Announcer from "@/shared/lib/a11y/announcer";
 import * as Theme from "@/shared/ui/kit/theme";
@@ -726,7 +726,7 @@ export function registerPlatformModules(): void {
   for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
   // The six feature surfaces that had NO runtime caller (record-links-is-red-on-develop). They were
   // registered only inside two tests, so `platform-modules.json` and `platformBoundary.test.ts` both
-  // believed in specifiers the app never held — and `bsc ui promote-seed` reads that manifest as the
+  // believed in specifiers the app never held — and `bsc components promote-seed` reads that manifest as the
   // definition of "resolvable", which is how 24 records carrying imports that resolve to nothing got
   // packaged. One caller, at boot, is what makes those three agree with the runtime.
   registerDebugPlatform();

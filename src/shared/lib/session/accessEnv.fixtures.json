@@ -453,7 +453,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc ui",
+          "bsc components",
           "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -572,8 +572,8 @@
         ],
         "allow": [
           "bsc algorithms",
-          "bsc ui list",
-          "bsc ui get",
+          "bsc components list",
+          "bsc components get",
           "bsc request new",
           "bsc request list",
           "bsc session ask",
@@ -1122,7 +1122,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc ui",
+          "bsc components",
           "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -1182,7 +1182,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc ui",
+          "bsc components",
           "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -1242,7 +1242,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc ui",
+          "bsc components",
           "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",
@@ -1302,7 +1302,7 @@
           "api.github.com"
         ],
         "allow": [
-          "bsc ui",
+          "bsc components",
           "bsc app shot preview",
           "bsc loop new",
           "bsc loop say",

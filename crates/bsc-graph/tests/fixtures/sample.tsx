@@ -1,6 +1,6 @@
 // #4091 fixtures — the three structural rules the algorithms harvest now applies.
 
-// A COMPONENT: renders JSX, so it belongs to the component graph (`bsc ui harvest`), never here.
+// A COMPONENT: renders JSX, so it belongs to the component graph (`bsc components harvest`), never here.
 export function StatusBadge({ ok }: { ok: boolean }) {
   return <span className={ok ? "ok" : "bad"}>{ok ? "OK" : "FAIL"}</span>;
 }

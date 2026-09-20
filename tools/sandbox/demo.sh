@@ -54,7 +54,7 @@ if [ -n "$GRAPH_JSON" ]; then cp "$GRAPH_JSON" "$ROOT/graph.json"
 else HOME="$BSC_HOME" bsc algorithms impl list > "$ROOT/graph.json" 2>/dev/null; fi
 ok "graph" "$(count_json "$ROOT/graph.json") implementations"
 if [ -n "$UI_JSON" ]; then cp "$UI_JSON" "$ROOT/ui.json"
-else HOME="$BSC_HOME" bsc ui list > "$ROOT/ui.json" 2>/dev/null; fi
+else HOME="$BSC_HOME" bsc components list > "$ROOT/ui.json" 2>/dev/null; fi
 ok "ui"    "$(count_json "$ROOT/ui.json") components"
 cp "$BSC_HOME/.base-studio-code/coord.log" "$LOG" 2>/dev/null || : > "$LOG"
 ok "coord" "$(wc -l < "$LOG") events"

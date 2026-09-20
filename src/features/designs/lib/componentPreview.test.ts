@@ -572,7 +572,7 @@ describe("hasCodeElision — an ellipsis in COPY is not an elision marker (#3486
 
   it("ignores one after a closing JSX tag or HTML entity — designer request #125", () => {
     // Both fixtures are the ACTUAL srcText of live, working components — `bsc navigate` confirmed both
-    // render fine, yet `bsc ui doctor` flagged them `no-implementation` over this "code-elision marker".
+    // render fine, yet `bsc components doctor` flagged them `no-implementation` over this "code-elision marker".
 
     // ConnectGithubCard: a third sibling text node continuing a message after an interpolated <Text>
     // element. The char immediately before the marker (skipping whitespace) is `>` from `</Text>`, a
@@ -715,7 +715,7 @@ describe("componentPreviewFiles — a specifier an ALGORITHMS record provides (#
 // composes its panels (`GlanceChatDock` importing `@/components/glance-session-log`). The Rust doctor
 // already modeled this as resolvable (`kit_targets`'s synthetic `components/{id}.tsx`, #3897) so it never
 // flagged these components — but the PREVIEW never implemented the same form, so `bsc navigate` on a page
-// composing them threw "module not found" while `bsc ui doctor` reported the kit clean. That divergence is
+// composing them threw "module not found" while `bsc components doctor` reported the kit clean. That divergence is
 // exactly what request-112 (the react designer) hit building `glancepage`.
 describe("componentPreviewFiles / componentBuildable — sibling-by-id vendoring (#3606)", () => {
   const sessionLog: ComponentRecord = {

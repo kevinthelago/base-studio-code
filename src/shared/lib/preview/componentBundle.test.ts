@@ -787,7 +787,7 @@ describe("componentBundle — externals", () => {
     // at top level — before this fix neither specifier was a curated external, so each fell to the
     // universal stub (#3696): `create` resolved to a black-hole Proxy whose `create()` call returns
     // `null` (no args ⇒ no `.children` ⇒ null), and the immediate `create()(persist(...))` then threw
-    // "TypeError: create() is not a function" — the exact error `bsc ui preview-errors` captured.
+    // "TypeError: create() is not a function" — the exact error `bsc components preview-errors` captured.
     expect(COMPONENT_IMPORTMAP["zustand"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d/);
     expect(COMPONENT_IMPORTMAP["zustand/middleware"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/middleware/);
     expect(COMPONENT_IMPORTMAP["zustand/react/shallow"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/react\/shallow/);

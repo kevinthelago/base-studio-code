@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "SHARED validation fixtures (#3485) — run by BOTH the TypeScript validator (generalNode.ts) and the Rust one (bsc ui validate). schema.ts has long CLAIMED 'a spec that passes here passes there'; with two independent implementations in different languages that claim has to be TESTED, because two validators drifting apart is worse than one — callers trust the agreement precisely where it is most likely to quietly break. Each case: `node` is validated, `count` is the exact number of errors expected, and every string in `contains` must appear in some error. Hand-authored (unlike primitives.json, which is generated).",
+  "note": "SHARED validation fixtures (#3485) — run by BOTH the TypeScript validator (generalNode.ts) and the Rust one (bsc components validate). schema.ts has long CLAIMED 'a spec that passes here passes there'; with two independent implementations in different languages that claim has to be TESTED, because two validators drifting apart is worse than one — callers trust the agreement precisely where it is most likely to quietly break. Each case: `node` is validated, `count` is the exact number of errors expected, and every string in `contains` must appear in some error. Hand-authored (unlike primitives.json, which is generated).",
   "cases": [
     {
       "name": "a complete node validates clean",

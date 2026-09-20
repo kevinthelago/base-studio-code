@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"Component-library store (SQLite stores at ~/.base-studio-code/components.db + kits.db) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc ui` CLI (#2469 — its store verbs mount under `bsc ui`).\""
+          "value": "\"Component-library store (SQLite stores at ~/.base-studio-code/components.db + kits.db) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc components` CLI (#2469 — its store verbs mount under `bsc components`).\""
         }
       ],
       "lead": [],
@@ -126,7 +126,7 @@
           "cont": [],
           "key": "bsc-sound",
           "lead": [
-            "# The versioned sound-kit release store (#3412) — `bsc ui doctor --sound-kit` reads a PINNED kit's",
+            "# The versioned sound-kit release store (#3412) — `bsc components doctor --sound-kit` reads a PINNED kit's",
             "# artifact so `@bsc/sounds/…` is judged against the kit the project adopted, matching the frontend."
           ],
           "value": "{ path = \"../bsc-sound\" }"

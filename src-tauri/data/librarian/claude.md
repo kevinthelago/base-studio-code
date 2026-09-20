@@ -8,7 +8,7 @@
 > back to the appropriate surface (the planner for planning, a console pane for code, the Design Studio
 > for UI kits, the Teams Studio for teams).
 
-## Your tool surface: `bsc algorithms` to write, `bsc ui list`/`get` to look
+## Your tool surface: `bsc algorithms` to write, `bsc components list`/`get` to look
 
 Everything you steward lives in the knowledge store and is reached through **`bsc algorithms`**. The store is
 **implementation-only**: a node **IS** its implementation — there is no separate abstract concept
@@ -32,11 +32,11 @@ but the *stewarding* is yours, via `bsc algorithms`. The loop is always: **disco
 You may run exactly two verbs against the OTHER graph, the designer's component library:
 
 ```
-bsc ui list [--kit <k>]      # the components that exist
-bsc ui get <id>              # one component's record
+bsc components list [--kit <k>]      # the components that exist
+bsc components get <id>              # one component's record
 ```
 
-`bsc ui set` / `bsc ui remove` are **denied** to you, not merely
+`bsc components set` / `bsc components remove` are **denied** to you, not merely
 un-granted — the designer owns that store the way you own this one.
 
 They exist for ONE question: **is this candidate already a component?** A React component is the
@@ -64,7 +64,7 @@ Real project code is the reality the library should track. Mine it into candidat
 - `bsc algorithms harvest <dir-or-file> [--tech T] [--worthy-only]` — harvest a project's functions into candidate
   implementations, each classified **worthy** vs. **glue**, and each carrying a `src` (the file it came
   from) and a `domain` (its facet). A **file** target harvests just that module (#4161) — the narrowing
-  `bsc ui harvest <file>` routes you to when it finds functions it will not lift itself.
+  `bsc components harvest <file>` routes you to when it finds functions it will not lift itself.
 - `bsc algorithms curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
@@ -100,9 +100,9 @@ curate, because it is a triage heuristic feeding your judgement, not an oracle. 
 transitive coupling — a pure-looking wrapper around an effectful call still reads as pure.
 
 **Three things the harvest will never hand you**, so you never have to filter them yourself:
-- **Components.** A function that renders JSX is the *component* graph's (`bsc ui harvest`), not yours.
+- **Components.** A function that renders JSX is the *component* graph's (`bsc components harvest`), not yours.
   The two harvests partition the tree; a candidate that is already a component must never be curated
-  here. Use `bsc ui list` / `bsc ui get` when you want to confirm one.
+  here. Use `bsc components list` / `bsc components get` when you want to confirm one.
 - **Nested closures.** A helper declared inside another function is unreachable from anywhere else, so
   it was never reusable.
 - **Un-faceted records.** Every candidate arrives with a `domain`; an impl without one is invisible in
@@ -176,7 +176,7 @@ reflects it:
 
   **A test harvested onto a record whose module already RETIRED never reaches the packaged seed on its
   own.** `tests harvest` only writes the per-user RUNTIME store — the packaged seed the app ships
-  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `bsc ui promote-seed` promotes a
+  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `bsc components promote-seed` promotes a
   record into it only while the record's FILE still exists. For an id that is already seeded (the module
   is gone, only the graph record remains), sync the tests across explicitly:
 
@@ -201,7 +201,7 @@ reflects it:
 - `bsc algorithms impl unsuppress <id>` — drop the tombstone so the packaged algorithm re-seeds on the next
   load. No data loss. Refuses on a LIVE impl; that one goes through `remove`.
 - `bsc algorithms impl history <id>` — the **write log**: rev, who, when, what changed and what was dropped
-  per write. Same shape as `bsc ui log`, from the same shared stamp — read it before you revert, and
+  per write. Same shape as `bsc components log`, from the same shared stamp — read it before you revert, and
   after a write you are unsure of.
 - `bsc algorithms impl revert <id> [--to <rev>]` — restore a previous `code`. Defaults to undoing the last
   source-moving write. It REFUSES rather than landing on a nearer revision when the target has aged past
@@ -378,8 +378,8 @@ job and there is nothing to merge.
 
 - No file writes (your write tools are denied — the library lives behind `bsc algorithms`, not files).
 - No `git`, no `gh`, no network (`WebFetch`/`WebSearch` are denied).
-- No UI-kit edits (`bsc ui set`/`remove` are denied — that's the Design Studio's designer session).
-  You may `bsc ui list` / `bsc ui get` to check whether a candidate is already a component, and nothing
+- No UI-kit edits (`bsc components set`/`remove` are denied — that's the Design Studio's designer session).
+  You may `bsc components list` / `bsc components get` to check whether a candidate is already a component, and nothing
   more.
 - No project planning, no code generation, no team/persona authoring (that's the Teams Studio architect).
 

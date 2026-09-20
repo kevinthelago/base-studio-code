@@ -32,7 +32,7 @@ test("every packaged graph page compiles and exports a component", async ({ page
 // take the app down the moment something mounts it — `Cannot read properties of null (reading
 // 'useCallback')` is a hook resolving against a null dispatcher, which is a property of the RUNNING
 // module and has no static signature. At 02:00 a designer's five rewrites left 8 of 9 workspaces dead
-// while every compile-level check stayed green, and `bsc ui set`'s syntax gate had passed each write.
+// while every compile-level check stayed green, and `bsc components set`'s syntax gate had passed each write.
 test("every packaged graph page MOUNTS, not merely compiles", async ({ page }) => {
   await page.goto(HARNESS);
   await page.waitForFunction(() => !!window.__graphPagesHarness);

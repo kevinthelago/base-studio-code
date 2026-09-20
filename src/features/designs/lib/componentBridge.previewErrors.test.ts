@@ -1,7 +1,7 @@
 // A broken preview must not cost a process per failure, and a HEALTHY one must not cost one at all
 // (#a-broken-preview-costs-a-process-spawn-to-report).
 //
-// Measured: `bsc ui preview-error` was 590 spawns / 251.9s in one session — the fourth-largest cost in
+// Measured: `bsc components preview-error` was 590 spawns / 251.9s in one session — the fourth-largest cost in
 // the app and pure overhead. Two shapes drove it. Reporting fired per failure, and 149 of 200 errors in
 // one hour were byte-identical, so the log was told the same thing again and again. Clearing fired on
 // every SUCCESSFUL render: `bsc` no-ops a clear for an id holding no error, but only after ~39ms of

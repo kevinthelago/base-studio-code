@@ -74,7 +74,7 @@
       "label": "Migrate to kit",
       "blurb": "Scan the target frontend, match every component against the kit (whenUse/whenNot), and generate the migration list — gap-fill builds first, migrations in dependent waves.",
       "steps": [
-        "Enumerate the kit: components, whenUse/whenNot guidance, variants (bsc ui kit list · bsc ui list --full · bsc ui get <id> · bsc ui shapes)",
+        "Enumerate the kit: components, whenUse/whenNot guidance, variants (bsc components kit list · bsc components list --full · bsc components get <id> · bsc components shapes)",
         "Scan the linked frontend for components and usage sites (Glob/Grep); count usages per component",
         "Bucket every finding: direct-mappable · mappable-with-adaptation · no-equivalent",
         "No-equivalent clusters (>=2 similar bespoke implementations, or pages needing a missing Layout) become gap-fill rows: kitContribution true, verb extract, the tier of the thing being built, evidence = the bespoke instances with usage counts",

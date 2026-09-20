@@ -33,8 +33,8 @@
     ],
     "allow": [
       "bsc algorithms",
-      "bsc ui list",
-      "bsc ui get",
+      "bsc components list",
+      "bsc components get",
       "bsc request new",
       "bsc request list",
       "bsc session ask",

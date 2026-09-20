@@ -12,7 +12,7 @@
 // (does the record resolve its imports?) keeps running. Shadow mode therefore never needs retiring: it
 // shrinks as the migration proceeds and its structural half self-retires when the last entry goes null.
 // There is deliberately NO replacement baseline — an archive copy or a previous record revision would
-// be a copy of the thing under test, which is not a second opinion. `bsc ui parity` (#4246) answers the
+// be a copy of the thing under test, which is not a second opinion. `bsc components parity` (#4246) answers the
 // question that outlives the file: does the app RENDER what it SHIPS (store vs seed)?
 //
 // ── `graphParity.test.ts` IS RETIRED (retire-graphparity). Do not recreate it. ────────────────────
@@ -32,7 +32,7 @@
 // deliberate decision. Narrowing it to records that still have a file removes almost nothing.
 //
 // WHAT NOW COVERS WHAT, stated so the gap is visible rather than assumed:
-//   * `bsc ui parity` (#4246)        — store vs SEED. Does the app render what it ships?
+//   * `bsc components parity` (#4246)        — store vs SEED. Does the app render what it ships?
 //   * `e2e/recordLinks.spec.ts`      — every record compiles and every specifier it needs resolves.
 //   * `e2e/graphPages.spec.ts`       — every page record exports a component.
 //   * `e2e/graphPrimitive.spec.ts`   — the record, not the bundled file, is what the renderer mounts.

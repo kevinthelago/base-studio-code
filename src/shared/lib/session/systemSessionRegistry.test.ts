@@ -123,7 +123,7 @@ describe("the studio-kind registry is the same closed set on both sides", () => 
 
 describe("the projection is the session set", () => {
   /** The technology axis as the stores actually hold it, MEASURED 2026-09-09: `impl.tech` over the
-   *  committed record store is {rust: 1944, typescript: 79}, and `bsc ui kit list` reports react and
+   *  committed record store is {rust: 1944, typescript: 79}, and `bsc components kit list` reports react and
    *  react-native. There is no python record anywhere in this repo. */
   const MEASURED = studioAxis(["rust", "typescript"], ["react", "react-native"]);
 

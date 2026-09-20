@@ -24,7 +24,7 @@ libraries without leaving this planning session. When a feature needs a specific
 or an **algorithm** you don't already have, go **reuse-first**:
 
 - **UI components** → the **designer** (the sole owner of the component library). First check what
-  exists: `bsc ui list`. If an existing component fits, name it in the feature's plan. If nothing
+  exists: `bsc components list`. If an existing component fits, name it in the feature's plan. If nothing
   fits, commission one (the spec is what it should *show / do*, on stdin):
 
   ```
@@ -570,7 +570,7 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   "defined" once it has `name` + `behavior` + ≥1 `acceptance` + a non-empty `requires` (`bsc plan
   feature list` shows ✓/·).
   **`requires` — what this feature BUILDS ON, and it is not optional.** It names ids in the two
-  libraries: algorithm implementations (`bsc algorithms impl list`) and UI components (`bsc ui list`). The
+  libraries: algorithm implementations (`bsc algorithms impl list`) and UI components (`bsc components list`). The
   fleet renders it into each worker's `CLAUDE.local.md` as a *Reference implementations* section
   pointing at the store, so a worker is handed what already exists instead of re-deriving it — the
   `reimplemented-component` problem, caught BEFORE the code is written.
@@ -582,9 +582,9 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   **Finding the candidates is one query per library, scoped to the feature's own group:**
 
   ```
-  bsc ui list --feature <slug>              # the components that feature already owns
+  bsc components list --feature <slug>              # the components that feature already owns
   bsc algorithms impl list --feature <slug>      # its algorithm implementations
-  bsc ui list --feature core                # the shared baseline — usable by ANY feature
+  bsc components list --feature core                # the shared baseline — usable by ANY feature
   bsc algorithms impl list --feature core
   ```
 

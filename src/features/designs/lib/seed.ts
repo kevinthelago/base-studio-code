@@ -1,6 +1,6 @@
 // The packaged Component Library seed (#2269) — reset to a CLEAN SLATE (#3543): a single EMPTY kit,
 // `base-studio-code`. The designer session fills it (components + all algorithm animations + everything
-// needed to create/run the app) via `bsc ui`, and the studio command exports it. This is the concrete
+// needed to create/run the app) via `bsc components`, and the studio command exports it. This is the concrete
 // first move toward "the app's own entire UI as one graph" (endpoint of #3451).
 //
 // What this replaced: six separately-seeded kits — `react-ui` (generated primitives, gated off #3029),

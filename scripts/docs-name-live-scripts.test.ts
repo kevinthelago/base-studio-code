@@ -4,7 +4,7 @@
 // found by `ls scripts/` is not a surface — so the docs ARE the surface, and a path in them that opens
 // nothing is worse than no mention: the reader concludes the tool is missing from their checkout.
 //
-// It happened twice, and once was mine. Migrating `retirement-candidates.mjs` to `bsc ui retirable` I
+// It happened twice, and once was mine. Migrating `retirement-candidates.mjs` to `bsc components retirable` I
 // updated the recipe block and missed a prose mention forty lines earlier, so `docs/records.md` went on
 // telling readers to run a file the same change had deleted. Nothing was watching, because every gate
 // leg reads code and none reads prose.
@@ -58,7 +58,7 @@ describe("the docs never name a deleted script", () => {
   // deleted script misleads a reader; an npm script naming one hands them
   // `Error: Cannot find module`. This hole was live: `npm run retirement-candidates` ran
   // `scripts/retirement-candidates.mjs` for however long it had been since that capability became
-  // `bsc ui retirable` — the very migration this file's header describes its author getting wrong in
+  // `bsc components retirable` — the very migration this file's header describes its author getting wrong in
   // the docs. The guard was written for the prose half and never extended to the executable half.
   it("every `scripts/…` path package.json would RUN exists on disk", () => {
     const pkg = JSON.parse(readFileSync(resolve(REPO, "package.json"), "utf8")) as {

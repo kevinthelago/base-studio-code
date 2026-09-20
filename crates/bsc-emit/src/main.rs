@@ -6,7 +6,7 @@
 //! at 343s plus ~1.8 GB of C++ output. Paying that on every frontend PR to run a file-copying step is
 //! not defensible. This binary's whole dependency tree is `serde_json` + `regex` + two leaf crates.
 //!
-//! `bsc ui emit records` is the AGENT-FACING door over the same library. One implementation, two
+//! `bsc components emit records` is the AGENT-FACING door over the same library. One implementation, two
 //! entry points — which is not two implementations, and is the same arrangement `bsc-agent` and
 //! `bsc-hook` already have.
 //!

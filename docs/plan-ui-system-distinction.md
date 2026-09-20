@@ -22,7 +22,7 @@
   (`src-tauri/src/planner/directives.rs`).
 
 **Why paired.** The two studios split the whole artifact surface, and the planner already routes on
-exactly that line — *a component is UI (designer, `bsc ui`); an algorithm is computation (librarian,
+exactly that line — *a component is UI (designer, `bsc components`); an algorithm is computation (librarian,
 `bsc algorithms impl`)*. Asking only about the UI would leave the **executed** half unstated, which is the
 more dangerous half to be wrong about: it runs code rather than rendering it. They also differ often —
 owning the UI while still drawing algorithms from the graph is a normal project — so a single combined
@@ -136,7 +136,7 @@ This is the actual content of the work, and it is where the value is. Each becom
 |---|---|---|
 | **UI stage surface** | `PreviewPaneShell` / `FileIntakePane` per `uiMode` | a third surface: *understand and document the existing UI* — inventory the components that exist, record conventions, no shell generation |
 | **Kit pinning** | packaged kit auto-pinned | no kit pinned; blueprint `mode` must not override the project fact |
-| **Worker context** | `bsc ui` guidance + the host-API contract inlined at fleet launch | ordinary file-based frontend work; no graph vocabulary |
+| **Worker context** | `bsc components` guidance + the host-API contract inlined at fleet launch | ordinary file-based frontend work; no graph vocabulary |
 | **Designer studio** | the project's UI surface | not applicable to this project |
 | **Build/publish pipeline** | engages | does not engage |
 | **Per-node analytics / capability manifests** (#3809) | inherited by composition | must be authored conventionally, if at all |

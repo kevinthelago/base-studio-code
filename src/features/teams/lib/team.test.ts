@@ -98,7 +98,7 @@ describe("built-in orgs (#2193)", () => {
     expect(serves("designer", "planner")).toBe(true);
     expect(serves("librarian", "planner")).toBe(true);
     expect(serves("librarian", "designer")).toBe(true);
-    // each STEWARDS only its own library (designer bsc ui, librarian bsc algorithms, architect the teams).
+    // each STEWARDS only its own library (designer bsc components, librarian bsc algorithms, architect the teams).
     expect(stewards("designer", "library")).toBe(true);
     expect(stewards("librarian", "algorithms")).toBe(true);
     expect(stewards("architect", "teams")).toBe(true);

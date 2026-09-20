@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "GENERATED from src/shared/ui/manifest.ts — do not edit by hand. The structured prop contract `bsc ui validate` enforces for general nodes ({ type, props, children }). `values` is the closed set for `type: enum`. `passthrough` primitives forward arbitrary DOM props, so unknown props are NOT an error on them. Regenerate: UPDATE_KITS=1 npx vitest run primitives.gen",
+  "note": "GENERATED from src/shared/ui/manifest.ts — do not edit by hand. The structured prop contract `bsc components validate` enforces for general nodes ({ type, props, children }). `values` is the closed set for `type: enum`. `passthrough` primitives forward arbitrary DOM props, so unknown props are NOT an error on them. Regenerate: UPDATE_KITS=1 npx vitest run primitives.gen",
   "primitives": [
     {
       "name": "Box",

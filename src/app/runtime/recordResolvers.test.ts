@@ -16,7 +16,7 @@
 //   e2e/vite.config.ts     its OWN config, outside the root tsconfig. Retiring `Spacer` broke the whole
 //                          Playwright harness because this one was missed.
 //   reactUiKit.gen.test.ts the kit generator walks the import graph itself.
-//   graph/algorithms.json  the RUST closure walker (`bsc ui emit`), record `bsc-ui--emit--mod.rs`. The
+//   graph/algorithms.json  the RUST closure walker (`bsc components emit`), record `bsc-ui--emit--mod.rs`. The
 //                          SEVENTH, and the only one
 //                          outside the TS build: it vendors an alias-free tree by resolving each `@/…`
 //                          against the packaged kit artifact overlaid with the store, so a module that

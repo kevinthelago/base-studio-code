@@ -1,9 +1,9 @@
 // The frontend ↔ component-library bridge (#2269/#2281). The library is a GLOBAL store, reached — from
-// the UI AND from a live session's own shell — through the SAME `bsc ui …` CLI over the generic
+// the UI AND from a live session's own shell — through the SAME `bsc components …` CLI over the generic
 // `bsc` bridge (#2114). Global store → every call passes `null` as the projectKey. This is the only
 // place the components feature touches Tauri, so the pure model in `model.ts` stays React/Tauri-free.
 //
-// Two collections: components (`bsc ui …`) and kits (`bsc ui kit …`). Reads use `--full`
+// Two collections: components (`bsc components …`) and kits (`bsc components kit …`). Reads use `--full`
 // (the complete objects the pane needs). `loadX` returns `null` when the bridge is unreachable (tests /
 // web shell / an old bundled `bsc`) so the store keeps its seed rather than blanking it — NOT `bscJson`,
 // whose degrade-to-`[]` would blank the seed.
@@ -14,7 +14,7 @@ import type { ComponentBuildStatus, RuntimeStateCategory } from "@/features/desi
 import { ROLES } from "@/features/designs/lib/model";
 
 /**
- * Project one raw `bsc ui list --full` row into a full {@link ComponentRecord}, defaulting absent
+ * Project one raw `bsc components list --full` row into a full {@link ComponentRecord}, defaulting absent
  * optionals to their empty shape so an odd record never crashes hydration. Exported (#3606) so the
  * packaged SEED is assembled through the SAME projection — a seed record then equals `load(push(seed))`
  * by construction, satisfying the #2514 round-trip contract without hand-mirroring these defaults (the
@@ -88,7 +88,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
   };
 }
 
-/** Load every component from the global store via `bsc ui list --full`; `null` when unreachable. */
+/** Load every component from the global store via `bsc components list --full`; `null` when unreachable. */
 export async function loadComponents(): Promise<ComponentRecord[] | null> {
   try {
     const out = await bsc(null, ["ui", "list", "--full"]);
@@ -104,7 +104,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
 }
 
 /**
- * Load every component's GRAPH projection via `bsc ui list --graph` (#4072) — `null` when unreachable.
+ * Load every component's GRAPH projection via `bsc components list --graph` (#4072) — `null` when unreachable.
  *
  * The fast half of the Studio's two-phase hydration: 33 KB instead of `--full`'s 1.72 MB (77.6% of
  * which is `srcText` no node reads), so the page paints instead of blocking up to 8s.
@@ -147,7 +147,7 @@ export async function readLibraryIndex(): Promise<{ components: ComponentRecord[
   return components && kits ? { components, kits } : null;
 }
 
-/** Load every kit via `bsc ui kit list --full`; `null` when unreachable. */
+/** Load every kit via `bsc components kit list --full`; `null` when unreachable. */
 export async function loadKits(): Promise<Kit[] | null> {
   try {
     const out = await bsc(null, ["ui", "kit", "list", "--full"]);
@@ -166,16 +166,16 @@ export async function loadKits(): Promise<Kit[] | null> {
 
 /** The `--by` tag stamped on a write the APP ITSELF issues in the background — a seed reconcile
  *  (reseed/refresh/resuppress-dedup/reset-to-seed) or a provenance restamp — as opposed to a write a
- *  live designer session or an out-of-band `bsc ui` caller makes. Request #98: without this every
- *  background write read `by: "unknown"` in `bsc ui log`, indistinguishable from a genuinely external
+ *  live designer session or an out-of-band `bsc components` caller makes. Request #98: without this every
+ *  background write read `by: "unknown"` in `bsc components log`, indistinguishable from a genuinely external
  *  writer touching the same record, so telling "the app resynced a builtin" apart from "something else
  *  just wrote to this record" meant reading full history and reasoning about timing/content by hand. */
 export const APP_RECONCILE_WRITER = "app-reconcile";
 
-/** Write-through a component upsert (`bsc ui set`, JSON on stdin). Fire-and-forget; never throws
+/** Write-through a component upsert (`bsc components set`, JSON on stdin). Fire-and-forget; never throws
  *  (an old bundled `bsc` without the `ui` store verbs (#2469) degrades to cache-only).
  *
- *  `--replace` is REQUIRED here (#4197). `bsc ui set` now MERGES — a partial write preserves what it
+ *  `--replace` is REQUIRED here (#4197). `bsc components set` now MERGES — a partial write preserves what it
  *  omits, so a fleet worker editing one field can no longer delete the rest of a record whose source
  *  file is gone. The app is the opposite case: it holds the WHOLE record, and `reconcileSeed`'s
  *  seed-authoritative reset (#3723) depends on the store copy being overwritten field-for-field. Under a
@@ -212,13 +212,13 @@ export async function pushComponent(
   }
   const args = ["ui", "set", "--replace"];
   // OPTIMISTIC CONCURRENCY (#a-stale-app-copy-overwrites-a-designer-edit). Two independent writers share
-  // this store — the app, and out-of-band `bsc ui set` sessions — so last-write-wins means whoever writes
+  // this store — the app, and out-of-band `bsc components set` sessions — so last-write-wins means whoever writes
   // second wins regardless of what they knew. A designer's `srcText` fix (rev8) was destroyed 23 minutes
   // later by a converge push carrying the copy the app had read BEFORE it (rev9), with no notice to
   // anyone; it was found only because the render error came back.
   //
   // `--if-version` names the rev this write is BASED on and the store refuses if it has moved. The guard
-  // already existed in `bsc ui set`; nothing was sending it. Passed only where the caller can name the
+  // already existed in `bsc components set`; nothing was sending it. Passed only where the caller can name the
   // rev it actually READ — an unguarded call still behaves exactly as before.
   if (typeof opts?.ifVersion === "number") args.push("--if-version", String(opts.ifVersion));
   if (opts?.by) args.push("--by", opts.by);
@@ -231,7 +231,7 @@ export async function pushComponent(
     log.warn(`ui-bridge: "${component.id}" not written: ${String(e).slice(0, 200)}`, "ui-bridge");
   }
 }
-/** Write-through JUST the seed stamp on an existing record (#4207) — a MERGING `bsc ui set`, which is
+/** Write-through JUST the seed stamp on an existing record (#4207) — a MERGING `bsc components set`, which is
  *  the whole point: this is the one component write whose input came from READING the store, so a
  *  `--replace` would push the bridge PROJECTION back over the stored record and silently drop any field
  *  the projection does not carry. `pushComponent`'s `--replace` is correct for its case (the app holds
@@ -239,11 +239,11 @@ export async function pushComponent(
 export async function stampComponent(id: string, seedHash: string, by = APP_RECONCILE_WRITER): Promise<void> {
   try { await bscWrite(null, ["ui", "set", "--by", by], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
 }
-/** Write-through a component removal (`bsc ui remove <id>`). Never throws. */
+/** Write-through a component removal (`bsc components remove <id>`). Never throws. */
 export async function dropComponent(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
-/** Write-through a kit upsert (`bsc ui kit set`). Never throws. `--replace` for the same reason
+/** Write-through a kit upsert (`bsc components kit set`). Never throws. `--replace` for the same reason
  *  `pushComponent` needs it (#4197) — the app holds the whole record and the kit seed reconcile must be
  *  able to force a diverged copy back.
  *
@@ -256,7 +256,7 @@ export async function pushKit(kit: Kit, by?: string): Promise<void> {
   if (by) args.push("--by", by);
   try { await bscWrite(null, args, kit); } catch { /* store unreachable — cache-only */ }
 }
-/** Write-through a kit removal (`bsc ui kit remove <id>`). Never throws. */
+/** Write-through a kit removal (`bsc components kit remove <id>`). Never throws. */
 export async function dropKit(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "kit", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
@@ -270,7 +270,7 @@ export interface CachedScan {
 }
 
 /**
- * Read the durable scan cache (`bsc ui scan-cache`, #the-component-scan-remembers-what-it-already-built).
+ * Read the durable scan cache (`bsc components scan-cache`, #the-component-scan-remembers-what-it-already-built).
  *
  * Empty on ANY failure — no bridge, an old binary, malformed JSON. That is the safe direction and the
  * whole safety argument for this cache: an empty read makes the sweep scan everything, which is exactly
@@ -296,7 +296,7 @@ export async function loadScanCache(): Promise<Record<string, CachedScan>> {
   }
 }
 
-/** Merge scan outcomes into the durable cache (`bsc ui scan-cache put`). Fire-and-forget: a failed write
+/** Merge scan outcomes into the durable cache (`bsc components scan-cache put`). Fire-and-forget: a failed write
  *  costs a re-scan next visit, which is the same thing that happened before the cache existed. */
 export async function saveScanCache(entries: Record<string, CachedScan>): Promise<void> {
   if (Object.keys(entries).length === 0) return;
@@ -327,7 +327,7 @@ let seedPromise: Promise<void> | null = null;
 /** False once the seed read failed: the map is then not a trustworthy answer to "does this id hold an
  *  error?", so `clearPreviewError` stops taking the shortcut and spawns as it always did. Skipping
  *  instead would silently drop clears — and the failure modes are not symmetric. A missing clear leaves
- *  `bsc ui doctor` reporting a fault that a live preview disproves (#45/#60); a redundant clear just
+ *  `bsc components doctor` reporting a fault that a live preview disproves (#45/#60); a redundant clear just
  *  costs a process that `bsc` no-ops. Pay the process. */
 let bookkeepingReliable = true;
 function seedRecordedErrors(): Promise<void> {
@@ -344,7 +344,7 @@ function seedRecordedErrors(): Promise<void> {
   return seedPromise;
 }
 
-/** Record a captured preview RUNTIME error to the durable log `bsc ui preview-errors` tails (#3165). The
+/** Record a captured preview RUNTIME error to the durable log `bsc components preview-errors` tails (#3165). The
  *  message (a stack trace) rides on the child's stdin. Fire-and-forget: never throws — an old bundled
  *  `bsc` without the verb just no-ops the observability (the in-pane error banner still shows). Makes a
  *  preview throw — otherwise only ephemeral React state — readable from a session's shell. */
@@ -362,9 +362,9 @@ export async function recordPreviewError(id: string, message: string): Promise<v
  * Clear `id`'s recorded preview error because its preview just RENDERED (#45/#60).
  *
  * The missing half of {@link recordPreviewError}. Editing a component clears its error (#43) and so does
- * `bsc ui preview-error clear`, but nothing did when the preview simply started working — so a component
+ * `bsc components preview-error clear`, but nothing did when the preview simply started working — so a component
  * fixed by a change ELSEWHERE (a shared dependency, or a resolver bug in the preview itself) kept its
- * finding forever, and `bsc ui doctor` reported a failure a live `bsc shot preview` disproved.
+ * finding forever, and `bsc components doctor` reported a failure a live `bsc shot preview` disproved.
  *
  * A successful render is the strongest evidence available that the recorded error is stale: it means the
  * component built AND ran. Fire-and-forget like its sibling — observability must never break a preview —

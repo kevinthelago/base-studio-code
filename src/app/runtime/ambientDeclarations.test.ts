@@ -41,7 +41,7 @@ describe("ambient declarations survive retirement (#3604)", () => {
     // typechecking the moment this line is gone, which is what made the failure look unrelated.
     expect(all).toMatch(/\/\/\/\s*<reference\s+types=["']vite\/client["']\s*\/>/);
   });
-    // The `.d.ts` exclusion moved with the census itself: it is now `bsc ui retirable`, and the rule is
+    // The `.d.ts` exclusion moved with the census itself: it is now `bsc components retirable`, and the rule is
     // asserted BEHAVIOURALLY in `bsc-ui`'s `retirable::tests` — a synthetic repo whose only seeded
     // candidate is a `.d.ts`, which must come back with no candidates at all. That is a stronger guard
     // than this was: it grepped the implementation's SOURCE for a regex, which passes for a rule that is

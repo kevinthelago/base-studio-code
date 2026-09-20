@@ -58,7 +58,7 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().components).toEqual(SEED_COMPONENTS);
     expect(pushK).toHaveBeenCalledTimes(1);
     // #98: a converge push is the app's OWN background write — tagged `app-reconcile` (2nd arg to
-    // `pushKit`) so `bsc ui log` can tell it apart from a write some other session made.
+    // `pushKit`) so `bsc components log` can tell it apart from a write some other session made.
     expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: BASE_STUDIO_CODE_KIT_ID }), APP_RECONCILE_WRITER);
     // Each packaged component is pushed through the bridge too (recover/shadow-proof, same as the kit).
     expect(pushC).toHaveBeenCalledTimes(SEED_COMPONENTS.length);
@@ -201,7 +201,7 @@ describe("designer AI live-focus (#2525)", () => {
   it("setAiFocused with hydrate:false focuses WITHOUT re-hydrating — a read-focus (#3545)", () => {
     const hydrateComponents = vi.fn();
     useAppStore.setState({ hydrateComponents });
-    // A `ui-focus` (bsc ui get / preview-props): drive the preview, but do NOT refetch the library —
+    // A `ui-focus` (bsc components get / preview-props): drive the preview, but do NOT refetch the library —
     // nothing changed, and this fires on every read.
     useAppStore.getState().setAiFocused("chip", "component", { hydrate: false });
     expect(useAppStore.getState().aiFocusedId).toBe("chip");
@@ -342,8 +342,8 @@ describe("the activity RING + in-kit focus (#auto-focus-in-kit-and-drop-the-acti
     expect(hydrateComponents).not.toHaveBeenCalled();
   });
 
-  it("accepts a touch whose record is GONE — a retired id from `bsc ui merge` (#3725 tombstone)", () => {
-    // `bsc ui merge`/`suppress` emit activity for the RETIRED id, and 3 of the last 200 real touches
+  it("accepts a touch whose record is GONE — a retired id from `bsc components merge` (#3725 tombstone)", () => {
+    // `bsc components merge`/`suppress` emit activity for the RETIRED id, and 3 of the last 200 real touches
     // were exactly that. It is real work and must show; it simply resolves to no record and no kit.
     // The id must genuinely resolve to NOTHING or this tests the wrong thing. The previous version used
     // `windowcontrols`, which is a real record — it passed only because its kit assertion was trivially

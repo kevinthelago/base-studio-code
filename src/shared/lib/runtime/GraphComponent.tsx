@@ -217,7 +217,7 @@ export function GraphComponent({
         log.warn(
           `graph-loader: "${id}" ${why} and this session has no last-good — falling back to a retained ` +
             `earlier version from the record's history (${rung.length} chars). Recover it properly with ` +
-            `\`bsc ui revert ${id}\`.`,
+            `\`bsc components revert ${id}\`.`,
           "graph-loader",
         );
         setLoaded(() => Comp);

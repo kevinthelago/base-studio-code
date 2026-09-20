@@ -97,7 +97,7 @@
       ],
       "lead": [
         "",
-        "# The BUILD-TREE entry point. `bsc ui emit records` is the agent-facing door over the same lib; this",
+        "# The BUILD-TREE entry point. `bsc components emit records` is the agent-facing door over the same lib; this",
         "# one exists so `npm run typecheck` never has to link DuckDB."
       ],
       "name": "[[bin]]"

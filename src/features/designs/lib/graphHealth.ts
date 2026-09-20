@@ -1,4 +1,4 @@
-// Design-graph health — the pure TS mirror of the `bsc ui doctor` analyzer (Rust `bsc-component`
+// Design-graph health — the pure TS mirror of the `bsc components doctor` analyzer (Rust `bsc-component`
 // crate, #2678/#2679), used to badge dead/duplicated nodes in the Designs composition graph (#2680,
 // epic #2677). Same taxonomy, same rules; operates on ONE kit's components (the Design Studio already
 // scopes `kitComps` to the active kit, and `composes` edges only resolve within a kit).
@@ -581,7 +581,7 @@ function isInternalSpecifier(spec: string): boolean {
  *
  *  A `no-implementation` finding used to state only THAT a component was unbuildable, leaving the reader
  *  to re-derive the cause by hand (the gap `bsc request` #4 was filed for). The causes are already
- *  computed to decide the predicate; naming them makes `bsc ui doctor` diagnosable on its own.
+ *  computed to decide the predicate; naming them makes `bsc components doctor` diagnosable on its own.
  *
  *  Returns EMPTY only when nothing is wrong — a component with no source at all is a STATED reason, not
  *  an empty list. Rust twin: `no_implementation_reasons` (graph_health.rs); the two must move together.
@@ -651,7 +651,7 @@ export type HealthCategory =
   // primitive the rest of the family does. A REPORT, not a rule.
   | "skips-family-shell"
   | "phantom-compose"
-  // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
+  // MOTION checks (#3163, `bsc components doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
   | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
@@ -741,7 +741,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "slot-shell": 1,
 };
 
-/** The badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`; read by the Design Studio
+/** The badge glyph + tooltip per category (#2680) — mirrors `bsc components doctor`; read by the Design Studio
  *  graph node cards (`DesignsWorkbench`). Typed as a TOTAL `Record<HealthCategory, …>`, so the compiler
  *  forces an entry for EVERY category (the #3026 gap stays closed — a new category can't ship without a
  *  badge). Co-located with {@link HEALTH_SEVERITY} (both keyed by category) in this pure module so it's
@@ -1081,7 +1081,7 @@ export function analyzeGraphHealth(
   }
 
   // unresolvable-import — a component whose OWN module imports something the preview CAN'T resolve, the
-  // class `bsc ui doctor` was blind to (the graph looked clean while the component was broken). Two kinds:
+  // class `bsc components doctor` was blind to (the graph looked clean while the component was broken). Two kinds:
   //   • BARE — an npm package not in the preview import-map → "Failed to resolve module specifier" (#2934).
   //   • INTERNAL — a `@/…`/relative import matching NEITHER a kit component NOR a runtime-closure module →
   //     "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer` failure #2954
@@ -1157,7 +1157,7 @@ export function analyzeGraphHealth(
   // The algorithm version has existed since #3118; the component version did not, which is how 36 of 74
   // harvested records came to carry a local `function Box` while a `Box` node sat in the same kit. They
   // render — as a STUB Box, not the kit's — so the page looks right and every later revision iterates on
-  // the reduced copy (the #3833 failure mode). Provenance is PROMOTION, not harvest: `bsc ui harvest`
+  // the reduced copy (the #3833 failure mode). Provenance is PROMOTION, not harvest: `bsc components harvest`
   // reports such a candidate as `buildable: false` with the exact unresolved specifiers and never stubs
   // them; this catches the hand "resolution" that fakes the import to satisfy buildability.
   // Conservative like its sibling: exact whole-identifier declaration, own-module source, never self, and
@@ -1246,7 +1246,7 @@ export function analyzeGraphHealth(
   // is measured: a ~480k-token fork reading a dozen srcTexts. Fuzzy name + prop-contract distance never
   // sees "shares a shell primitive", because the two components' props are unrelated — a toggle card has
   // `enabled`/`onToggle` and an info card has `value`/`label`, so none of the 51 card-suffixed ids ever
-  // appeared together in a dupes report. What answered it in ONE call was `bsc ui used-by ui-card`. This is
+  // appeared together in a dupes report. What answered it in ONE call was `bsc components used-by ui-card`. This is
   // that call, run for every family at once. Rust twin: the skips-family-shell loop in graph_health.rs.
   // Keyed `"<grouping>::<name>"`, split on the FIRST `::` so a folder path is never truncated.
   // "folder" sorts before "name suffix", which is what makes the dedupe below keep the specific grouping.
@@ -1383,7 +1383,7 @@ export function analyzeGraphHealth(
   return findings.sort((a, b) => b.severity - a.severity || (a.nodeNames[0] ?? "").localeCompare(b.nodeNames[0] ?? ""));
 }
 
-// ── motion checks (#3163, `bsc ui doctor --motion`) ──────────────────────────────────────────────────
+// ── motion checks (#3163, `bsc components doctor --motion`) ──────────────────────────────────────────────────
 // Four MECHANICAL faults an author used to hand-diagnose from a broken preview, now surfaced from the data.
 // They scan a component's INLINE animation defs (the object entries of `animations`; a name-ref string
 // points at the shared kit library, which the doctor doesn't resolve) against its rendered markup. The
@@ -1415,7 +1415,7 @@ function componentMarkup(c: ComponentRecord): string {
 }
 
 /**
- * Analyze a kit's components for MOTION-graph faults (#3163) — the `bsc ui doctor --motion` checks,
+ * Analyze a kit's components for MOTION-graph faults (#3163) — the `bsc components doctor --motion` checks,
  * mirrored from `graph_health::analyze_motion`. Ranked most-severe first (stable name tiebreak). Pure.
  * Four checks:
  *   (a) motion-dead-selector — an animation `selector` whose class hook the component's source never renders.

@@ -35,8 +35,8 @@ instead.
 ## Finding a module that is not a file
 
 ```bash
-bsc ui list --full                 # every component record, with its source
-bsc ui get <id>                    # one component record
+bsc components list --full                 # every component record, with its source
+bsc components get <id>                    # one component record
 bsc algorithms impl list                # every algorithm implementation
 bsc algorithms impl get <id>            # one implementation
 ```
@@ -48,9 +48,9 @@ that specifier, not by searching the filesystem.
 To **edit** a retired module you edit the record, not a file:
 
 ```bash
-bsc ui set --by <you> --note "<why>"      # component JSON on stdin, MERGED into the record
+bsc components set --by <you> --note "<why>"      # component JSON on stdin, MERGED into the record
 bsc algorithms impl set --id <id> --tech typescript --role algorithm --code "<source>"
-bsc ui revert <id> [--to <rev>]           # records keep history; writes are revertible
+bsc components revert <id> [--to <rev>]           # records keep history; writes are revertible
 ```
 
 New UI is authored **into the store**, never as a new `.tsx`.
@@ -75,10 +75,10 @@ There are two copies of every record and they are not the same thing.
 |---|---|---|
 | **seed** (components) | what SHIPS, and for a COMPONENT also the committed home. Checked into git, identical for everyone. | `src-tauri/data/components/app/**` |
 | **committed store** (algorithms) | what the BUILD compiles — both the emitted frontend tree and the materialized Rust crates. Checked into git, ONE DATABASE, merged by a git driver and rendered readable by a textconv. | `graph/algorithms.db` (named by `graph/store.toml`) |
-| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc algorithms`, never off the file. | `~/.base-studio-code/…` via `bsc ui` / `bsc algorithms` |
+| **runtime store** | your machine's live working copy, edited by the app and by designer sessions. The algorithm half is the LEDGER `graph.db`; the old `knowledge/algorithms.json` beside it is legacy and no longer written, so read it back through `bsc algorithms`, never off the file. | `~/.base-studio-code/…` via `bsc components` / `bsc algorithms` |
 
 The two committed homes are asymmetric and it matters: an ALGORITHM record has a git-tracked home that is
-not the packaged seed, and a COMPONENT record does not — `bsc ui promote` writes a new component record
+not the packaged seed, and a COMPONENT record does not — `bsc components promote` writes a new component record
 into its own file *under the packaged seed*. That is why the algorithms seed could be taken off the build
 path and the component seed cannot be, yet.
 
@@ -86,10 +86,10 @@ path and the component seed cannot be, yet.
 git-ignored `.bsc-records/` tree, which is what the compilers resolve against. So:
 
 - A record that exists only in your **runtime store** cannot retire its file. It has to be **promoted**
-  into the committed copy first (`bsc algorithms promote` for an algorithm, `bsc ui promote` for a component),
+  into the committed copy first (`bsc algorithms promote` for an algorithm, `bsc components promote` for a component),
   or the module vanishes for everyone else.
 - The two drift, in both directions. A designer edits the store; a merge moves the file. Never assume one
-  is authoritative — `bsc ui retirable` grades the three-way (seed vs store vs file), and
+  is authoritative — `bsc components retirable` grades the three-way (seed vs store vs file), and
   that grade is the whole safety story.
 
 `reconcileSeed` pushes a changed seed into a pristine store copy on boot, and keeps a user-edited copy with
@@ -112,7 +112,7 @@ has its own resolver, and **each of these was discovered by a separate failure**
 | vitest | `vitest.config.ts` | a different config file, so the plugin has to be installed twice |
 | the Playwright harness | `e2e/vite.config.ts` | retiring `Spacer` broke the whole e2e suite |
 | the kit generator | `reactUiKit.gen.test.ts` | — |
-| `bsc ui emit` (Rust) | `crates/bsc-ui/src/emit.rs` | **still broken** — see `bsc-ui-emit-cannot-resolve-a-retired-module` |
+| `bsc components emit` (Rust) | `crates/bsc-ui/src/emit.rs` | **still broken** — see `bsc-ui-emit-cannot-resolve-a-retired-module` |
 
 `src/app/runtime/recordResolvers.test.ts` asserts the list, so the next one added is not found the hard way.
 
@@ -143,7 +143,7 @@ had. Every one of these has cost a real failure:
   Vite bundles its own config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet,
   `.bsc-records/` cannot serve it, and there is no `@/` alias out there either (the config sits outside
   `src/` and imports by relative path). `tsc`, `lint` and all 742 vitest files went green after that
-  module was retired; only `npx vite build` failed. `bsc ui retire` now refuses one, reading the
+  module was retired; only `npx vite build` failed. `bsc components retire` now refuses one, reading the
   importer list from the configs rather than a hard-coded name.
 
 **`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
@@ -170,8 +170,8 @@ And two whole categories of module must stay files:
 
 ```bash
 npm test -- src/app/runtime/recordImports.test.ts   # the SEED — in git, runs on a fresh clone
-bsc ui imports                                     # the STORE — per-machine; exit 1 on any finding
-bsc ui imports --fix                               # ...and repair it
+bsc components imports                                     # the STORE — per-machine; exit 1 on any finding
+bsc components imports --fix                               # ...and repair it
 ```
 
 `makeRequire` routes a specifier to the registry under its **literal key**, so `./useDockBack` needs a
@@ -183,7 +183,7 @@ neighbour was still a file a bundler could resolve.
 from the store, not the seed, so that is where a bad specifier is visible — and a test reading
 `~/.base-studio-code` would be vacuous on a fresh clone. Hence two runners over one scanner
 (`relativeSpecifiers` in `scripts/lib/recordSource.mjs`, shared with `emit-records.mjs` and
-`bsc ui retire` so the guard and the tools that rewrite cannot disagree).
+`bsc components retire` so the guard and the tools that rewrite cannot disagree).
 
 Measured the first time both ran: the seed was clean, the store held **57 relative specifiers across 24
 records**, and every gate was green. `platformBoundary.test.ts` had rejected the rule since #4232 but
@@ -224,8 +224,8 @@ specifier goes back to resolving against the registry.
 ## Retiring a file
 
 ```bash
-bsc ui retirable                               # the census — grades every candidate
-bsc ui retirable --all                         # ...including the ones that are NOT safe
+bsc components retirable                               # the census — grades every candidate
+bsc components retirable --all                         # ...including the ones that are NOT safe
 ```
 
 The census is the authority. Only `same` and `reformatted` are safe; `BODY-DIFFERS` means retiring would
@@ -235,12 +235,12 @@ When the record is behind and nobody edited it, refresh it from the file. When t
 record wins and you adjudicate by hand:
 
 ```bash
-bsc ui refresh-seed [--apply] [--only <src-path>]
-bsc ui lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
-bsc ui promote-seed [--apply] [--adopt-seed] [--limit N] [--only <path>]
-bsc ui retire <src-relative-path> [--dry]
-bsc ui shadow                                  # a catalogued page must become `file: null`
-bsc ui imports                                 # the RECORD half — `bsc ui retire` runs this too
+bsc components refresh-seed [--apply] [--only <src-path>]
+bsc components lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
+bsc components promote-seed [--apply] [--adopt-seed] [--limit N] [--only <path>]
+bsc components retire <src-relative-path> [--dry]
+bsc components shadow                                  # a catalogued page must become `file: null`
+bsc components imports                                 # the RECORD half — `bsc components retire` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 
@@ -254,13 +254,13 @@ declares.
 ### The SIX downstream obligations, in this order
 
 ```bash
-bsc ui shadow                                                                            # 3
+bsc components shadow                                                                            # 3
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/platformModules.gen.test.ts     # 5
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts          # 4  ← kit LAST
 UPDATE_RECORDS=1 npx vitest run src/features/glance/glancepageRecord.gen.test.ts         # 6  ← then this
 ```
 
-(1 and 2 — rewriting importers and keeping the colocated test — are what `bsc ui retire` itself does.)
+(1 and 2 — rewriting importers and keeping the colocated test — are what `bsc components retire` itself does.)
 
 **The ORDER is load-bearing.** `react-ui.json` VENDORS the transitive sources its components import, so
 any later source edit re-fires the kit regeneration — regenerating the kit and *then* fixing an importer
@@ -319,13 +319,13 @@ deleting the file would have thrown away, on a green gate.
 
 Two things the emitter refuses, loudly rather than silently:
 
-- **A mispaired test.** `bsc ui harvest` attached whatever colocated test it found, so records exist
+- **A mispaired test.** `bsc components harvest` attached whatever colocated test it found, so records exist
   carrying a test for something else entirely (`@/components/typechip` holds the `ScanViews` test; four
   records share one `bodyStyles` test). Every relative import is checked against what is actually being
   emitted, and a test that fails is reported with the import that disqualified it.
 - **An unrewritten relative import.** A carried test says `./LabelChip`; emitted into `.bsc-records/`
   that reaches nothing when `LabelChip` is still a file, because the two trees are not bridged
-  relatively. They are rewritten to `@/…` on emit — the same rewrite `bsc ui retire` applies to the
+  relatively. They are rewritten to `@/…` on emit — the same rewrite `bsc components retire` applies to the
   file copy, so both copies of a test resolve identically.
 
 ### A test that is not ABOUT one module — the edge tier
@@ -338,7 +338,7 @@ their own, and the rule that picks between the two is mechanical.
 
 | distinct records | home | verb |
 |---|---|---|
-| 1 | that record's `tests[]` | `bsc algorithms tests set --id <id> --src <file>` (`bsc ui tests set` for a component) |
+| 1 | that record's `tests[]` | `bsc algorithms tests set --id <id> --src <file>` (`bsc components tests set` for a component) |
 | 2 or more | an **edge** whose `members` are exactly those ids | `bsc algorithms edge set --id <id> --members a,b --src <file>` |
 
 Both are emitted into `.bsc-records/` and run in the default gate, so the file is deleted in the same
@@ -376,7 +376,7 @@ Two write hazards, both measured and both filed:
 - **`bsc algorithms tests set --seed` REPLACES the seed record's `tests` array** while the store half
   appends, so it silently drops whatever the record already carried. Write the store, then
   `bsc algorithms impl sync-seed <id> --seed-dir src-tauri/data/knowledge --only tests --apply`.
-- **`bsc ui tests set` / `bsc ui tests adopt` replace too**, on both copies — so a component record
+- **`bsc components tests set` / `bsc components tests adopt` replace too**, on both copies — so a component record
   that already carries a test cannot yet gain a second one.
 
 A third: a `bsc-graph` cli fixture squats on the real `session-roles.ts` id and reconciles the packaged
@@ -391,7 +391,7 @@ that every entry that was there is still there.
 
 - **`vi.mock("./x")` breaks silently.** A mock keys on the resolved module. While the file exists, a
   consumer's `@/a/b` and a test's `./b` are the same module; retire it and they stop agreeing, so the mock
-  stops applying and the test runs against the real module — still passing, just weaker. `bsc ui retire`
+  stops applying and the test runs against the real module — still passing, just weaker. `bsc components retire`
   rewrites `vi.mock`/`vi.doMock`/`vi.unmock` in the same pass as the import forms, so a retirement fixes its
   own mocks and there is no separate step to remember. (The one-off sweep that cleaned up mocks retired
   before that was true is gone — its backlog reached zero.)
@@ -407,10 +407,10 @@ that every entry that was there is still there.
 ## Retiring a file — the PRECONDITIONS
 
 A file may be deleted only once the thing that **ships** answers what its importers ask for. Both halves
-of that are checked by `bsc ui retire`, and each was learned by shipping the bug first:
+of that are checked by `bsc components retire`, and each was learned by shipping the bug first:
 
 - **The packaged SEED must provide the specifier**, matched EXACTLY, case included. Five modules were
-  retired while `bsc ui promote-seed` had printed `SKIPPED (a seed already occupies that path)` — deleted,
+  retired while `bsc components promote-seed` had printed `SKIPPED (a seed already occupies that path)` — deleted,
   with the old derivative still shipping. And `pageheader`'s seed said `@/shared/ui/pages/PageHeader`
   against a `pageHeader.tsx` file: Windows resolves that case-insensitively, so tsc, `vite build` and the
   whole suite stayed green while a case-sensitive filesystem would have resolved to nothing.
@@ -441,7 +441,7 @@ importing `from "./"` and typecheck reporting `Cannot find module './'`.
 
 ## One file, many records
 
-`bsc ui harvest` lifts a *component*, so a file exporting several of them has several records pointing at
+`bsc components harvest` lifts a *component*, so a file exporting several of them has several records pointing at
 it — `AppBanners.tsx` has NINE, `Charts.tsx` five. Such a file is genuinely both: nine banner components
 AND one module, and the store can hold both.
 
@@ -451,20 +451,20 @@ did silently — it kept whichever came last, so `telemetrypanel` became the who
 `@/components/splitbar` would have got a module whose export pick is not that component. Three records
 reached the seed that way before the adopt guard caught the rest.
 
-Author a **new** module record beside them (`bsc ui lift`, id `<stem>-module`,
+Author a **new** module record beside them (`bsc components lift`, id `<stem>-module`,
 `role: composite`). The components keep answering `@/components/<id>`; the module record answers
 `@/features/x/Y`. Nothing is overwritten, so no component record loses an export it declares.
 
 ## Where this stops — and why the floor is where it is
 
-`src/` is at **69 non-test modules**, from 225. The harvest is finished: `bsc ui retire --dry` was run
+`src/` is at **69 non-test modules**, from 225. The harvest is finished: `bsc components retire --dry` was run
 against **every remaining module** and **none** is retirable. Each of the 69 refuses for a named
 mechanical reason, listed below.
 
 > Counts drift and a stale one is worse than none. Re-measure:
 > `git ls-files src | grep -E '\.tsx?$' | grep -vcE '\.(test|spec)\.|\.d\.ts$'`
 > And re-derive the floor rather than trusting this table — ask the tool that deletes:
-> `for f in …; do bsc ui retire "$f" --dry; done`
+> `for f in …; do bsc components retire "$f" --dry; done`
 
 | count | class | why a record cannot stand for it |
 |---|---|---|

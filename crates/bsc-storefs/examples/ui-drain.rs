@@ -6,7 +6,7 @@
 //!
 //! Without `--apply` it prints the JSON each accepted write would send, and changes nothing —
 //! which is how you check a drain before letting it touch a store. With `--apply` it pipes that
-//! JSON to `bsc ui set`, which MERGES it onto the stored record.
+//! JSON to `bsc components set`, which MERGES it onto the stored record.
 //!
 //! Refused entries are left in place beside a `<id>.rejected` file whose text names the fix. That
 //! file IS the correction loop: a plain write into a bound directory cannot return a typed error
@@ -81,11 +81,11 @@ fn main() {
                 match child.wait() {
                     Ok(st) if st.success() => {}
                     Ok(st) => {
-                        eprintln!("bsc ui set failed for {} ({st})", w.id);
+                        eprintln!("bsc components set failed for {} ({st})", w.id);
                         std::process::exit(1);
                     }
                     Err(e) => {
-                        eprintln!("bsc ui set failed for {}: {e}", w.id);
+                        eprintln!("bsc components set failed for {}: {e}", w.id);
                         std::process::exit(1);
                     }
                 }

@@ -25,7 +25,7 @@ import { configDefaults } from "vitest/config";
  * `@playwright/test` — a browser dep a zero-install worktree is not meant to need. Playwright runs
  * it via `npm run test:e2e` (its own `playwright.config.ts`), never through vitest.
  *
- * The Rust crates' `tests/fixtures` dirs are the THIRD (#3514): `bsc ui harvest` (#3471) scans a tree
+ * The Rust crates' `tests/fixtures` dirs are the THIRD (#3514): `bsc components harvest` (#3471) scans a tree
  * for reusable component candidates, so its Rust test fixtures are REAL `.tsx` files — including a
  * `Button.test.tsx` that exists precisely to prove the harvester skips test files. Vitest's default
  * include glob collected it and failed the run with "No test suite found in file", because it is input

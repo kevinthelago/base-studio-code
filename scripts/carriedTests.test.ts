@@ -16,7 +16,7 @@ const plan = planRecords();
 
 describe("carried tests are verified, not trusted (#record-tests-execute-in-the-gate)", () => {
   it("declines a MISPAIRED test instead of emitting a broken import", () => {
-    // `bsc ui harvest` attached whatever colocated test it found, so the seed holds records paired with a
+    // `bsc components harvest` attached whatever colocated test it found, so the seed holds records paired with a
     // test for something else: `@/components/typechip` carries the `ScanViews` test, and four separate
     // records all carry the one `bodyStyles` test. Emitting those verbatim put 15 unresolvable imports
     // into the gate the first time this ran. `harvest-pairs-only-an-isolated-test` fixed the harvester;
