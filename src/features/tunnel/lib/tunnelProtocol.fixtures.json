@@ -1,9 +1,9 @@
 {
-  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2; v3 adds audio_frame; v4 adds session_wake + session_wake_result; v5 adds set_push_token). Shared BYTE-IDENTICALLY by base-studio-code (Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name; PLUS the TS test carried on the `tunnel.ts` RECORD, which the gate emits to .bsc-records/features/tunnel/lib/tunnel.test.tsx and runs there — it is NOT a file under src/, so `ls` and a grep scoped to src/ will both report it missing when it is in fact live) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts, which decodes EVERY case and throws on an unmodelled type — so adding a case here obliges a matching TunnelClientMessage member and decoder arm in that repo, in the same change). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes. #2511 rides WITHIN v2 (additive, no version bump): auth_ok.inputGranted (always serialized by the current desktop; optional for mobile — auth_ok_pre_grant pins the pre-#2511 shape) + the input_grant_changed broadcast. #3757 also rides within v2 (additive): store_state_chunk fragments an over-cap store_state domain across Noise messages (each chunk a raw UTF-8 slice of the json, seq 0..total), which mobile reassembles by (domain, rev) and applies as a store_state — an older mobile ignores the unknown type.",
+  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2; v3 adds audio_frame; v4 adds session_wake + session_wake_result; v5 adds set_push_token; v6 adds jobs_set_status). Shared BYTE-IDENTICALLY by base-studio-code (Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name; PLUS the TS test carried on the `tunnel.ts` RECORD, which the gate emits to .bsc-records/features/tunnel/lib/tunnel.test.tsx and runs there — it is NOT a file under src/, so `ls` and a grep scoped to src/ will both report it missing when it is in fact live) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts, which decodes EVERY case and throws on an unmodelled type — so adding a case here obliges a matching TunnelClientMessage member and decoder arm in that repo, in the same change). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes. #2511 rides WITHIN v2 (additive, no version bump): auth_ok.inputGranted (always serialized by the current desktop; optional for mobile — auth_ok_pre_grant pins the pre-#2511 shape) + the input_grant_changed broadcast. #3757 also rides within v2 (additive): store_state_chunk fragments an over-cap store_state domain across Noise messages (each chunk a raw UTF-8 slice of the json, seq 0..total), which mobile reassembles by (domain, rev) and applies as a store_state — an older mobile ignores the unknown type.",
   "serverToClient": {
     "auth_ok": {
       "type": "auth_ok",
-      "protocolVersion": 5,
+      "protocolVersion": 6,
       "inputGranted": false
     },
     "auth_ok_pre_grant": {
@@ -197,7 +197,7 @@
       "type": "auth",
       "token": "0123456789abcdef",
       "fcmToken": "fcm-token-xyz",
-      "protocolVersion": 5
+      "protocolVersion": 6
     },
     "auth_no_fcm": {
       "type": "auth",
@@ -278,6 +278,11 @@
       "type": "set_push_token",
       "token": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
       "kind": "apns"
+    },
+    "jobs_set_status": {
+      "type": "jobs_set_status",
+      "appId": "app-7",
+      "status": "applied"
     }
   },
   "pairing": {

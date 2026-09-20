@@ -204,7 +204,9 @@ impl TunnelHost for EarHost {
             // An ear hosts no sessions, so there is nothing here to wake.
             | ClientMsg::SessionWake { .. }
             // An ear pushes nothing, so it has no use for a device token.
-            | ClientMsg::SetPushToken { .. } => {}
+            | ClientMsg::SetPushToken { .. }
+            // An ear holds no jobs store to move an application in.
+            | ClientMsg::JobsSetStatus { .. } => {}
         }
     }
 
