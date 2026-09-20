@@ -294,14 +294,14 @@ A worker records its before/after on its change record with `bsc plan change per
 <before> <after>`, which renders into the change and reaches the director. **Nothing here can fail a
 gate** — that is deliberate, and it is why the reviewer is the only reader who acts on a regression.
 
-### Backing this machine up — `bsc studio save --all`
+### Backing this machine up — `bsc snapshot save --all`
 
 Nothing here is pushed to a remote by policy, so the stores and the git environment exist on ONE
 disk. The full runbook, including restore, is [`docs/backup-and-restore.md`](docs/backup-and-restore.md).
 
 ```bash
-bsc studio save "full-system" --all --out /path/to/dest   # every store + every plan.db
-bsc studio save help                                      # the per-system flags, FROM the roster
+bsc snapshot save "full-system" --all --out /path/to/dest   # every store + every plan.db
+bsc snapshot save help                                      # the per-system flags, FROM the roster
 ```
 
 `--dir` is which install to **read**; `--out` is where the backup **goes**. That split is the whole

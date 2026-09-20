@@ -18,7 +18,7 @@ The second is the larger exposure precisely *because* this project is local-firs
 ### The stores
 
 ```bash
-bsc studio save "full-system" --all --out /path/to/dest
+bsc snapshot save "full-system" --all --out /path/to/dest
 ```
 
 `--dir` says which install to **read**; `--out` says where the backup **goes**. Conflating those two
@@ -42,7 +42,7 @@ Two refusals you may hit, both deliberate:
   of SQLite cannot live in a JSON bundle. The message names what forced the directory.
 
 Without any scope flags you get the shareable **library** bundle, unchanged from what `save` always
-produced. `bsc studio save help` lists the per-system flags, generated from the roster.
+produced. `bsc snapshot save help` lists the per-system flags, generated from the roster.
 
 ### The git environment
 
@@ -120,9 +120,9 @@ A backup nobody has restored is a hope, not a backup.
 > **Check the backup first, then dry-run the restore.** Both refuse rather than half-work.
 
 ```bash
-bsc studio verify  --from <dest>                    # is it still good? exits non-zero if not
-bsc studio restore --from <dest> --dir <base> --dry-run   # every write, performed none
-bsc studio restore --from <dest> --dir <base>       # do it
+bsc snapshot verify  --from <dest>                    # is it still good? exits non-zero if not
+bsc snapshot restore --from <dest> --dir <base> --dry-run   # every write, performed none
+bsc snapshot restore --from <dest> --dir <base>       # do it
 ```
 
 `restore` REFUSES a non-empty destination, naming what it would have overwritten — restore into an
