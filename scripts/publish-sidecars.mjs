@@ -97,13 +97,25 @@ function statOf(a) {
   }
 }
 
+/** The ways `bsc` has been asked to name itself, newest first. A NOUN FOLD MOVES THIS VERB: `version` folded
+ *  into `self` (2026-09-20), and because the handshake still asked the old one, every new `bsc` was refused as
+ *  incoherent and the app kept running a two-day-old binary that did not have the verbs the screen called. So the
+ *  handshake tries each spelling and only refuses a binary that answers to NONE of them. */
+export const HANDSHAKE_ARGS = [["self", "version"], ["version"]];
+
+/** Does this binary name itself, whichever spelling its surface currently uses? */
+export function handshakeVerdict(run) {
+  return HANDSHAKE_ARGS.some((args) => /^bsc\s/.test(String(run(args) ?? "").trim()));
+}
+
 function handshakes(path) {
-  try {
-    const out = execFileSync(path, ["version"], { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "pipe"] });
-    return /^bsc\s/.test(String(out).trim());
-  } catch {
-    return false;
-  }
+  return handshakeVerdict((args) => {
+    try {
+      return execFileSync(path, args, { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      return null;
+    }
+  });
 }
 
 function main(argv) {
