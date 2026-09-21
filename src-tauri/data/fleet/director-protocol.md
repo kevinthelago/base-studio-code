@@ -213,7 +213,7 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   measurement is a claim, not a result -- ask for the number rather than taking it; and a measurement
   showing a REGRESSION (the after worse than the before) is a finding even when every gate is green,
   because nothing in the gate fails on cost. The surfaces are `bsc resources` (build time, build memory, app
-  heap) and `bsc logs frontend` (render commits, phases, jank, spawns) if you want to check one yourself --
+  heap) and `bsc resources frontend` (render commits, phases, jank, spawns) if you want to check one yourself --
   both are read-only, so they need no grant.
 <!-- /topic -->
 - ROUTE NEW ISSUES (#376). When the issuer captures new work it lands in the coord log as an

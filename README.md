@@ -171,7 +171,7 @@ Where the platform is and where it's headed — sequence, not dates:
 - **✅ `1.0.4` — Complete** · **enterprise integration & migration** — connect read-only to ERP/CRM/BPM, scan data + configs + behaviors into canonical data models, and generate bespoke software with compliance baked in
 - **📦 `1.0.41` — Checkpoint** · a consolidation stop-gap ahead of the UI release: the codebase refactor & consolidation sweep, integrations as agent-authored connectors, a data-driven planner, and planner/fleet hardening
 - **✅ `1.0.5` — Complete** · **the UI release** — define pages, components, and animations in-app with iterative UI loops (generate → live-preview → refine), rendered live
-- **✅ `1.0.51` — Complete** · **the UI-release delivery build** — the **Design Studio**, the **Algorithms knowledge graph** (`bsc algorithms`), **Studio snapshots**, the **maintenance-bot suite** (`bsc debug` / `bsc logs metrics` / warm-pool debugger / component + algorithm harvest), the **CAD kernel** (`bsc cad`), the **Sounds** pillar, and **Glance-as-cockpit**
+- **✅ `1.0.51` — Complete** · **the UI-release delivery build** — the **Design Studio**, the **Algorithms knowledge graph** (`bsc algorithms`), **Studio snapshots**, the **maintenance-bot suite** (`bsc debug` / `bsc resources scoreboard` / warm-pool debugger / component + algorithm harvest), the **CAD kernel** (`bsc cad`), the **Sounds** pillar, and **Glance-as-cockpit**
 - **🚧 `1.0.52` — Current** · **accessibility & text-to-speech + market research, marketing & usage analytics** — the **Marketer** (market on your behalf via channel MCP servers) + generated-apps **usage analytics**, plus the UI / design-studio work still in flight
 
 **→ Full version-by-version detail lives in [ROADMAP.md](ROADMAP.md).**

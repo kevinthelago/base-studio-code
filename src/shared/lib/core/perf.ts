@@ -40,7 +40,7 @@ export interface HeapInfo { usedMB: number; limitMB: number; }
  *
  * THE AUTHORITATIVE SOURCE IS THE BACKEND, on every platform: `observability::perf` samples the
  * webview processes' real RSS from the OS and persists them, so the curve outlives the process that
- * produced it. Read it with `bsc logs perf --session app:webview`. This function is one source among
+ * produced it. Read it with `bsc resources samples --session app:webview`. This function is one source among
  * several and the weakest of them; treat it as a hint, and never as the answer to "is the renderer
  * healthy".
  */

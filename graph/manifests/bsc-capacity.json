@@ -117,6 +117,16 @@
             "# The model runtime, reached through `bsc resources models` / `bench` (`llm-folds-into-resources`). The PACKAGE is bsc-llm and the LIB TARGET is llm, so the rename is spelled out here."
           ],
           "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
+        },
+        {
+          "cont": [],
+          "key": "logs",
+          "lead": [
+            "# The measured readings that were filed under `bsc logs` until",
+            "# `the-logs-resources-seam-is-in-the-wrong-place`. That crate still owns every body — this",
+            "# one owns the noun and delegates, the same shape as bsc-mem and llm above."
+          ],
+          "value": "{ path = \"../logs\" }"
         }
       ],
       "lead": [

@@ -967,6 +967,7 @@ dependencies = [
  "bsc-mem",
  "bsc-sqlite-util",
  "bsc-util",
+ "logs",
  "rusqlite",
  "serde",
  "serde_json",
