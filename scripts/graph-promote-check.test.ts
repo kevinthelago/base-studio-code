@@ -400,9 +400,9 @@ function stubCheckout(): string {
       "#!/bin/sh",
       // `inspect` demands a handshake matching /^bsc\s/ before it will trust the binary.
       'if [ "$1" = "version" ]; then echo "bsc 0.0.0-stub"; exit 0; fi',
-      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
+      'if [ "$1" = "algorithms" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
       '  echo \'{"id":"stub.rs","code":"RUNTIME","tech":"rust"}\'; exit 0; fi',
-      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then echo "[]"; exit 0; fi',
+      'if [ "$1" = "algorithms" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then echo "[]"; exit 0; fi',
       // The drift itself: non-zero, with the JSON line `drifted()` parses.
       'echo \'{"checked":1,"drifted":["stub.rs"],"ok":false}\'',
       "exit 1",
@@ -479,7 +479,7 @@ function stubSlowCheckout(): string {
       'if [ "$1" = "version" ]; then echo "bsc 0.0.0-slow"; exit 0; fi',
       // ...but the check itself hangs far past any test-sane bound. This stands in for the 32-minute
       // CPU spin measured against the real shared store.
-      'if [ "$1" = "graph" ] && [ "$2" = "promote" ]; then sleep 60; exit 0; fi',
+      'if [ "$1" = "algorithms" ] && [ "$2" = "promote" ]; then sleep 60; exit 0; fi',
       "exit 0",
       "",
     ].join("\n"),
@@ -643,9 +643,9 @@ function stubManyCheckout(): string {
     [
       "#!/bin/sh",
       'if [ "$1" = "version" ]; then echo "bsc 0.0.0-many"; exit 0; fi',
-      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
+      'if [ "$1" = "algorithms" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
       '  echo \'{"id":"node-0.ts","code":"RUNTIME","tech":"rust"}\'; exit 0; fi',
-      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then',
+      'if [ "$1" = "algorithms" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then',
       '  case "$4" in',
       // MINE: three ids carry a real writer tag...
       '    node-0.ts|node-1.ts|node-2.ts) echo \'{"rev":2,"updatedBy":"claude","updatedAt":"2026-08-30T09:00:00Z"}\';;',
