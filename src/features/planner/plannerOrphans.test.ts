@@ -205,7 +205,6 @@ const TEST_ONLY_REACHABLE: string[] = [
   "@/features/planner/preview/streamingRuntime",
   "@/features/planner/preview/types",
   "@/features/planner/session/draftTitle",
-  "@/features/planner/session/planAutopilot",
   "@/features/planner/session/plannerIntro",
   "@/features/planner/session/plannerLaunch",
   "@/features/planner/session/plannerSandbox",

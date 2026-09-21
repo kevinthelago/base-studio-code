@@ -94,16 +94,6 @@ describe("hydration", () => {
 
 // ── Terminal font zoom ──────────────────────────────────────────────────────────
 
-describe("autoPlanWithClaude setting (#682)", () => {
-  it("is off by default and toggles via the setter", () => {
-    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
-    useAppStore.getState().setAutoPlanWithClaude(true);
-    expect(useAppStore.getState().autoPlanWithClaude).toBe(true);
-    useAppStore.getState().setAutoPlanWithClaude(false);
-    expect(useAppStore.getState().autoPlanWithClaude).toBe(false);
-  });
-});
-
 describe("sandboxConsoles setting (#1988)", () => {
   it("is off by default and toggles via the setter", () => {
     expect(useAppStore.getState().sandboxConsoles).toBe(false);
@@ -134,16 +124,6 @@ describe("bypassPermissions posture (#1916/#2050)", () => {
     expect(useAppStore.getState().bypassPermissions).toBe(true);
     useAppStore.getState().setBypassPermissions(false);
     expect(useAppStore.getState().bypassPermissions).toBe(false);
-  });
-});
-
-describe("autoCompleteGates setting (#1068)", () => {
-  it("is off by default and toggles via the setter", () => {
-    expect(useAppStore.getState().autoCompleteGates).toBe(false);
-    useAppStore.getState().setAutoCompleteGates(true);
-    expect(useAppStore.getState().autoCompleteGates).toBe(true);
-    useAppStore.getState().setAutoCompleteGates(false);
-    expect(useAppStore.getState().autoCompleteGates).toBe(false);
   });
 });
 
