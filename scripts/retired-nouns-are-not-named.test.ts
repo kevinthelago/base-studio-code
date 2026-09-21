@@ -49,6 +49,7 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
   ["bsc cost", "bsc resources"], // capacity-and-cost-fold-into-resources
   ["bsc capacity", "bsc resources"],
   ["bsc llm", "bsc resources"], // llm-folds-into-resources
+  ["bsc inventory", "bsc lan"], // inventory-folds-into-lan
 ];
 
 /**
