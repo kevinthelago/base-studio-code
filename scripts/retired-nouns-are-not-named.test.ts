@@ -53,6 +53,27 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /**
+ * Verbs that moved to another NOUN, old two-word spelling to new.
+ *
+ * A VERB IS INVISIBLE TO THE TABLE ABOVE. `RETIRED` is keyed on `bsc <noun>`, so `bsc logs perf` is
+ * "bsc logs" plus a word it never looks at — and `bsc logs` is very much alive. The first slice to
+ * move verbs rather than a whole noun (`the-logs-resources-seam-is-in-the-wrong-place`, six of them)
+ * would have left every caller reading correctly to this file and wrongly to the binary.
+ *
+ * Same rule as the nouns: the old spelling is refused, never aliased, so a mention left behind tells
+ * a reader to run something that will be rejected.
+ */
+const MOVED_VERBS: ReadonlyArray<readonly [string, string]> = [
+  ["bsc logs perf growth", "bsc resources growth"], // …the duplicate that slice removed: read it first
+  ["bsc logs perf", "bsc resources samples"],
+  ["bsc logs pss", "bsc resources load"],
+  ["bsc logs cost", "bsc resources spend"],
+  ["bsc logs metrics", "bsc resources scoreboard"],
+  ["bsc logs frontend", "bsc resources frontend"],
+  ["bsc logs store", "bsc resources store"],
+];
+
+/**
  * Dated records and GENERATED mirrors.
  *
  * The first three are history by the rule in the header. The last two are generated FROM the record store
@@ -106,7 +127,7 @@ describe("a retired bsc noun is named nowhere live", () => {
     const offenders: string[] = [];
     for (const rel of liveFiles()) {
       const text = readFileSync(join(REPO, rel), "utf8");
-      for (const [old, now] of RETIRED) {
+      for (const [old, now] of [...RETIRED, ...MOVED_VERBS]) {
         // Word-boundaried on the RIGHT so `bsc graph` does not match `bsc graphql`, and the left side is
         // already anchored by the literal `bsc `.
         const hits = text.split(new RegExp(`${old}\\b`)).length - 1;
@@ -162,7 +183,7 @@ describe("a retired bsc noun is named nowhere live", () => {
             ? ((rec.tests ?? []) as Array<{ src?: string }>).map((t) => t.src ?? "")
             : (rec[field] ?? ""),
         );
-        for (const [old, now] of RETIRED) {
+        for (const [old, now] of [...RETIRED, ...MOVED_VERBS]) {
           const hits = text.split(new RegExp(`${old}\\b`)).length - 1;
           if (hits) offenders.push(`${id}.${field}: ${hits}× \`${old}\` — it is \`${now}\` now`);
         }
