@@ -1,7 +1,7 @@
 {
   "defaultTier": "sonnet-4.5",
   "anthropicModel": "claude-sonnet-4-6",
-  "localModel": "qwen3-coder",
+  "localModel": "qwen3.5:9b",
   "localBaseUrl": "http://localhost:11434/v1",
   "localNumCtx": 65536,
   "providers": [
