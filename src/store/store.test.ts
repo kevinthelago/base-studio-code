@@ -178,11 +178,11 @@ describe("LLM provider config (#1085)", () => {
     g().setOpenaiKey(""); g().setGeminiKey("");
   });
 
-  it("switching to ollama defaults the model to qwen3-coder, and switching back restores claude", () => {
+  it("switching to ollama defaults the model to the packaged local default, and switching back restores claude", () => {
     const g = () => useAppStore.getState();
     // From the anthropic default, picking Ollama swaps the (unrunnable) claude model for the local one.
     g().setLlmProvider("ollama");
-    expect(g().llmModel).toBe("qwen3-coder");
+    expect(g().llmModel).toBe("qwen3.5:9b");
     // Switching back reverts the leftover local default to the anthropic default.
     g().setLlmProvider("anthropic");
     expect(g().llmModel).toBe("claude-sonnet-4-6");
