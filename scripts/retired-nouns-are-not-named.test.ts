@@ -48,6 +48,7 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
   ["bsc ui", "bsc components"], // ui-is-renamed-components
   ["bsc cost", "bsc resources"], // capacity-and-cost-fold-into-resources
   ["bsc capacity", "bsc resources"],
+  ["bsc llm", "bsc resources"], // llm-folds-into-resources
 ];
 
 /**

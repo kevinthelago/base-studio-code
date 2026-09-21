@@ -78,7 +78,7 @@
           "cont": [],
           "key": "reqwest",
           "lead": [
-            "# `blocking` is for the `bsc llm` CLI only: it is a synchronous command, and pulling tokio in as a",
+            "# `blocking` is for the `bsc resources` CLI only: it is a synchronous command, and pulling tokio in as a",
             "# real dependency (it is dev-only here) just to await two GETs would be the larger change."
           ],
           "value": "{ version = \"0.12\", features = [\"json\", \"stream\", \"blocking\"] }"
@@ -115,7 +115,7 @@
           "cont": [],
           "key": "bsc-util",
           "lead": [
-            "# `bsc llm bench`: `now_ms()` for the per-run nonce, and the shared `emit` so --json/--pretty behave",
+            "# `bsc resources bench`: `now_ms()` for the per-run nonce, and the shared `emit` so --json/--pretty behave",
             "# the way every other bsc surface does rather than growing a third convention here."
           ],
           "value": "{ path = \"../bsc-util\" }"

@@ -52,7 +52,7 @@ leave the machine. Left unset it reads as UNDECIDED — deliberately, so nobody 
 **WHICH MODEL DOES THIS PROJECT RUN ON? Also a decision, also yours.**
 
     bsc plan classify set --project <key>   # JSON on stdin: { ..., "model": "sonnet-4.5" | "qwen3.5:9b" }
-    bsc llm status                          # what this machine has installed, and its VRAM headroom
+    bsc resources models                          # what this machine has installed, and its VRAM headroom
 
 Ask it once discovery has settled what the work IS, because that is what the answer turns on. A
 project whose work is mechanical and gate-checkable — curation, sweeps, mirroring, triage — can run on
@@ -61,7 +61,7 @@ think it is and why, then let the user decide.
 
 Name a Claude tier (`haiku-4.5` | `sonnet-4.5` | `opus-4.5`) or a model this machine has installed. A
 name that is neither is refused at set time, and the refusal names both sets — a typo here would
-otherwise surface much later as a fleet that will not start. **Check `bsc llm status` before choosing
+otherwise surface much later as a fleet that will not start. **Check `bsc resources models` before choosing
 a local model**: a model larger than the free VRAM runs partly on the CPU, so "installed" and "a good
 idea here" are different questions, and the size is the one the status verb answers.
 

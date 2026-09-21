@@ -91,7 +91,7 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
 
   THE MODEL IS PART OF STAFFING, AND LOCAL IS THE DEFAULT. A session naming nothing runs on this
   machine's local model. Choose a model only where a session genuinely needs a different one: a model
-  installed locally (`bsc llm status` lists them), or a Claude tier -- haiku-4.5 / sonnet-4.5 /
+  installed locally (`bsc resources models` lists them), or a Claude tier -- haiku-4.5 / sonnet-4.5 /
   opus-4.5. Name its provider with it; a model and the provider that serves it travel together:
 
       bsc plan fleet model <stream-id> <model>          # what ONE stream thinks with (--clear to unset)

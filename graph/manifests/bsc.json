@@ -239,14 +239,6 @@
         },
         {
           "cont": [],
-          "key": "llm",
-          "lead": [
-            "# `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for."
-          ],
-          "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
-        },
-        {
-          "cont": [],
           "key": "bsc-mcp",
           "lead": [],
           "value": "{ path = \"../bsc-mcp\" }"
