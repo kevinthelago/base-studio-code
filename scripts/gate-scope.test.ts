@@ -388,7 +388,7 @@ describe("graph step", () => {
       const leg = cmds.find((c) => c.key === "graph-claim-census");
       expect(leg, `the claim census must run in the ${name} tier`).toBeDefined();
       expect(leg!.cmd).toBe("bsc");
-      expect(leg!.args).toEqual(["ui", "census"]);
+      expect(leg!.args).toEqual(["components", "census"]);
     }
   });
 
