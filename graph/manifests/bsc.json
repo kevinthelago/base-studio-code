@@ -415,14 +415,6 @@
         },
         {
           "cont": [],
-          "key": "bsc-inventory",
-          "lead": [
-            "# `bsc inventory` — the LAN asset inventory (inventory.db); its own crate so bsc-lan stays SQLite-free."
-          ],
-          "value": "{ path = \"../bsc-inventory\" }"
-        },
-        {
-          "cont": [],
           "key": "bsc-jobs",
           "lead": [
             "# `bsc jobs` — job applications: the experience bank + profile (jobs.db)."
@@ -614,6 +606,16 @@
             "# Document distance (TF-IDF cosine) — commands and requests know what they resemble."
           ],
           "value": "{ path = \"../bsc-similar\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-inventory",
+          "lead": [
+            "# The STORE half of `bsc lan` (`inventory-folds-into-lan`). It is composed here rather than",
+            "# inside `bsc-lan` because that crate also ships to the monitor Pi and its lean.rs forbids",
+            "# rusqlite; this binary already carries a database, so the composition costs nothing new."
+          ],
+          "value": "{ path = \"../bsc-inventory\" }"
         }
       ],
       "lead": [

@@ -172,7 +172,7 @@ export default function App() {
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
-            {/* The network the app runs on (`epic-the-lan-workspace`) — re-reads `bsc inventory scene` on mount. */}
+            {/* The network the app runs on (`epic-the-lan-workspace`) — re-reads `bsc lan scene` on mount. */}
             {activeWorkspace === "lan"        && <LanWorkspace />}
             {activeWorkspace === "jobs"       && <JobsWorkspace />}
             {/* Memory re-reads `bsc memory` on every mount, for the same reason Credentials does:

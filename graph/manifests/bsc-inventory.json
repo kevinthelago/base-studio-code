@@ -32,7 +32,7 @@
           "cont": [],
           "key": "description",
           "lead": [],
-          "value": "\"`bsc inventory` — the LAN asset inventory: every device, the addresses claimed for it, what the wire showed at each (from `bsc lan graph`), and which subnet is which VLAN. inventory.db.\""
+          "value": "\"The DURABLE half of `bsc lan` (`inventory-folds-into-lan`): every device, the addresses claimed for it, what the wire showed at each (from `bsc lan graph`), and which subnet is which VLAN. `bsc-lan` owns the noun and delegates these verbs here, so the sensor crate keeps no store of its own. inventory.db.\""
         }
       ],
       "lead": [],
