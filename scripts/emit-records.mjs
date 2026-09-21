@@ -157,7 +157,7 @@ function materializeComponentSeeds() {
     },
   });
   if (!bsc) return 0;
-  const r = spawnSync(bsc.path, ["ui", "store", "import", "--apply", "--root", REPO], { encoding: "utf8" });
+  const r = spawnSync(bsc.path, ["components", "store", "import", "--apply", "--root", REPO], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`bsc components store import failed: ${(r.stderr || r.stdout || "").trim()}`);
   return Number(/"seeds":\s*(\d+)/.exec(r.stdout ?? "")?.[1] ?? 0);
 }

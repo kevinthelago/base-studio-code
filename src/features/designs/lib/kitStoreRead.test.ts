@@ -46,7 +46,7 @@ describe("the kit consumer index read", () => {
     const index = await readKitUsage();
 
     expect(callsFor("usage")).toHaveLength(1);
-    expect(callsFor("usage")[0]).toEqual({ projectKey: null, args: ["ui", "usage", "list", "--json"] });
+    expect(callsFor("usage")[0]).toEqual({ projectKey: null, args: ["components", "usage", "list", "--json"] });
     expect(index?.edges).toEqual([
       { projectKey: "proj-a", kitId: "react-ui" },
       { projectKey: "proj-b", kitId: "react-ui" },
@@ -120,7 +120,7 @@ describe("the kit dispatch queue read", () => {
     const queued = await readKitDispatches();
 
     expect(callsFor("dispatch")).toHaveLength(1);
-    expect(callsFor("dispatch")[0]).toEqual({ projectKey: null, args: ["ui", "dispatch", "list", "--json"] });
+    expect(callsFor("dispatch")[0]).toEqual({ projectKey: null, args: ["components", "dispatch", "list", "--json"] });
     expect(queued).toHaveLength(1);
     expect(queued?.[0].projectKey).toBe("proj-a");
   });

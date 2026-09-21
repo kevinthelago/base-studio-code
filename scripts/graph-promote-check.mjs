@@ -323,7 +323,7 @@ export function attribute(ids, historyFor, nowMs, opts = {}) {
 /** One record's runtime provenance, or null when it cannot be read (never fatal — this is a diagnostic). */
 function history(bsc, id) {
   try {
-    return JSON.parse(execFileSync(bsc, ["graph", "impl", "history", id], { encoding: "utf8", timeout: 10_000 }));
+    return JSON.parse(execFileSync(bsc, ["algorithms", "impl", "history", id], { encoding: "utf8", timeout: 10_000 }));
   } catch {
     return null;
   }
@@ -468,7 +468,7 @@ export function diagnose(ids, io, opts = {}) {
 /** One record out of the RUNTIME store, or null (never fatal — this is a diagnostic). */
 function impl(bsc, id) {
   try {
-    return JSON.parse(execFileSync(bsc, ["graph", "impl", "get", id], { encoding: "utf8", timeout: 10_000 }));
+    return JSON.parse(execFileSync(bsc, ["algorithms", "impl", "get", id], { encoding: "utf8", timeout: 10_000 }));
   } catch {
     return null;
   }
@@ -662,7 +662,7 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
   // budget; whatever it leaves is what the per-id diagnostics may spend before they truncate. This is
   // the guarantee the request asks for: the leg terminates within roughly `timeoutMs`, freeing the slot.
   const legDeadlineMs = Date.now() + timeoutMs;
-  const r = spawnSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], {
+  const r = spawnSync(usable.path, ["algorithms", "promote", "--check", "--root", ROOT], {
     encoding: "utf8",
     timeout: timeoutMs,
     killSignal: "SIGKILL",

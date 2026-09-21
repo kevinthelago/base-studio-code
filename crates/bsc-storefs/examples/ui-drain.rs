@@ -62,7 +62,7 @@ fn main() {
             None => println!("{json}"),
             Some(bsc) => {
                 let mut child = match std::process::Command::new(bsc)
-                    .args(["ui", "set"])
+                    .args(["components", "set"])
                     .stdin(std::process::Stdio::piped())
                     .spawn()
                 {

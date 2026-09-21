@@ -44,7 +44,7 @@ describe("preview-error reporting does not spawn a process per event", () => {
     await recordPreviewError("chart", "TypeError: x is undefined");
     await recordPreviewError("chart", "TypeError: x is undefined");
     expect(previewCalls()).toHaveLength(1);
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "chart"], "TypeError: x is undefined");
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "preview-error", "chart"], "TypeError: x is undefined");
   });
 
   it("still writes when the message CHANGES — a different failure is news", async () => {
@@ -68,7 +68,7 @@ describe("preview-error reporting does not spawn a process per event", () => {
     await clearPreviewError("chart"); // it is healthy now; asking again buys nothing
     const clears = previewCalls().filter(([, args]) => args[2] === "clear");
     expect(clears).toHaveLength(1);
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "clear", "chart"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "preview-error", "clear", "chart"]);
   });
 
   it("SEEDS from the durable log, so an error from a previous session is still cleared (#45/#60)", async () => {
@@ -78,7 +78,7 @@ describe("preview-error reporting does not spawn a process per event", () => {
     bscJson.mockImplementation(async () => [{ id: "stale", message: "old failure" }]);
     const { clearPreviewError } = await fresh();
     await clearPreviewError("stale");
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "clear", "stale"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "preview-error", "clear", "stale"]);
     // One read serves every id — it replaces the N clear-spawns it makes unnecessary.
     expect(bscJson).toHaveBeenCalledTimes(1);
   });
@@ -90,6 +90,6 @@ describe("preview-error reporting does not spawn a process per event", () => {
     bscJson.mockRejectedValue(new Error("no bsc"));
     const { clearPreviewError } = await fresh();
     await clearPreviewError("unknown");
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "clear", "unknown"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "preview-error", "clear", "unknown"]);
   });
 });

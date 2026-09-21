@@ -47,7 +47,7 @@ function idFor(rel) {
 
 const dir = mkdtempSync(join(tmpdir(), "author-gp-"));
 const existing = new Map(
-  JSON.parse(execFileSync(BSC, ["graph", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 })).map((r) => [r.id, r]),
+  JSON.parse(execFileSync(BSC, ["algorithms", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 })).map((r) => [r.id, r]),
 );
 
 for (const rel of targets) {
@@ -65,7 +65,7 @@ for (const rel of targets) {
   const f = join(dir, `${id}.txt`);
   writeFileSync(f, code);
   execFileSync(BSC, [
-    "graph", "impl", "set",
+    "algorithms", "impl", "set",
     "--id", id, "--tech", "typescript", "--role", "algorithm", "--name", "graphPlatform",
     "--code-file", f, "--src", `src/${rel}`, "--provides", provides,
     // NO `--module-state`. These modules were made stateless by the registrar migration, and declaring

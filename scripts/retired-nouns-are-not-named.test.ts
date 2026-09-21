@@ -137,28 +137,64 @@ describe("a retired bsc noun is named nowhere live", () => {
     expect(offenders, `a retired noun is named where a reader will read it as an instruction:\n  ${offenders.join("\n  ")}`).toEqual([]);
   });
 
-  it("not as the first ARG of a `bsc` invocation built from an argv array", () => {
-    // THE BLIND SPOT THE OTHER TWO HAVE, and it cost a red gate rather than a reading: the gate's own
-    // `graph-claim-census` leg is `{ cmd: "bsc", args: ["ui", "census"] }`, which never contains the
-    // string `bsc ui` and so survived the `ui`→`components` sweep untouched — including the comment
-    // three lines above it, which the sweep DID fix, so the file disagreed with itself. It stayed green
-    // only because the installed binary was old enough to still answer `ui`; a restage turned it red.
-    //
-    // A spawn assembled from parts is the normal way a script calls a CLI, so this is not an exotic
-    // case — it is the case a prefixed text search structurally cannot see.
-    const offenders: string[] = [];
-    const retiredNouns = new Map(RETIRED.map(([old, now]) => [old.slice("bsc ".length), now]));
-    for (const rel of liveFiles()) {
-      if (!/\.(mjs|js|ts|tsx)$/.test(rel)) continue;
-      const text = readFileSync(join(REPO, rel), "utf8");
-      // `cmd: "bsc"` and its `args: [...]` in the same object literal, in either order.
-      for (const m of text.matchAll(/cmd:\s*"bsc"[^}]*?args:\s*\[\s*"([a-z-]+)"|args:\s*\[\s*"([a-z-]+)"[^}]*?cmd:\s*"bsc"/g)) {
-        const noun = m[1] ?? m[2];
-        const now = retiredNouns.get(noun);
-        if (now) offenders.push(`${rel}: spawns \`bsc ${noun} …\` — it is \`${now}\` now`);
-      }
+  /**
+   * A retired noun as the FIRST element of an ARRAY LITERAL near a `bsc` call.
+   *
+   * THIS IS THE CASE THAT BROKE THE APP, twice in one day. `componentBridge.ts` calls
+   * `bsc(null, ["ui", "list", "--full"])` and the LAN workspace called `bsc(null, ["inventory",
+   * "scene"])`. Neither contains the string `bsc ui` or `bsc inventory`, so the two scans above —
+   * and the sweeps that did the renames — walked straight past 118 call sites. The desktop's
+   * Components workspace went blank, the phone stopped loading component sources, and the LAN screen
+   * lost its scene, all while every gate was green.
+   *
+   * The earlier version of this check only matched `{ cmd: "bsc", args: [...] }`, the one shape a
+   * `scripts/` leg happened to use. It found that one and none of these.
+   *
+   * WHY THE PROXIMITY TEST. Matching a bare `["ui", …]` flags 173 places, because these words belong
+   * to other vocabularies too: `ui` is a blueprint stage key and a URN pillar, `graph` is a common
+   * word, `worktree` is a `git` subcommand, and `usage` is a LIVE noun. Requiring a `bsc` mention in
+   * the preceding 200 characters separates an argv from a list of stage names: MEASURED on the commit
+   * that fixed this, 43 file sites and 74 record sites flagged before, 1 and 5 after — and every
+   * survivor is named in EXEMPT_ARGV below with the reason it is not an argv.
+   */
+  const RETIRED_NOUNS = ["perf", "metrics", "worktree", "imagine", "capability", "studio", "graph", "ui", "cost", "capacity", "llm", "inventory"];
+  /** Not argv, each checked by hand — the noun is some other vocabulary's word in these. */
+  const EXEMPT_ARGV = new Map<string, string>([
+    ["bsc-component--cli.rs", "`store.set(\"cost\", …)` — a JSON-store KEY, next to `bsc_json_store`"],
+    ["bsc-component--crossgraph--mod.rs", "`@bsc/ui/Sparkline` — the URN PILLAR, which did not move"],
+    ["classify-config.ts", "`SYSTEM_SOURCES = [\"studio\", …]` — a config-source name, not a verb"],
+    ["logs--cli.rs", "the list of verbs that LEFT, asserted absent from the overview"],
+    ["bsc--tests.rs", "the RENAMED/FOLDED tables — they name old spellings on purpose"],
+  ]);
+  // The LEAD is sliced by index rather than captured in the pattern: a `[\s\S]{0,200}` prefix with the
+  // `g` flag backtracks across every record in the store and the whole suite times out at 5s.
+  const ARGV_RE = new RegExp(String.raw`[\[(]\s*("|')(${RETIRED_NOUNS.join("|")})\1\s*,`, "g");
+  const NEAR_BSC = /\bbsc\b|sidecar_read|is_servable|try_warm|BSC/i;
+
+  function argvOffenders(label: string, text: string): string[] {
+    if (EXEMPT_ARGV.has(label)) return [];
+    const out: string[] = [];
+    for (const m of text.matchAll(ARGV_RE)) {
+      const lead = text.slice(Math.max(0, m.index - 200), m.index);
+      if (!NEAR_BSC.test(lead)) continue;
+      out.push(`${label}: spawns \`bsc ${m[2]} …\` as an argv array — that noun is retired`);
     }
-    expect(offenders, `a spawn names a retired noun, where no text sweep will find it:\n  ${offenders.join("\n  ")}`).toEqual([]);
+    return out;
+  }
+
+  it("not as the first element of an argv array near a `bsc` call", () => {
+    const offenders: string[] = [];
+    for (const rel of liveFiles()) {
+      if (!/\.(mjs|js|ts|tsx|rs)$/.test(rel)) continue;
+      offenders.push(...argvOffenders(rel, readFileSync(join(REPO, rel), "utf8")));
+    }
+    const store = loadStore(resolveStorePath(REPO)) as { implementations?: Array<Record<string, unknown>> };
+    for (const rec of store.implementations ?? []) {
+      const id = String(rec.id ?? "<unnamed>");
+      const tests = ((rec.tests ?? []) as Array<{ src?: string }>).map((t) => t.src ?? "").join("\n");
+      offenders.push(...argvOffenders(id, `${rec.code ?? ""}\n${tests}`));
+    }
+    expect(offenders, `a retired noun is spawned as an argv array, where no text sweep will find it:\n  ${offenders.join("\n  ")}`).toEqual([]);
   });
 
   it("not in any record's code or carried tests", () => {
