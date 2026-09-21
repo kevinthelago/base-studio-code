@@ -48,6 +48,7 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
   ["bsc ui", "bsc components"], // ui-is-renamed-components
   ["bsc cost", "bsc resources"], // capacity-and-cost-fold-into-resources
   ["bsc capacity", "bsc resources"],
+  ["bsc llm", "bsc resources"], // llm-folds-into-resources
 ];
 
 /**
@@ -112,6 +113,30 @@ describe("a retired bsc noun is named nowhere live", () => {
       }
     }
     expect(offenders, `a retired noun is named where a reader will read it as an instruction:\n  ${offenders.join("\n  ")}`).toEqual([]);
+  });
+
+  it("not as the first ARG of a `bsc` invocation built from an argv array", () => {
+    // THE BLIND SPOT THE OTHER TWO HAVE, and it cost a red gate rather than a reading: the gate's own
+    // `graph-claim-census` leg is `{ cmd: "bsc", args: ["ui", "census"] }`, which never contains the
+    // string `bsc ui` and so survived the `ui`→`components` sweep untouched — including the comment
+    // three lines above it, which the sweep DID fix, so the file disagreed with itself. It stayed green
+    // only because the installed binary was old enough to still answer `ui`; a restage turned it red.
+    //
+    // A spawn assembled from parts is the normal way a script calls a CLI, so this is not an exotic
+    // case — it is the case a prefixed text search structurally cannot see.
+    const offenders: string[] = [];
+    const retiredNouns = new Map(RETIRED.map(([old, now]) => [old.slice("bsc ".length), now]));
+    for (const rel of liveFiles()) {
+      if (!/\.(mjs|js|ts|tsx)$/.test(rel)) continue;
+      const text = readFileSync(join(REPO, rel), "utf8");
+      // `cmd: "bsc"` and its `args: [...]` in the same object literal, in either order.
+      for (const m of text.matchAll(/cmd:\s*"bsc"[^}]*?args:\s*\[\s*"([a-z-]+)"|args:\s*\[\s*"([a-z-]+)"[^}]*?cmd:\s*"bsc"/g)) {
+        const noun = m[1] ?? m[2];
+        const now = retiredNouns.get(noun);
+        if (now) offenders.push(`${rel}: spawns \`bsc ${noun} …\` — it is \`${now}\` now`);
+      }
+    }
+    expect(offenders, `a spawn names a retired noun, where no text sweep will find it:\n  ${offenders.join("\n  ")}`).toEqual([]);
   });
 
   it("not in any record's code or carried tests", () => {

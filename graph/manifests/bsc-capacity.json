@@ -109,6 +109,14 @@
           "key": "bsc-mem",
           "lead": [],
           "value": "{ path = \"../bsc-mem\" }"
+        },
+        {
+          "cont": [],
+          "key": "llm",
+          "lead": [
+            "# The model runtime, reached through `bsc resources models` / `bench` (`llm-folds-into-resources`). The PACKAGE is bsc-llm and the LIB TARGET is llm, so the rename is spelled out here."
+          ],
+          "value": "{ path = \"../llm\", package = \"bsc-llm\" }"
         }
       ],
       "lead": [
