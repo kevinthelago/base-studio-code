@@ -46,6 +46,8 @@ const RETIRED: ReadonlyArray<readonly [string, string]> = [
   ["bsc studio", "bsc snapshot"], // studio-is-renamed-snapshot
   ["bsc graph", "bsc algorithms"], // graph-and-ui-are-renamed-algorithms-and-components
   ["bsc ui", "bsc components"], // ui-is-renamed-components
+  ["bsc cost", "bsc resources"], // capacity-and-cost-fold-into-resources
+  ["bsc capacity", "bsc resources"],
 ];
 
 /**
@@ -67,6 +69,12 @@ const EXEMPT = [
   // fixing the shadow — it is overwritten on the next build from the originals this test does check.
   "src-tauri/resources",
   ".bsc-records",
+  // A DATED EVALUATION CORPUS, not documentation. `crates/bsc-similar/fixtures/catalog-*-2026-09-15.json`
+  // is the catalog as it stood on the day in its own filename, and the relevance thresholds in
+  // `bsc-similar--tests.rs` are tuned against exactly those documents — one of which is a row whose whole
+  // purpose is to carry a DEPRECATED spelling and its pointer. Rewriting it would move the corpus out
+  // from under the assertions and delete the only deprecated-noun case the ranker is tested on.
+  "crates/bsc-similar/fixtures",
   "scripts/retired-nouns-are-not-named.test.ts", // this file names them on purpose
 ];
 
