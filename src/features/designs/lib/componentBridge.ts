@@ -91,7 +91,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
 /** Load every component from the global store via `bsc components list --full`; `null` when unreachable. */
 export async function loadComponents(): Promise<ComponentRecord[] | null> {
   try {
-    const out = await bsc(null, ["ui", "list", "--full"]);
+    const out = await bsc(null, ["components", "list", "--full"]);
     const rows = JSON.parse(out.trim() || "[]") as Partial<ComponentRecord>[];
     // Defensive: keep only well-formed rows (id + name + kitId) — OR a suppression tombstone (#3725), which
     // carries only `{id, suppressed}` and must survive the filter so the reconcile can block the re-seed.
@@ -114,7 +114,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
  */
 export async function loadComponentsGraph(): Promise<ComponentRecord[] | null> {
   try {
-    const out = await bsc(null, ["ui", "list", "--graph"]);
+    const out = await bsc(null, ["components", "list", "--graph"]);
     const rows = JSON.parse(out) as Partial<ComponentRecord>[];
     return rows.map((c) => ({ ...projectComponent(c), lite: true as const }));
   } catch {
@@ -150,7 +150,7 @@ export async function readLibraryIndex(): Promise<{ components: ComponentRecord[
 /** Load every kit via `bsc components kit list --full`; `null` when unreachable. */
 export async function loadKits(): Promise<Kit[] | null> {
   try {
-    const out = await bsc(null, ["ui", "kit", "list", "--full"]);
+    const out = await bsc(null, ["components", "kit", "list", "--full"]);
     const rows = JSON.parse(out.trim() || "[]") as Partial<Kit>[];
     return (rows ?? [])
       // A suppression tombstone (#3725, `{id, suppressed}`) survives the filter so the reconcile blocks the
@@ -210,7 +210,7 @@ export async function pushComponent(
     );
     return;
   }
-  const args = ["ui", "set", "--replace"];
+  const args = ["components", "set", "--replace"];
   // OPTIMISTIC CONCURRENCY (#a-stale-app-copy-overwrites-a-designer-edit). Two independent writers share
   // this store — the app, and out-of-band `bsc components set` sessions — so last-write-wins means whoever writes
   // second wins regardless of what they knew. A designer's `srcText` fix (rev8) was destroyed 23 minutes
@@ -237,11 +237,11 @@ export async function pushComponent(
  *  the projection does not carry. `pushComponent`'s `--replace` is correct for its case (the app holds
  *  the whole record, authored from the seed) and wrong for this one. Never throws. */
 export async function stampComponent(id: string, seedHash: string, by = APP_RECONCILE_WRITER): Promise<void> {
-  try { await bscWrite(null, ["ui", "set", "--by", by], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
+  try { await bscWrite(null, ["components", "set", "--by", by], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a component removal (`bsc components remove <id>`). Never throws. */
 export async function dropComponent(id: string): Promise<void> {
-  try { await bscRun(null, ["ui", "remove", id]); } catch { /* store unreachable — cache-only */ }
+  try { await bscRun(null, ["components", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a kit upsert (`bsc components kit set`). Never throws. `--replace` for the same reason
  *  `pushComponent` needs it (#4197) — the app holds the whole record and the kit seed reconcile must be
@@ -252,13 +252,13 @@ export async function dropComponent(id: string): Promise<void> {
  *  `--graph` projection for kits, so a kit record is never a bag of defaults the way a lite component is.
  *  If a lean kit read is ever added, this needs the same guard `pushComponent` has. */
 export async function pushKit(kit: Kit, by?: string): Promise<void> {
-  const args = ["ui", "kit", "set", "--replace"];
+  const args = ["components", "kit", "set", "--replace"];
   if (by) args.push("--by", by);
   try { await bscWrite(null, args, kit); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a kit removal (`bsc components kit remove <id>`). Never throws. */
 export async function dropKit(id: string): Promise<void> {
-  try { await bscRun(null, ["ui", "kit", "remove", id]); } catch { /* store unreachable — cache-only */ }
+  try { await bscRun(null, ["components", "kit", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
 
 /** One cached scan outcome, as the durable store holds it. `status`/`stateBlanks` ride VERBATIM — the
@@ -279,7 +279,7 @@ export interface CachedScan {
  */
 export async function loadScanCache(): Promise<Record<string, CachedScan>> {
   try {
-    const out = await bsc(null, ["ui", "scan-cache", "get"]);
+    const out = await bsc(null, ["components", "scan-cache", "get"]);
     const parsed = JSON.parse(out.trim() || "{}") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const rows: Record<string, CachedScan> = {};
@@ -300,7 +300,7 @@ export async function loadScanCache(): Promise<Record<string, CachedScan>> {
  *  costs a re-scan next visit, which is the same thing that happened before the cache existed. */
 export async function saveScanCache(entries: Record<string, CachedScan>): Promise<void> {
   if (Object.keys(entries).length === 0) return;
-  try { await bsc(null, ["ui", "scan-cache", "put"], JSON.stringify(entries)); } catch { /* re-scan next visit */ }
+  try { await bsc(null, ["components", "scan-cache", "put"], JSON.stringify(entries)); } catch { /* re-scan next visit */ }
 }
 
 /** What this process believes is CURRENTLY recorded in the durable preview-error log: id → the last
@@ -336,7 +336,7 @@ function seedRecordedErrors(): Promise<void> {
   seedPromise ??= (async () => {
     const rows = await bscJson<{ id: string; message: string }[]>(
       null,
-      ["ui", "preview-errors", "-n", "500"],
+      ["components", "preview-errors", "-n", "500"],
       [],
     );
     for (const r of rows ?? []) if (r?.id) recordedErrors.set(r.id, r.message ?? "");
@@ -355,7 +355,7 @@ export async function recordPreviewError(id: string, message: string): Promise<v
   // nothing — the log already says so — and costs a process.
   if (recordedErrors.get(id) === message) return;
   recordedErrors.set(id, message);
-  try { await bsc(null, ["ui", "preview-error", id], message); } catch { /* bridge/binary absent — banner-only */ }
+  try { await bsc(null, ["components", "preview-error", id], message); } catch { /* bridge/binary absent — banner-only */ }
 }
 
 /**
@@ -378,5 +378,5 @@ export async function clearPreviewError(id: string): Promise<void> {
   // recorded makes the question answerable here, for free.
   if (bookkeepingReliable && !recordedErrors.has(id)) return;
   recordedErrors.delete(id);
-  try { await bsc(null, ["ui", "preview-error", "clear", id]); } catch { /* bridge/binary absent — no-op */ }
+  try { await bsc(null, ["components", "preview-error", "clear", id]); } catch { /* bridge/binary absent — no-op */ }
 }

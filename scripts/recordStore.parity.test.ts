@@ -72,7 +72,7 @@ describe("the JS and Rust readers agree about the committed store", () => {
     // Removed after the probe, whatever it answers (`the-test-suites-leak-temp-dirs-into-tmp`).
     const storeless = mkdtempSync(join(tmpdir(), "bsc-parity-"));
     try {
-      execFileSync(bsc, ["graph", "dump", "--repo", "--root", storeless], {
+      execFileSync(bsc, ["algorithms", "dump", "--repo", "--root", storeless], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -86,7 +86,7 @@ describe("the JS and Rust readers agree about the committed store", () => {
       return;
     }
     const rust = JSON.parse(
-      execFileSync(bsc, ["graph", "dump", "--repo", "--root", REPO], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 }),
+      execFileSync(bsc, ["algorithms", "dump", "--repo", "--root", REPO], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 }),
     ) as { implementations: { id: string }[]; edges: { id: string }[] };
     const js = loadStore(storePath) as { implementations: { id: string }[]; edges: { id: string }[] };
 

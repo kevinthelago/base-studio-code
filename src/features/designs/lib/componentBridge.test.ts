@@ -33,12 +33,12 @@ beforeEach(() => {
 describe("componentBridge → bsc components (#2469)", () => {
   it("loads components via `bsc components list --full`", async () => {
     expect(await loadComponents()).toEqual([]);
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "list", "--full"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "list", "--full"]);
   });
 
   it("loads kits via `bsc components kit list --full`", async () => {
     expect(await loadKits()).toEqual([]);
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "kit", "list", "--full"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "kit", "list", "--full"]);
   });
 
   it("kit rows carry the #2487 tech/style axes verbatim — an absent axis stays ABSENT, never defaulted (the #2483 seedHash transition depends on it)", async () => {
@@ -150,9 +150,9 @@ describe("componentBridge → bsc components (#2469)", () => {
   it("writes component upsert/removal through the ui surface, replacing the whole record", async () => {
     const comp = { id: "c1" } as unknown as ComponentRecord;
     await pushComponent(comp);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], comp);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--replace"], comp);
     await dropComponent("c1");
-    expect(bscRun).toHaveBeenCalledWith(null, ["ui", "remove", "c1"]);
+    expect(bscRun).toHaveBeenCalledWith(null, ["components", "remove", "c1"]);
   });
 
   it("guards a push with the rev the caller READ, so a store that moved refuses the write", async () => {
@@ -164,14 +164,14 @@ describe("componentBridge → bsc components (#2469)", () => {
     // guard already existed in `bsc components set` and nothing was sending it.
     const comp = { id: "plan-body-streams", srcText: "pre-edit" } as unknown as ComponentRecord;
     await pushComponent(comp, { ifVersion: 7 });
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace", "--if-version", "7"], comp);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--replace", "--if-version", "7"], comp);
   });
 
   it("leaves an UNGUARDED push exactly as it was — no rev, no flag", async () => {
     // Every existing caller must be unaffected: a record the store lacks has no prior rev to name.
     const comp = { id: "c-new" } as unknown as ComponentRecord;
     await pushComponent(comp, { ifVersion: undefined });
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], comp);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--replace"], comp);
   });
 
   it("does not throw when the store REFUSES the write, and says so", async () => {
@@ -205,15 +205,15 @@ describe("componentBridge → bsc components (#2469)", () => {
   it("still writes a FULL record — the fast-paint hydrate is not disabled, only its records are barred", async () => {
     const full = projectComponent({ id: "ui-tab-bar", name: "TabBar", kitId: "base-studio-code", srcText: "export const TabBar = () => null;" });
     await pushComponent(full);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace"], full);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--replace"], full);
   });
 
   it("writes kit upsert/removal through the ui surface, replacing the whole record", async () => {
     const kit = { id: "k1" } as unknown as Kit;
     await pushKit(kit);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set", "--replace"], kit);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "kit", "set", "--replace"], kit);
     await dropKit("k1");
-    expect(bscRun).toHaveBeenCalledWith(null, ["ui", "kit", "remove", "k1"]);
+    expect(bscRun).toHaveBeenCalledWith(null, ["components", "kit", "remove", "k1"]);
   });
 
   // Request #98 — a background write the APP ITSELF issues (a seed reconcile push, a provenance
@@ -223,32 +223,32 @@ describe("componentBridge → bsc components (#2469)", () => {
   it("tags a component push as the caller names it (`opts.by`), untagged by default", async () => {
     const comp = { id: "c1" } as unknown as ComponentRecord;
     await pushComponent(comp, { by: APP_RECONCILE_WRITER });
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace", "--by", APP_RECONCILE_WRITER], comp);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--replace", "--by", APP_RECONCILE_WRITER], comp);
 
     await pushComponent(comp);
-    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "set", "--replace"], comp);
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["components", "set", "--replace"], comp);
   });
 
   it("tags a kit push as the caller names it (`by`), untagged by default", async () => {
     const kit = { id: "k1" } as unknown as Kit;
     await pushKit(kit, APP_RECONCILE_WRITER);
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set", "--replace", "--by", APP_RECONCILE_WRITER], kit);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "kit", "set", "--replace", "--by", APP_RECONCILE_WRITER], kit);
 
     await pushKit(kit);
-    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "kit", "set", "--replace"], kit);
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["components", "kit", "set", "--replace"], kit);
   });
 
   it("stampComponent (the #4207 provenance repair — always app-driven) defaults its `by` to app-reconcile", async () => {
     await stampComponent("fleetpage", "abc123");
-    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--by", APP_RECONCILE_WRITER], { id: "fleetpage", builtin: true, seedHash: "abc123" });
+    expect(bscWrite).toHaveBeenCalledWith(null, ["components", "set", "--by", APP_RECONCILE_WRITER], { id: "fleetpage", builtin: true, seedHash: "abc123" });
 
     await stampComponent("fleetpage", "abc123", "someone-else");
-    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "set", "--by", "someone-else"], { id: "fleetpage", builtin: true, seedHash: "abc123" });
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["components", "set", "--by", "someone-else"], { id: "fleetpage", builtin: true, seedHash: "abc123" });
   });
 
   it("records a preview runtime error via `bsc components preview-error <id>` with the message on stdin (#3165)", async () => {
     await recordPreviewError("chart", "TypeError: x is undefined");
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "chart"], "TypeError: x is undefined");
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "preview-error", "chart"], "TypeError: x is undefined");
   });
 
   it("recordPreviewError never throws when the bridge is unreachable (banner-only)", async () => {
@@ -260,13 +260,13 @@ describe("componentBridge → bsc components (#2469)", () => {
 describe("kitUsageBridge → bsc components usage (#2469)", () => {
   it("loads consumer edges via `bsc components usage list --json`", async () => {
     expect(await loadKitUsage()).toEqual([]);
-    expect(bsc).toHaveBeenCalledWith(null, ["ui", "usage", "list", "--json"]);
+    expect(bsc).toHaveBeenCalledWith(null, ["components", "usage", "list", "--json"]);
   });
 
   it("adds and removes edges on the ui surface", async () => {
     await pushKitUsage("proj", "react-ui");
-    expect(bscRun).toHaveBeenCalledWith(null, ["ui", "usage", "add", "proj", "react-ui"]);
+    expect(bscRun).toHaveBeenCalledWith(null, ["components", "usage", "add", "proj", "react-ui"]);
     await dropKitUsage("proj>react-ui");
-    expect(bscRun).toHaveBeenCalledWith(null, ["ui", "usage", "remove", "proj>react-ui"]);
+    expect(bscRun).toHaveBeenCalledWith(null, ["components", "usage", "remove", "proj>react-ui"]);
   });
 });
