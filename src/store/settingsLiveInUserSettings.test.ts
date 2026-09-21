@@ -65,7 +65,7 @@ describe("the key set is one list in Rust and in the renderer", () => {
   it("names exactly the keys Rust's APP_SETTINGS names", () => {
     const block = POLICY.slice(POLICY.indexOf("pub const APP_SETTINGS"), POLICY.indexOf("];", POLICY.indexOf("pub const APP_SETTINGS")));
     const rust = [...block.matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
-    expect(rust).toHaveLength(33);
+    expect(rust).toHaveLength(30);
     expect([...USER_SETTING_KEYS].sort()).toEqual(rust);
   });
 
