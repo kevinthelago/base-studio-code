@@ -1,7 +1,7 @@
 // A SURFACE-STUDIO PANE ID ENCODES ITS NOUN, so a renamed noun strands the pane.
 //
 // `surface-studio:noun-ui` stopped resolving the moment `ui` became `components` — the launch plan
-// refuses it ("no crate drill serves `bsc ui`") and Glance's `expandNode` returns early when a node
+// refuses it ("no crate drill serves that noun") and Glance's `expandNode` returns early when a node
 // resolves to no pane, so the CLICK IS SILENTLY DEAD. Measured on the live snapshot: three of five
 // surface panes were stranded that way while the other two kept working, which is exactly the
 // "some sessions start and some don't" this was reported as.

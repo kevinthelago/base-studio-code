@@ -95,7 +95,7 @@ export const useAppStore = create<AppStore>()(
         migrateGithubCacheProvenance(s as Record<string, unknown>, version);
         // v4 (`a-renamed-noun-strands-its-surface-studio-pane`): a surface-studio pane id encodes its
         // NOUN, so a renamed noun strands its pane — the launch plan refuses ("no crate drill serves
-        // `bsc ui`") and Glance's click is silently dead. Moves the pane rather than aliasing the noun.
+        // that noun") and Glance's click is silently dead. Moves the pane rather than aliasing the noun.
         migrateRenamedSurfacePanes(s as Record<string, unknown>, version);
         return s as AppStore;
       },
