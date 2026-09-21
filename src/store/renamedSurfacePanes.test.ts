@@ -40,7 +40,8 @@ describe("a renamed noun's surface pane migrates with it", () => {
   it("is one-time — a snapshot already at v4 is untouched", () => {
     const state = { paneModels: { [`${P}ui`]: "m" } };
     migrateRenamedSurfacePanes(state, 4);
-    expect(state.paneModels).toEqual({ [`${P}ui`]: "m" }, "v4 already ran; re-firing would move a pane the user re-made");
+    // Re-firing would move a pane the user re-made under the new name after the upgrade.
+    expect(state.paneModels, "v4 already ran").toEqual({ [`${P}ui`]: "m" });
   });
 
   it("leaves a LIVE noun's pane alone", () => {
