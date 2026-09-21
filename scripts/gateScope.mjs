@@ -54,7 +54,7 @@ export function gateCommands(plan, base) {
   // four divergences where there are two. It exits non-zero on disagreement, so it gates as-is.
   //
   // Affordable unconditionally: MEASURED 0.15-0.18s and ~90 MB, cheaper than deciding whether to run it.
-  c.push({ label: "records (no record claims a module it is not)", key: "graph-claim-census", stage: "test", cmd: "bsc", args: ["ui", "census"] });
+  c.push({ label: "records (no record claims a module it is not)", key: "graph-claim-census", stage: "test", cmd: "bsc", args: ["components", "census"] });
   if (plan.full) {
     c.push({ label: "typecheck", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
     c.push({ label: "lint", key: "lint", stage: "lint", cmd: "npm", args: ["run", "lint"] });
