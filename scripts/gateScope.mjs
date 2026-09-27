@@ -133,6 +133,10 @@ export function graphCommands() {
     // Every import/use of another record IS a relationship (`bsc-graph-derives-and-verifies-relationships`);
     // this fails when a NEW/edited record uses a record without a `composes` edge, vs a grandfathered baseline.
     { label: "graph (relationships)", key: "graph-relationships", stage: "test", cmd: "node", args: ["scripts/graph-relationships.mjs", "--check"] },
+    // `plans/<key>.db` is spelled ONCE, in `bsc_util::plan_db_path` (`one-resolver-for-the-plan-store-path`).
+    // Five production sites each re-derived it with three different key policies, so the same key resolved
+    // to a path, a different path, or an error depending on which binary asked.
+    { label: "graph (plan-store path)", key: "graph-plan-store-path", stage: "test", cmd: "node", args: ["scripts/graph-plan-store-path.mjs"] },
   ];
 }
 
@@ -268,6 +272,7 @@ export function isGraphSourcePath(file) {
     || file === "scripts/graph-rust-tests.mjs"
     || file === "scripts/graph-relationships.mjs"
     || file === "scripts/graph-relationships.baseline.json"
+    || file === "scripts/graph-plan-store-path.mjs"
     // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
     || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }
