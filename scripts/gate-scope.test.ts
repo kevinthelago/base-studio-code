@@ -366,15 +366,18 @@ describe("graph step", () => {
     expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
   });
 
-  it("carries all five halves — nodes compile, the repo store is current, the kits agree, the rust test edges run, relationships are complete", () => {
+  it("carries all six halves — nodes compile, the repo store is current, the kits agree, the rust test edges run, relationships are complete, the plan-store path is spelled once", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(5);
+    expect(cmds).toHaveLength(6);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
     expect(cmds[3].args).toContain("scripts/graph-rust-tests.mjs");
     expect(cmds[4].args).toContain("scripts/graph-relationships.mjs");
     expect(cmds[4].args).toContain("--check");
+    // `one-resolver-for-the-plan-store-path`: five production sites re-derived `plans/<key>.db` with
+    // three different key policies. This leg keeps the mapping in `bsc_util::plan_db_path` alone.
+    expect(cmds[5].args).toContain("scripts/graph-plan-store-path.mjs");
   });
 
   // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.
