@@ -159,6 +159,16 @@
             "# has moved, because an import that cannot be checked against its source is not one anyone will trust."
           ],
           "value": "{ path = \"../bsc-graph-store\" }"
+        },
+        {
+          "cont": [],
+          "key": "bsc-similar",
+          "lead": [
+            "# Document distance for `bsc algorithms search` - TF-IDF term vectors and the cosine between them.",
+            "# It has NO dependencies of its own, so this costs the iteration loop nothing: the DuckDB amalgamation",
+            "# is what makes a dependency expensive here, and this crate is pure std."
+          ],
+          "value": "{ path = \"../bsc-similar\" }"
         }
       ],
       "lead": [
