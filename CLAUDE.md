@@ -608,14 +608,27 @@ module, pipelines, a declarative gate, and attached skills. It is a curated **ro
 
 ### The project key and the hub
 A project's key is **`projectSlug(name)`** — lowercase `[a-z0-9-]`, capped 60 — and it is **frozen at
-creation**. That one value names `projects/<key>/`, the plan store at `plans/<key>.db`,
-`worktrees/<key>/…`, the pane ids and every app-state map key. Renaming is **display-only**; the folder
+creation**. That one value names `projects/<key>/`, the plan store INSIDE it at
+`projects/<key>/plan.db`, `worktrees/<key>/…`, the pane ids and every app-state map key. Renaming is **display-only**; the folder
 keeps its birth-slug.
 
-**The asymmetry to remember: plans are CENTRAL, telemetry is PER-HUB.** The plan store is *not* in the
-hub — it is `~/.base-studio-code/plans/<key>.db`, reached as `$BSC_PLAN_DB` / `bsc plan`, and it is the
-**sole fleet store** (#1805). But `error.db` and `usage.db` *are* hub-local. Fleet worktrees live
-**outside** the hub (#844) so the planner `CLAUDE.md` is not their ancestor.
+**EVERY PER-PROJECT STORE IS HUB-LOCAL.** The plan store is `projects/<key>/plan.db`, reached as
+`$BSC_PLAN_DB` / `bsc plan --project <key>`, and it sits beside that project's `error.db`. It is the
+**sole fleet store** — that is #1805, a separate decision about the fleet living in plan.db rather than a
+`fleet.json`, and nothing to do with where the file is.
+
+> **This paragraph used to say the opposite**, and it was right when it did: #2996 / epic #2993 moved the
+> store OUT to a central `plans/<key>.db` so a plan would survive its folder. That is **reversed** —
+> `the-plan-store-moves-into-its-project`, 2026-09-27 — because `bsc project new` now creates the hub in
+> the same transaction as the store, so the hub is no longer a projection that appears later.
+> **`~/.base-studio-code/plans/` no longer exists**; 35 stores were relocated into their hubs and the
+> directory was removed. The migration is `bsc plan store relocate [--apply]`.
+>
+> Two consequences worth carrying: **deleting a hub now deletes a plan**, and **the project key is the
+> parent DIRECTORY, never a file stem** — every store is called `plan.db`, so a stem answers "plan" for
+> every project. `bsc_util::plan_db_path` is the one mapping; `plan_stores()` is the one enumeration.
+
+Fleet worktrees live **outside** the hub (#844) so the planner `CLAUDE.md` is not their ancestor.
 
 ### The planner is plan-only, and its spec leaks downward
 Role gate #219: `git: read`, `github: read`, `code: none` — it reads for context and writes plan files,
@@ -757,11 +770,12 @@ push). It is a **maintainer action, not a step in the worker loop** — nothing 
 
 ### Where the work lives
 
-The project's own plan store — `~/.base-studio-code/plans/core.db`, reached with the
+The project's own plan store — `~/.base-studio-code/projects/core/plan.db`, reached with the
 bundled `bsc` binary:
 
 ```bash
-export BSC_PLAN_DB="$HOME/.base-studio-code/plans/core.db"
+export BSC_PLAN_DB="$HOME/.base-studio-code/projects/core/plan.db"
+# or skip the export entirely: `bsc plan <verb> --project core` resolves it
 
 bsc plan list                      # the board
 bsc plan list --status open        # what's available
