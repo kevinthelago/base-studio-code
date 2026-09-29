@@ -1172,6 +1172,7 @@ dependencies = [
  "bsc-graph-store",
  "bsc-record",
  "bsc-runtime",
+ "bsc-similar",
  "bsc-util",
  "graph-materialize",
  "serde",
