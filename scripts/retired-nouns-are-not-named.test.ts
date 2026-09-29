@@ -165,6 +165,7 @@ describe("a retired bsc noun is named nowhere live", () => {
     ["classify-config.ts", "`SYSTEM_SOURCES = [\"studio\", …]` — a config-source name, not a verb"],
     ["logs--cli.rs", "the list of verbs that LEFT, asserted absent from the overview"],
     ["bsc--tests.rs", "the RENAMED/FOLDED tables — they name old spellings on purpose"],
+    ["bsc-studio--lib.rs", "`(\"inventory\", \"this network's devices…\")` in EXCLUDED — a store STEM keyed by its file name, not a verb; the lead matches only because `bsc snapshot save --all` is discussed two lines above it"],
   ]);
   // The LEAD is sliced by index rather than captured in the pattern: a `[\s\S]{0,200}` prefix with the
   // `g` flag backtracks across every record in the store and the whole suite times out at 5s.
