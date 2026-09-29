@@ -106,15 +106,12 @@ npm run promote           # gate develop, then fast-forward the app's tree
 ```bash
 npm run app:dev       # tauri dev --no-watch — NOTHING restarts the app but you
 npm run app:status    # is the built app behind main? (app:dev prints this at launch)
-npm run dev:app       # the old watching launch — kept, for iterating on Rust
+npm run dev:app       # the WATCHING launch — for iterating on Rust
 ```
 
-**`--no-watch` turns off the Rust file watcher, and that is the whole fix.** The interruption was never
-really about merges: MEASURED 2026-08-29, a session had the repo ROOT as its working directory and was
-editing `crates/bsc-graph/src/cli.rs` in place — 88 uncommitted lines calling a function it had not
-written yet. No amount of routing merges elsewhere helps when the writes are already there. With the
-watcher off, another session can edit, build and merge in the app's tree all day and the running app
-does not notice.
+**`--no-watch` turns off the Rust file watcher.** With it off, another session can edit, build and merge
+in the app's tree all day and the running app does not notice — including edits made in the app's own
+checkout, which is the case no amount of routing merges elsewhere can fix.
 
 **Vite is untouched**, because it is a separate process started by `beforeDevCommand`, not by the Rust
 watcher. So the frontend keeps hot-reloading: a `.tsx` component hot-updates in place (Fast Refresh is
@@ -122,64 +119,58 @@ configured), a `.ts` lib module triggers a page reload, and a page reload does N
 PTY sessions are backend-owned by paneId and re-attach rather than forking.
 
 **The trade is honest staleness, and `app:status` is why it is not a bug.** With the watcher off, the
-binary silently stops matching `main`; nothing announces it, because announcing it was the watcher's
-job. `app:dev` prints the verdict at launch and `app:status` answers on demand. It counts COMMITS on
-main since the binary was built rather than trusting mtime — a rebuild touches the mtime without
-changing what it was built from, so mtime alone calls a fresh rebuild of old code "current".
+binary silently stops matching `main` and nothing announces it. `app:dev` prints the verdict at launch
+and `app:status` answers on demand. **Read it as COMMITS, not mtime** — it counts commits on main since
+the binary was built, because a rebuild touches the mtime without changing what it was built from, so
+mtime alone calls a fresh rebuild of old code "current".
 
 Rust changes therefore wait for a restart you choose. That restart is recoverable: a pane resumes its
 OWN conversation by session id (`a-pane-resumes-its-own-conversation-by-id`) and its scrollback replays
 from a provably safe ANSI boundary (`pty-data-carries-its-recording-offset`).
 
-Keeping a PTY host alive ACROSS a restart was weighed and declined: it inverts "the desktop is
-authoritative — it owns the agent processes", and it reintroduces the same problem one level down,
-since upgrading the host would kill the sessions it exists to preserve.
+**Sessions are moving to a ROOT systemd service** (maintainer, 2026-09-17). Session launching moves out
+of the app into a **systemd SYSTEM service running as root**, with **systemd itself supervising** (a
+transient `systemd-run --scope` per session, so restart policy, cgroup caps and journald come for free
+rather than from a hand-rolled loop). The app becomes a **viewer**: it tails the durable scrollback
+recording instead of owning the PTY master.
 
-**REVERSED (maintainer, 2026-09-17) — sessions move to a ROOT systemd service.** The decision above
-stands as the record of what was tried, not as current direction. Session launching moves out of the
-app into a **systemd SYSTEM service running as root**, with **systemd itself supervising** (a transient
-`systemd-run --scope` per session, so restart policy, cgroup caps and journald come for free rather
-than from a hand-rolled loop). The app becomes a **viewer**: it tails the durable scrollback recording
-instead of owning the PTY master.
+Root is the ENABLER, not a risk being tolerated: it is what makes per-agent isolation (#1994/#4260)
+runnable at all — each session its own `bsc-<slug>-<hash>` user with a `700` home — since `useradd` is
+not on a non-root PATH, and it is what lets a sandboxed launch create its scope instead of dying at
+`systemd-run --scope` with *"Interactive authentication required"*
+(`the-sandbox-scope-needs-privileges-nobody-has`). **Root is used for exactly four operations** —
+`useradd`, `setuid` before exec, creating the system scope, the setgid shared dir — and **no LLM-driven
+process ever runs as root**.
 
-Root is the ENABLER, not a risk being tolerated. Per-agent isolation (#1994/#4260) specifies each
-session as its own `bsc-<slug>-<hash>` user with a `700` home — and MEASURED 2026-09-17 there are
-**zero** such users, no `/srv/bsc-shared`, and `useradd` is not on a non-root PATH, so that model was
-specified and has **never run**. It also fixes a live bug rather than routing around it:
-`the-sandbox-scope-needs-privileges-nobody-has` records every sandboxed launch dying at
-`systemd-run --scope` with *"Interactive authentication required"*. Root is used for exactly four
-operations — `useradd`, `setuid` before exec, creating the system scope, the setgid shared dir — and
-**no LLM-driven process ever runs as root**.
+**The sequencing is forced, because a system service has no session D-Bus**: secrets leave the OS
+keyring first (`secrets-leave-the-os-keyring-for-the-store`), then
+`the-session-host-is-a-root-systemd-service`, then per-agent users and the UI swap. Full reasoning:
+`bsc memory read cyber-security` and the plan items themselves.
 
-Sequencing, because a system service has **no session D-Bus**: secrets must leave the OS keyring
-first (`secrets-leave-the-os-keyring-for-the-store`), then
-`the-session-host-is-a-root-systemd-service`, then per-agent users and the UI swap. Full reasoning and
-the measurements behind it: `bsc memory read cyber-security` and the plan items themselves.
+**Do not try to keep a PTY host alive across a restart.** It inverts "the desktop is authoritative — it
+owns the agent processes", and it reintroduces the same problem one level down, since upgrading the host
+kills the sessions it exists to preserve.
 
 ### The ROOT runs the app; integration happens in `wt-integrate`
 
 **`npm run dev:app` runs at the repo root, and the root checks out `main`.** Every branch merges into
 `develop` in the **`wt-integrate`** worktree — never at the root.
 
-That inversion exists because `tauri dev` watches its own checkout and relaunches on a source change,
-and the root used to be where every `git merge --no-ff` landed. So integrating restarted the app under
-whoever was using it, and the person doing the integrating was the person being interrupted. MEASURED
-across one session's five merges: 4 of 5 wrote files under `src/`, `src-tauri/src/` or `crates/` — 4,
-2, 1, 0 and 7 watched files. Every one would have rebuilt and relaunched.
-
-No watcher change can fix that; those are real source edits it is right to notice. Two narrower causes
-WERE fixed and still hold: `.taurignore` stops a record write rebuilding (`data/components/`,
-`data/knowledge/`), and the vite watcher ignores `.claude/worktrees` as it does `wt-*`.
+**Merging at the root restarts the app under whoever is using it.** `tauri dev` watches its own
+checkout and relaunches on a source change, and a merge writes real source files it is right to notice —
+so no watcher change can fix it, and integration goes somewhere else instead. Two narrower causes ARE
+fixed: `.taurignore` stops a record write rebuilding (`data/components/`, `data/knowledge/`), and the
+vite watcher ignores `.claude/worktrees` as it does `wt-*`.
 
 ```
 repo root      → main      the app runs here (npm run dev:app). NEVER merge here.
 wt-integrate   → develop   every branch merges here
-wt-<short>     → <ref>      one per work item, as before, cut from the develop REF
+wt-<short>     → <ref>      one per work item, cut from the develop REF
 ```
 
-The app was briefly parked in a `wt-app` worktree instead. That was rejected: the root is where a
-person expects to find the application, so the surprise belongs on the transient activity
-(integrating) rather than the persistent one (running the thing you are building).
+The root, not a `wt-app` worktree, is where the app runs: it is where a person expects to find the
+application, so the surprise belongs on the transient activity (integrating) rather than the persistent
+one (running the thing you are building).
 
 ```bash
 npm run dev:app                    # at the ROOT — the app, with HMR
@@ -229,8 +220,8 @@ records that a rebuild cannot get there.
 
 ### When a build or launch fails, it records itself
 
-A build or launch failure used to exist only as scrollback in whoever's shell ran it, and vanished with
-that shell. `npm run build:plan`, `npm run build` and `npm run dev:app` are wrapped in
+A build or launch failure must outlive the shell that ran it. `npm run build:plan`, `npm run build` and
+`npm run dev:app` are wrapped in
 **`bsc errors run`**, which streams the command through untouched, exits with its exact code, and files
 one fingerprinted fault into `projects/core/error.db` when it fails. A green run clears what its
 own command recorded, so the store is a list of what is broken NOW rather than a pile of fixed things.
@@ -312,9 +303,8 @@ bsc snapshot save "full-system" --all --out /path/to/dest   # every store + ever
 bsc snapshot save help                                      # the per-system flags, FROM the roster
 ```
 
-`--dir` is which install to **read**; `--out` is where the backup **goes**. That split is the whole
-point of the flag: `--dir <empty>` used to create empty stores at the destination and back up THOSE,
-reporting success.
+`--dir` is which install to **read**; `--out` is where the backup **goes**. Keep them straight: a
+`--dir` pointing at an empty install is the usual cause of a backup that succeeds and holds nothing.
 
 **Capture is by DISCOVERY, not a roster.** Every `*.db` under the base dir is taken, so a store a
 future crate adds is backed up without anyone remembering a row. That direction was chosen after the
@@ -404,43 +394,36 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** Measured 2026-09-03: **981 modules ship as RECORDS** — 308
-> component records under `src-tauri/data/components/app/**` plus 673 implementations in
-> `data/knowledge/algorithms.json` — against **91 non-test modules under `src/`**. The files that held
-> the records are deleted (epic #3604, "the graph IS the app"), and that 10:1 ratio is the claim that
-> matters and still holds.
+> **MOST OF THE FRONTEND IS NOT FILES.** Measured 2026-09-28: **1,025 frontend modules ship as
+> RECORDS** — 322 in `graph/components.db` plus 703 TypeScript implementations in `graph/algorithms.db` —
+> against **57 non-test modules under `src/`**. That ~18:1 ratio is the claim that matters (epic #3604,
+> "the graph IS the app").
 >
-> **DO NOT read the file count as a settled floor — it is rising.** This paragraph used to say the
-> harvest was finished and 77 was the floor. The sequence is 69 → 77 → **91**, and **40 non-test files
-> were added under `src/` in the three weeks to 2026-09-03**. Many are legitimate by the reasons listed
-> below (barrels, `store.ts` module state, registrars, statically-imported hooks) — but "the harvest is
-> finished" is no longer an evidenced claim, and the breakdown below **sums to ~68, not 91**, so roughly
-> twenty-three modules are unaccounted for. Treat the reasons as the SHAPE of why files survive, never
-> as a census. Whether the author-into-the-store rule below is still being applied is an open question,
-> not a settled one: `the-module-floor-claim-is-stale-and-directionally-wrong`.
+> **COUNTS DRIFT EVERY TRANCHE AND A STALE ONE IS WORSE THAN NONE.** Re-measure rather than trust the
+> numbers above:
+> ```bash
+> find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l
+> sqlite3 graph/components.db "select count(*) from records"
+> sqlite3 graph/algorithms.db "select count(*) from records where json_extract(json,'\$.tech') like 'typescript%'"
+> ```
 >
-> The floor reasons, as last derived (summing to ~68 against the 69 of that day, NOT to today's 91):
-> 26 hold MODULE STATE on a specifier that is also REGISTERED
-> (two live copies — `bsc algorithms impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
-> STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
-> generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
-> that won't compile as TSX, and one seed/file disagreement awaiting adjudication.
+> **A file that survives does so for a reason, and the reasons are a SHAPE, not a census**: barrels and
+> type-only modules, modules holding MODULE STATE on a specifier something else also REGISTERS (two live
+> copies — `bsc algorithms impl set` refuses the write), `import.meta.glob` users, modules imported
+> STATICALLY by `main.tsx`/`App.tsx`, the entry and test setup, a `vite.config.ts` import, and algorithms
+> seed modules whose node `code` is generated *from* the file.
 >
 > **The module-state rule is narrower than it sounds**: state disqualifies only when something ELSE
-> registers the same specifier. When the record is the only copy, state is fine — which is why the
-> `graphPlatform.ts` registrars, long listed here as permanent floor, are all records now (and so is
-> `componentLoader.ts`, the loader itself). Measure with `bsc algorithms harvest <f> --module` and read
-> `moduleState`; it is never visible from a module's name.
-> The paths below still describe where a module *belongs*; they no longer promise it is on disk. If you
-> cannot find a module, it is a record: `bsc components get <id>` / `bsc algorithms impl get <id>`, matched by its
-> `provides` specifier.
-> **Read [`docs/records.md`](docs/records.md) before retiring a file, authoring new UI, or wondering why
-> a module you can see imported does not exist** — it carries the preconditions for deleting anything,
-> and every one of them was learned by shipping the bug first. New UI is authored into the store, never
-> as a new `.tsx`.
+> registers the same specifier. When the record is the only copy, state is fine. Measure it with
+> `bsc algorithms harvest <f> --module` and read `moduleState`; it is never visible from a module's name.
 >
-> Counts drift every tranche and a stale one is worse than none. Re-measure:
-> `find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l`
+> The paths below describe where a module *belongs*; they do not promise it is on disk. If you cannot
+> find a module, it is a record: `bsc components get <id>` / `bsc algorithms impl get <id>`, matched by its
+> `provides` specifier.
+>
+> **Read [`docs/records.md`](docs/records.md) before retiring a file, authoring new UI, or wondering why
+> a module you can see imported does not exist** — it carries the preconditions for deleting anything.
+> New UI is authored into the store, never as a new `.tsx`.
 
 ### Records and the emitters — what compiles, and what to edit
 
@@ -582,7 +565,7 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 ## Project Planning
 
 **There is no planner SCREEN, and no planner tier.** Planning is a three-tier funnel now — architect →
-director → workers — and the responsibilities the planning session used to hold are split across it:
+director → workers — and the planning responsibilities are split across it:
 
 - **The architect** is the one session the user talks to. It runs **Discovery** with them, records the
   outcome as `bsc plan requirement` (`{ statement, discovery, authority }`) plus the classification
@@ -617,16 +600,11 @@ keeps its birth-slug.
 **sole fleet store** — that is #1805, a separate decision about the fleet living in plan.db rather than a
 `fleet.json`, and nothing to do with where the file is.
 
-> **This paragraph used to say the opposite**, and it was right when it did: #2996 / epic #2993 moved the
-> store OUT to a central `plans/<key>.db` so a plan would survive its folder. That is **reversed** —
-> `the-plan-store-moves-into-its-project`, 2026-09-27 — because `bsc project new` now creates the hub in
-> the same transaction as the store, so the hub is no longer a projection that appears later.
-> **`~/.base-studio-code/plans/` no longer exists**; 35 stores were relocated into their hubs and the
-> directory was removed. The migration is `bsc plan store relocate [--apply]`.
->
-> Two consequences worth carrying: **deleting a hub now deletes a plan**, and **the project key is the
-> parent DIRECTORY, never a file stem** — every store is called `plan.db`, so a stem answers "plan" for
-> every project. `bsc_util::plan_db_path` is the one mapping; `plan_stores()` is the one enumeration.
+> Two consequences to carry: **deleting a hub deletes a plan**, and **the project key is the parent
+> DIRECTORY, never a file stem** — every store is called `plan.db`, so a stem answers "plan" for every
+> project. `bsc_util::plan_db_path` is the one mapping; `plan_stores()` is the one enumeration.
+> **There is no `~/.base-studio-code/plans/`**, and `bsc plan store relocate [--apply]` is the migration
+> for an install that still has one.
 
 Fleet worktrees live **outside** the hub (#844) so the planner `CLAUDE.md` is not their ancestor.
 
@@ -783,12 +761,8 @@ bsc plan get <ref>                 # one item: body + acceptance criteria
 bsc plan status <ref> <status>     # open → in_progress → complete → verified
 ```
 
-> **It used to be `base-studio-code.db`, and that store is RETIRED.** `base-studio-code` was both a
-> *repo of* the `studio-code` project and a separate project with its own plan store, so which one an
-> item belonged in was a coin flip — and the two drifted. Everything (issues, change records and the
-> lessons, which existed only there) was migrated into `studio-code.db` on 2026-08-17; see
-> `migrate-the-legacy-base-studio-code-plan-store`. **There is one board now.** If you find yourself
-> reaching for the old path, that is the habit this note exists to break.
+**There is one board**, and its key is `core`. An item about this application goes there whether it is
+about a crate, the frontend, the CLI or the docs.
 
 This is the same surface a fleet worker already uses, so there is one way to read the plan whether a
 human or an agent is driving. `bsc plan` is in the always-allowed mandatory tier, so no session needs
@@ -818,7 +792,8 @@ survives and a future `bsc plan sync` can reconcile, but nothing writes to GitHu
 
 ### The branch is TWO things now — a git branch and a LANE
 
-Records are **93% of this source** (1,731 records against 124 files), and they no longer live in git.
+Records are **96% of this source** (measured 2026-09-28: 3,613 records against 149 non-test files), and
+they do not live in git.
 They live in the record ledger (`~/.base-studio-code/knowledge/graph.db`,
 `epic-retire-json-ledgers-for-db-and-git-drivers`), so a work item needs isolation in **both** places:
 
@@ -941,9 +916,9 @@ maintained separately from the work — which is why `CHANGELOG.md` kept driftin
 ### Capturing what a session learns — `bsc memory`
 
 The change record says what a slice DID; `bsc memory` catches what a session LEARNED but has no plan
-item for — a finding, a decision and its reason, a lesson, a trap, a parked thread. Those used to
-evaporate when the terminal closed. Capture is the habit this surface exists to make cheap, so **write
-the thought down when you have it**, not later when the reasoning is gone.
+item for — a finding, a decision and its reason, a lesson, a trap, a parked thread. Capture is the habit
+this surface exists to make cheap, so **write the thought down when you have it**, not later when the
+reasoning is gone.
 
 It is a TYPED GRAPH, not a flat pile. Two facets carry the weight:
 
@@ -967,7 +942,7 @@ bsc memory done <id>                               # once acted on or folded els
 It is a USER store (`memory.db`), local, in the always-allowed `bsc` tier — any session reaches it
 without a grant. The records are now method-first, so a memory's edges point AT that id space; the
 `neighbors` view is why memory is a graph you traverse rather than a pile you scroll. (Distinct from
-`bsc resources`, the resource-cost surface that used to be `bsc mem`.)
+`bsc resources`, the resource-cost surface.)
 
 ### GitHub stays silent
 
@@ -1104,9 +1079,8 @@ that mattered.
 
 **Run it as `bsc work gate`, not `npm run gate`.** It streams the real gate through untouched and then
 records EACH LEG on this branch's change record from the gate's own machine-readable verdict — so the
-record is EVIDENCE the gate ran rather than a claim that it did. Recording by hand made it a claim:
-measured over five slices in one session, ~25 results were read off a terminal and retyped, and
-nothing checked them. It takes the ref from the BRANCH, which is why the 1:1 branch rule matters.
+record is EVIDENCE the gate ran rather than a claim that it did — recording a leg by hand is a claim,
+and nothing checks it. It takes the ref from the BRANCH, which is why the 1:1 branch rule matters.
 
 ```bash
 bsc work gate             # scoped, and records every leg
@@ -1178,8 +1152,8 @@ Two differences that will surprise you:
 
 **Install `sccache` before your first build.** `.cargo/config.toml` sets it as `rustc-wrapper`, so cargo
 fails loudly with *"could not execute process sccache"* if it is missing (`cargo install sccache
---locked`; it must land on PATH). A shared `CARGO_TARGET_DIR` was rejected instead — it broke tauri
-builds and puts every concurrent cargo behind one lock.
+--locked`; it must land on PATH). **Never set a shared `CARGO_TARGET_DIR`** — it breaks tauri builds and
+puts every concurrent cargo behind one lock.
 
 **Iterate against the CRATE, not the binary:** `cargo check -p <crate>` while writing, `cargo test -p
 <crate> --lib` to verify, and build `bsc` only when you need to *run* it. Every subcommand crate exposes
