@@ -7,7 +7,7 @@
 // The five places are RECORDS, not files, so this reads them from the COMMITTED store — the copy the build
 // compiles — and fails naming the field and the place that lacks it.
 import { describe, it, expect } from "vitest";
-import { loadImplementations } from "@scripts/lib/recordStore.mjs";
+import { loadImplementations, loadStore, resolveComponentStorePath } from "@scripts/lib/recordStore.mjs";
 import { WORKSPACES } from "@/app/registry";
 
 const LIB = "bsc-navigate--lib.rs";
@@ -125,5 +125,108 @@ describe("the navigate contract holds in all five places", () => {
   it("the workspace help names the current rail", () => {
     const doc = between(code(CLI), 'name: "workspace"', "},");
     expect(WORKSPACES.map((w) => w.key).filter((k) => !new RegExp(`\\b${k}\\b`).test(doc))).toEqual([]);
+  });
+});
+
+/**
+ * A TABBED workspace that is absent from the page maps is SILENT IN BOTH DIRECTIONS, and that is the
+ * whole reason this exists.
+ *
+ * Being absent is CORRECT while a workspace has no pages — Credentials was legitimately missing from
+ * every map below for as long as its screen was a single untabbed list. The moment it gained tabs the
+ * same absence became three bugs, none of which fails a build:
+ *
+ *   · `WORKSPACE_PAGE` (navigate.ts) — `bsc navigate --workspace X --page p` switches the workspace,
+ *     drops the page, and ACKS. The verb reports success while landing on whatever was last open.
+ *   · `PAGES` (locationCrumb) — the titlebar reads just "X" whichever tab is open.
+ *   · `DEFAULT_PAGE` (locationCrumb) — the crumb names no page until the user's first click, which
+ *     reads as the crumb simply not covering that screen.
+ *
+ * `usePageTabs("<key>", …)` is the observable signal that a workspace is tabbed: it is what publishes
+ * the tab set the navigate bridge validates against, so a screen that calls it is addressable by page
+ * and a screen that does not is not. Keying on it means the NEXT tabbed workspace is caught here
+ * rather than by someone noticing the verb is quietly useless.
+ *
+ * BOTH RECORD STORES ARE READ. A workspace screen may be an algorithms record (Credentials, Jobs,
+ * Memory) or a COMPONENT record (Glance, Logs, Teams, Algorithms, Data, Sounds, Console, and the
+ * Components workspace itself, whose record is `guidecard`), and the two stores keep their source in
+ * different fields — `code` against `srcText`. Reading only the algorithms store finds 3 of 11 and
+ * every assertion below passes over the other 8.
+ */
+describe("every tabbed workspace is reachable by page", () => {
+  const WORKSPACE_KEYS: ReadonlySet<string> = new Set<string>(WORKSPACES.map((w) => w.key));
+
+  /** Workspace keys passed to `usePageTabs` anywhere in either store. */
+  const tabbed = (() => {
+    const found = new Set<string>();
+    const scan = (text: string) => {
+      for (const m of text.matchAll(/usePageTabs\(\s*["'`]([a-z0-9-]+)["'`]/g)) {
+        // Only WORKSPACE keys. `usePageTabs` also drives strips that are not rail destinations —
+        // the Settings sections (mcp, skills, automations) are pages WITHIN Settings, and they have
+        // no workspace page of their own to register.
+        if (WORKSPACE_KEYS.has(m[1])) found.add(m[1]);
+      }
+    };
+    for (const src of records.values()) scan(src);
+    // `resolveComponentStorePath` can answer null (no store on this checkout). Throwing names the
+    // real cause; silently scanning nothing would make 8 of the 11 unchecked and still pass.
+    const compStore = resolveComponentStorePath(".");
+    if (!compStore) throw new Error("the component record store is not resolvable — 8 of 11 workspaces live there");
+    for (const rec of (loadStore(compStore).implementations ?? []) as Record<string, unknown>[]) {
+      // Every string field, rather than a named one: a component record carries its source in
+      // `srcText` while an algorithms record uses `code`, and naming the field is how this check
+      // would silently cover one store.
+      for (const v of Object.values(rec)) if (typeof v === "string") scan(v);
+    }
+    return found;
+  })();
+
+  /**
+   * The console is tabbed, and deliberately absent from `WORKSPACE_PAGE`: its "pages" are INDEXED
+   * tabs switched by `setActiveTab(idx)`, not a string page, so a navigate to console carries no
+   * page at all. Exempting it by name keeps that decision visible instead of looking like a gap.
+   */
+  const NO_STRING_PAGE = new Set(["console"]);
+
+  /**
+   * Workspaces whose tabs are DATA, not a constant: the technologies the kits carry, the teams in the
+   * store, the languages present, the sound kits. The crumb Title-Cases those ids rather than keeping
+   * a curated label map, because a curated map would go stale the moment the data changed and a stale
+   * label shows the WRONG name rather than an ugly one. They own no fixed first tab either, so they
+   * owe neither crumb entry. A workspace whose tab set is a CONSTANT owes both.
+   */
+  const DATA_TABBED = new Set(["components", "teams", "algorithms", "data", "sounds", "lan"]);
+
+  it("finds a real population across BOTH stores, so a changed call shape fails instead of passing empty", () => {
+    // Without this, the regex going stale makes every assertion below vacuous — the failure mode of
+    // every source-asserting guard in this repo. 11 are tabbed today.
+    expect([...tabbed].sort().join(","), "scanned both stores").toContain("credentials");
+    expect(tabbed.size, `only found ${[...tabbed].sort().join(", ")}`).toBeGreaterThan(8);
+  });
+
+  it("registers each one in WORKSPACE_PAGE, so `navigate --page` reaches a tab", () => {
+    const map = between(code("navigate.ts"), "const WORKSPACE_PAGE", "const WORKSPACE_DRILL");
+    const owed = [...tabbed].filter((k) => !NO_STRING_PAGE.has(k));
+    expect(owed.length).toBeGreaterThan(8);
+    expect(
+      owed.filter((k) => !new RegExp(`^\\s*${k}:`, "m").test(map)).sort(),
+      "tabbed, but `navigate --page` silently drops the page and acks anyway",
+    ).toEqual([]);
+  });
+
+  it("labels each fixed-tab one's pages in the crumb, and gives it a default page", () => {
+    const crumb = code("location-crumb.ts");
+    const pages = between(crumb, "const PAGES", "const GRAPH_CRUMB_KEY");
+    const defaults = between(crumb, "const DEFAULT_PAGE", "const label =");
+    const owed = [...tabbed].filter((k) => !DATA_TABBED.has(k) && !NO_STRING_PAGE.has(k));
+    expect(owed.length, `fixed-tab workspaces: ${owed.join(", ")}`).toBeGreaterThan(2);
+    expect(
+      owed.filter((k) => !new RegExp(`^\\s*${k}:`, "m").test(pages)).sort(),
+      "tabbed with a fixed tab set, but the crumb has no labels for its pages",
+    ).toEqual([]);
+    expect(
+      owed.filter((k) => !new RegExp(`\\b${k}:`).test(defaults)).sort(),
+      "tabbed with a fixed tab set, but the crumb names no page until the first click",
+    ).toEqual([]);
   });
 });
