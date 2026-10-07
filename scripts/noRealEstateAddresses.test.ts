@@ -108,11 +108,14 @@ describe("the real network estate is not in this repo", () => {
       //
       // Pinned to the exact string so it cannot absorb a NEW instance: a second address in that
       // record, or any other record, still fails (`a-known-red-can-absorb-new-instances-invisibly`).
-      // Pinned by DIGEST, not by the address. Writing the literal here made this file itself the
-      // thing the tracked-file scan found — a guard that published exactly what it exists to remove
-      // (`a-source-asserting-test-is-part-of-the-source-it-asserts`). A different address, or a
-      // second one in the same record, changes the digest and still fails.
-      const KNOWN = label === "components" ? ["components/react-ui.json: a180ae86 x1"] : [];
+      // NO known exceptions. There was one — the generated react-ui kit, a `seed` tier record in
+      // the committed component store that no verb can write (`bsc request` 416). It was fixed from
+      // OUTSIDE the store: the second history rewrite rewrote the blob itself, so every store in
+      // every commit was scrubbed and the exception went away with it.
+      //
+      // Keep this list EMPTY. A pin here is a value this repo publishes, so it is pinned by digest
+      // if it ever returns (`a-source-asserting-test-is-part-of-the-source-it-asserts`).
+      const KNOWN: string[] = [];
       expect(
         offenders,
         `a live estate address is back in the ${label} store:\n${offenders.join("\n")}`,
