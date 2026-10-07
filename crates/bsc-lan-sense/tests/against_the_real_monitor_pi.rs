@@ -1,48 +1,51 @@
 //! The posture checker against the REAL monitor Pi.
 //!
-//! The fixtures in `tests/fixtures/monitor-pi/` are verbatim `/proc/net/*`
-//! tables captured from the live sensor (Raspberry Pi 5, Debian 13, aarch64)
-//! on 2026-09-04, alongside `ss -ltun` output taken from the same host at the
-//! same moment. This test asserts the checker's verdict matches what `ss`
-//! independently reported.
+//! The fixtures are verbatim `/proc/net/*` tables captured from the live sensor (Raspberry Pi
+//! 5, Debian 13, aarch64), alongside `ss -ltun` output taken from the same host at the same
+//! moment. This test asserts the checker's verdict matches what `ss` independently reported.
 //!
 //! ## Why this is worth its weight
 //!
-//! Everything else about the posture checker is exercised against fixtures I
-//! wrote. Those prove the parser does what I intended; they cannot prove I
-//! understood the format the target platform actually emits. This one is
-//! captured from the machine the code will run on, on a different
-//! architecture and a different distribution from the development box, and
-//! checked against a tool that parses those tables independently.
+//! Everything else about the posture checker is exercised against fixtures I wrote. Those
+//! prove the parser does what I intended; they cannot prove I understood the format the target
+//! platform actually emits. This one is captured from the machine the code will run on, on a
+//! different architecture and a different distribution from the development box, and checked
+//! against a tool that parses those tables independently.
 //!
-//! `ss` reported exactly six listening sockets on the sensor:
+//! `ss` reported exactly six listening sockets on the sensor, every one a wildcard bind:
 //!
 //! ```text
 //! tcp 0.0.0.0:22      tcp [::]:22
 //! udp 0.0.0.0:42607   udp 0.0.0.0:5353
 //! udp *:39727         udp *:5353
 //! ```
+//!
+//! ## The capture is not in this repo
+//!
+//! `/proc/net` tables name this network's real hosts, so they live in the hub with the rest of
+//! the project's private data — `projects/lan/fixtures/monitor-pi/`, described by
+//! `projects/lan/estate.md`. These tests resolve them and SKIP when absent, so a fresh clone
+//! and CI are green without data they were never given.
+
+mod common;
 
 use bsc_lan_sense::posture::{assess, Posture};
 use bsc_lan_sense::procnet::{parse_table, Protocol, Reach, Role};
+use bsc_lan_sense::ProcNetError;
 
-fn table(name: &str, proto: Protocol) -> bsc_lan_sense::procnet::Table {
-    let text = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/monitor-pi")
-            .join(name),
-    )
-    .unwrap_or_else(|e| panic!("fixture {name} is readable: {e}"));
-    parse_table(&text, proto).unwrap_or_else(|e| panic!("fixture {name} parses: {e}"))
+fn table(name: &str, proto: Protocol) -> Option<bsc_lan_sense::procnet::Table> {
+    let text = common::fixture(name)?;
+    Some(parse_table(&text, proto).unwrap_or_else(|e| panic!("fixture {name} parses: {e}")))
 }
 
-fn all_tables() -> Vec<Result<bsc_lan_sense::procnet::Table, bsc_lan_sense::ProcNetError>> {
-    vec![
-        Ok(table("tcp", Protocol::Tcp)),
-        Ok(table("tcp6", Protocol::Tcp)),
-        Ok(table("udp", Protocol::Udp)),
-        Ok(table("udp6", Protocol::Udp)),
-    ]
+/// All four tables, or `None` when the capture is absent.
+fn all_tables() -> Option<Vec<Result<bsc_lan_sense::procnet::Table, ProcNetError>>> {
+    Some(vec![
+        Ok(table("tcp", Protocol::Tcp)?),
+        Ok(table("tcp6", Protocol::Tcp)?),
+        Ok(table("udp", Protocol::Udp)?),
+        Ok(table("udp6", Protocol::Udp)?),
+    ])
 }
 
 #[test]
@@ -56,7 +59,9 @@ fn every_row_the_real_sensor_emits_is_understood() {
         ("udp", Protocol::Udp),
         ("udp6", Protocol::Udp),
     ] {
-        let t = table(name, proto);
+        let Some(t) = table(name, proto) else {
+            return common::skip("every_row_the_real_sensor_emits_is_understood");
+        };
         assert!(t.rows_seen > 0, "{name} fixture has no data rows");
         assert_eq!(
             t.rows_parsed, t.rows_seen,
@@ -69,8 +74,10 @@ fn every_row_the_real_sensor_emits_is_understood() {
 
 #[test]
 fn the_verdict_matches_what_ss_reported_on_the_same_host() {
-    let p = assess(&all_tables());
-    match p {
+    let Some(tables) = all_tables() else {
+        return common::skip("the_verdict_matches_what_ss_reported_on_the_same_host");
+    };
+    match assess(&tables) {
         Posture::Exposed { reachable, rows_examined } => {
             assert!(rows_examined > 0);
             // `ss -ltun` found exactly six listening sockets on the sensor.
@@ -102,23 +109,25 @@ fn the_verdict_matches_what_ss_reported_on_the_same_host() {
 /// for the work: it runs sshd, avahi and a dhcp client, all reachable.
 #[test]
 fn the_sensor_is_not_yet_sealed_and_the_checker_says_so_plainly() {
-    let p = assess(&all_tables());
+    let Some(tables) = all_tables() else {
+        return common::skip("the_sensor_is_not_yet_sealed_and_the_checker_says_so_plainly");
+    };
+    let p = assess(&tables);
     assert!(!p.is_sealed());
     assert!(p.needs_attention(), "a box with sshd on a wildcard address wants attention");
 }
 
 /// An ESTABLISHED inbound connection is not an additional way in — the LISTEN
 /// socket is the surface, and the conversation is its consequence. The capture
-/// contains a live SSH session to 10.99.5.10:22, so this is exercised for
+/// was taken over a live SSH session to the sensor, so this is exercised for
 /// real rather than hypothetically.
 #[test]
 fn an_established_connection_is_not_counted_as_another_listening_surface() {
-    let t = table("tcp", Protocol::Tcp);
-    let established: Vec<_> = t
-        .sockets
-        .iter()
-        .filter(|s| s.role == Role::ConnectedOutbound)
-        .collect();
+    let Some(t) = table("tcp", Protocol::Tcp) else {
+        return common::skip("an_established_connection_is_not_counted_as_another_listening_surface");
+    };
+    let established: Vec<_> =
+        t.sockets.iter().filter(|s| s.role == Role::ConnectedOutbound).collect();
     assert!(
         !established.is_empty(),
         "the capture should contain the live SSH session it was taken over"

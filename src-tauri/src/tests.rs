@@ -311,7 +311,17 @@
             let units = source_units(rel_root, min);
             let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
             for unit in &units {
-                let base = module_base(&unit.rel);
+                // A TARGET ROOT resolves its modules like any crate root: `mod x;` in
+                // `tests/foo.rs` means the SIBLING `tests/x.rs` or `tests/x/mod.rs`, because
+                // `foo.rs` is itself the crate root of that test target. `module_base` applies the
+                // NESTED rule (`tests/foo/x.rs`), which is right for a module inside a crate and
+                // wrong here — it false-reddened Rust's standard shared-`common` idiom the first
+                // time an integration test used one.
+                let base = if unit.is_target_root() {
+                    unit.rel.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default()
+                } else {
+                    module_base(&unit.rel)
+                };
                 let lines: Vec<&str> = unit.text.lines().collect();
                 for (i, line) in lines.iter().enumerate() {
                     let Some(name) = declared_module(line) else { continue };
